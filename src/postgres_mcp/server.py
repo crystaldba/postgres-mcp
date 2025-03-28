@@ -12,6 +12,8 @@ from pydantic import AnyUrl
 import mcp.server.stdio
 
 from .dta.dta_tools import DTATool
+from .dta.safe_sql import SafeSqlDriver
+from .dta.sql_driver import SqlDriver
 
 server = Server("postgres-mcp")
 
@@ -192,7 +194,9 @@ async def handle_call_tool(
         )
 
         try:
-            dta_tool = DTATool(get_connection())
+            dta_tool = DTATool(
+                SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+            )
             result = dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
             return [types.TextContent(type="text", text=str(result))]
         except Exception as e:
@@ -207,7 +211,9 @@ async def handle_call_tool(
         max_index_size_mb = arguments.get("max_index_size_mb", 10000)
 
         try:
-            dta_tool = DTATool(get_connection())
+            dta_tool = DTATool(
+                SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+            )
             result = dta_tool.analyze_queries(
                 queries=queries, max_index_size_mb=max_index_size_mb
             )
@@ -224,7 +230,9 @@ async def handle_call_tool(
         max_index_size_mb = arguments.get("max_index_size_mb", 10000)
 
         try:
-            dta_tool = DTATool(get_connection())
+            dta_tool = DTATool(
+                SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+            )
             result = dta_tool.analyze_single_query(
                 query=query, max_index_size_mb=max_index_size_mb
             )

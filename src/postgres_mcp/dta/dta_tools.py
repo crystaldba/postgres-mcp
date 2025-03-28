@@ -15,21 +15,19 @@ logger = logging.getLogger(__name__)
 class DTATool:
     """Database Tuning Advisor tool for recommending indexes."""
 
-    def __init__(self, conn):
+    def __init__(self, sql_driver: SqlDriver):
         """
         Initialize the DTA tool.
 
         Args:
             conn: The PostgreSQL connection object
         """
-        self.conn = conn
-        self.sql_driver = SqlDriver(conn=conn)
+        self.sql_driver = sql_driver
         self.dta = None
 
     def do_init(self):
         """Initialize the DatabaseTuningAdvisor if not already initialized."""
-        if self.dta is None:
-            self.dta = DatabaseTuningAdvisor(self.sql_driver)
+        self.dta = DatabaseTuningAdvisor(self.sql_driver)
 
     def _create_recommendations_response(self, session: DTASession) -> Dict[str, Any]:
         """
