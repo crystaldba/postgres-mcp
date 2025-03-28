@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.13"
 
 [[package]]
@@ -37,7 +38,7 @@ name = "click"
 version = "8.1.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "platform_system == 'Windows'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b9/2e/0090cbf739cee7d23781ad4b89a9894a41538e4fcf4c31dcdd705b78eb8b/click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a", size = 226593 }
 wheels = [
@@ -100,6 +101,15 @@ wheels = [
 ]
 
 [[package]]
+name = "humanize"
+version = "4.12.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/84/ae8e64a6ffe3291105e9688f4e28fa65eba7924e0fe6053d85ca00556385/humanize-4.12.2.tar.gz", hash = "sha256:ce0715740e9caacc982bb89098182cf8ded3552693a433311c6a4ce6f4e12a2c", size = 80871 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/55/c7/6f89082f619c76165feb633446bd0fee32b0e0cbad00d22480e5aea26ade/humanize-4.12.2-py3-none-any.whl", hash = "sha256:e4e44dced598b7e03487f3b1c6fd5b1146c30ea55a110e71d5d4bca3e094259e", size = 128305 },
+]
+
+[[package]]
 name = "idna"
 version = "3.10"
 source = { registry = "https://pypi.org/simple" }
@@ -155,18 +165,43 @@ wheels = [
 ]
 
 [[package]]
+name = "pglast"
+version = "7.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "setuptools" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/39/4e/f0aac6a336fb52ab37485c5ce530880a78179e55948bb684945de6a22bd8/pglast-7.2.tar.gz", hash = "sha256:c0e9619a58af9323bbf51af8b5472638f1aba3916665f0b6540e4638783172be", size = 3366690 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/ff/cda3dc03f469c3fa56bc5d14b6420c3ac18bc0a935c9abcb162604fddd9a/pglast-7.2-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:c8c6ce2d315a9d69d2a7cb0b11379ff450c7b29c44f5c488767f6de875dca907", size = 1140994 },
+    { url = "https://files.pythonhosted.org/packages/dc/f0/90ca159feaf5da2a74372b011084fb1cdb80ca1575f6c2ac36cec2408db8/pglast-7.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:cc8fdb2c26b48b8ea9fe14a8e9195988e926f8cc5232833605eff91625e4db0e", size = 1079884 },
+    { url = "https://files.pythonhosted.org/packages/b9/79/a23b9cf526c82c88b1009e87363ddcb73ea1f9765526040747694850f5de/pglast-7.2-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f343d59ae674282a627140c3a9794dc86bc2dd43b76fd1202a8915f9cd38bdfd", size = 5552258 },
+    { url = "https://files.pythonhosted.org/packages/1e/d4/4e088c256f07231b38a9617acd7a29daeac08ec4534b803b801ff3a82f91/pglast-7.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:18d228416c7a56ec0f73f35ee5a0a7ce7a58ec0bcaecbe0fe6f1bc388a1401af", size = 5644806 },
+    { url = "https://files.pythonhosted.org/packages/e9/77/b683afc004a5666c8e31d2a8dd27e57ebc227ccefeb61204fc6599d74f67/pglast-7.2-cp313-cp313-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:fad462b577021aa91bdfcf16ca32922fed0347ac05ea0de4235b9554a2c7d846", size = 5417808 },
+    { url = "https://files.pythonhosted.org/packages/55/f8/7bd061ec3eb5d43c752daa60fe90b3c6b3ce1698701529756ba4b89f23bb/pglast-7.2-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:e15f46038e9cd579ffb1ac993cfd961aabcb7d9c61e860c75f6dee4fbabf97fb", size = 5300625 },
+    { url = "https://files.pythonhosted.org/packages/5d/e1/9a7bfe9f9b6953324dd587135ec2c63150c71f4b38fca220a8c4d7d65951/pglast-7.2-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:b536d7af6a8f820806b6799e0034844d3760c02d9a8764f8453906618ce151bf", size = 5257865 },
+    { url = "https://files.pythonhosted.org/packages/39/77/70ebfe9cbfc92b609f0b301d5cc3432897acf8f932d6f453f339e00018b0/pglast-7.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:ae0e93d74e9779d2a02efa2eee84440736cc367b9d695c1e5735df92540ca4fe", size = 5440924 },
+    { url = "https://files.pythonhosted.org/packages/ae/1e/6ffb94b259af4cd60fee589c4b68cea2e6401df15f1ff3cd1950e339d71e/pglast-7.2-cp313-cp313-win32.whl", hash = "sha256:b1b940a09b884f8af95e29779d8fd812df0a5e5d5d885f9a4a91105e2395c2e0", size = 1009452 },
+    { url = "https://files.pythonhosted.org/packages/c5/d5/7c04fb7a2ebbb03b90391c58f876587cbe7073dfb769d0612fb348e37518/pglast-7.2-cp313-cp313-win_amd64.whl", hash = "sha256:56443a3416f83c6eb587d3bc2715e1c2d35e2aa751957a07aa54c0600280ac07", size = 1050476 },
+]
+
+[[package]]
 name = "postgres-mcp"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "humanize" },
     { name = "mcp", extra = ["cli"] },
+    { name = "pglast" },
     { name = "psycopg2-binary" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "humanize", specifier = ">=4.8.0" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.5.0" },
-    { name = "psycopg2-binary", specifier = ">=2.9.9" },
+    { name = "pglast", specifier = "==7.2.0" },
+    { name = "psycopg2-binary", specifier = ">=2.9.10" },
 ]
 
 [[package]]
@@ -269,6 +304,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ab/3a/0316b28d0761c6734d6bc14e770d85506c986c85ffb239e688eeaab2c2bc/rich-13.9.4.tar.gz", hash = "sha256:439594978a49a09530cff7ebc4b5c7103ef57baf48d5ea3184f21d9a2befa098", size = 223149 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/19/71/39c7c0d87f8d4e6c020a393182060eaefeeae6c01dab6a84ec346f2567df/rich-13.9.4-py3-none-any.whl", hash = "sha256:6049d5e6ec054bf2779ab3358186963bac2ea89175919d699e378b99738c2a90", size = 242424 },
+]
+
+[[package]]
+name = "setuptools"
+version = "78.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a9/5a/0db4da3bc908df06e5efae42b44e75c81dd52716e10192ff36d0c1c8e379/setuptools-78.1.0.tar.gz", hash = "sha256:18fd474d4a82a5f83dac888df697af65afa82dec7323d09c3e37d1f14288da54", size = 1367827 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/21/f43f0a1fa8b06b32812e0975981f4677d28e0f3271601dc88ac5a5b83220/setuptools-78.1.0-py3-none-any.whl", hash = "sha256:3e386e96793c8702ae83d17b853fb93d3e09ef82ec62722e61da5cd22376dcd8", size = 1256108 },
 ]
 
 [[package]]

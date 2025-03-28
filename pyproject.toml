@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "mcp[cli]>=1.5.0",
-    "psycopg2-binary>=2.9.9",
+    "psycopg2-binary>=2.9.10",
+    "humanize>=4.8.0",
+    "pglast==7.2.0",
 ]
 [[project.authors]]
 name = "Johann Schleier-Smith"
@@ -18,3 +20,7 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 postgres-mcp = "postgres_mcp:main"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
