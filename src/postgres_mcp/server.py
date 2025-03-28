@@ -11,17 +11,21 @@ from mcp.server import NotificationOptions, Server
 from pydantic import AnyUrl
 import mcp.server.stdio
 
+from .dta.dta_tools import DTATool
+
 server = Server("postgres-mcp")
 
 # Global connection pool
 conn = None
 SCHEMA_PATH = "schema"
 
+
 def get_connection():
     global conn
     if not conn:
         raise ValueError("Database connection not initialized")
     return conn
+
 
 @server.list_resources()
 async def handle_list_resources() -> list[types.Resource]:
@@ -50,6 +54,7 @@ async def handle_list_resources() -> list[types.Resource]:
         print(f"Error listing resources: {e}", file=sys.stderr)
         return []
 
+
 @server.read_resource()
 async def handle_read_resource(uri: AnyUrl) -> str:
     """Read schema information for a specific table."""
@@ -70,13 +75,16 @@ async def handle_read_resource(uri: AnyUrl) -> str:
                 FROM information_schema.columns
                 WHERE table_name = %s
                 """,
-                [table_name]
+                [table_name],
             )
             columns = cursor.fetchall()
-            return str([{"column_name": col[0], "data_type": col[1]} for col in columns])
+            return str(
+                [{"column_name": col[0], "data_type": col[1]} for col in columns]
+            )
     except Exception as e:
         print(f"Error reading resource: {e}", file=sys.stderr)
         raise
+
 
 @server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
@@ -92,45 +100,146 @@ async def handle_list_tools() -> list[types.Tool]:
                 },
                 "required": ["sql"],
             },
-        )
+        ),
+        types.Tool(
+            name="analyze_workload",
+            description="Analyze frequently executed queries in the database and recommend optimal indexes",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "max_index_size_mb": {
+                        "type": "integer",
+                        "description": "Maximum total size for recommended indexes in MB",
+                        "default": 10000,
+                    },
+                },
+                "required": [],
+            },
+        ),
+        types.Tool(
+            name="analyze_queries",
+            description="Analyze a list of SQL queries and recommend optimal indexes",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "queries": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Two or more SQL queries to analyze",
+                    },
+                    "max_index_size_mb": {
+                        "type": "integer",
+                        "description": "Maximum total size for recommended indexes in MB",
+                        "default": 10000,
+                    },
+                },
+                "required": ["queries"],
+            },
+        ),
+        types.Tool(
+            name="analyze_single_query",
+            description="Analyze a single SQL query and recommend optimal indexes",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "SQL query to analyze",
+                    },
+                    "max_index_size_mb": {
+                        "type": "integer",
+                        "description": "Maximum total size for recommended indexes in MB",
+                        "default": 10000,
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
     ]
+
 
 @server.call_tool()
 async def handle_call_tool(
     name: str, arguments: dict | None
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     """Handle tool execution requests."""
-    if name != "query":
+    if name == "query":
+        if not arguments or "sql" not in arguments:
+            raise ValueError("Missing SQL query")
+
+        sql = arguments["sql"]
+
+        try:
+            with get_connection().cursor(cursor_factory=RealDictCursor) as cursor:
+                # Start read-only transaction
+                cursor.execute("BEGIN TRANSACTION READ ONLY")
+                try:
+                    cursor.execute(sql)
+                    rows = cursor.fetchall()
+                    return [types.TextContent(type="text", text=str(list(rows)))]
+                finally:
+                    cursor.execute("ROLLBACK")
+        except Exception as e:
+            print(f"Error executing query: {e}", file=sys.stderr)
+            raise
+
+    elif name == "analyze_workload":
+        max_index_size_mb = (
+            arguments.get("max_index_size_mb", 10000) if arguments else 10000
+        )
+
+        try:
+            dta_tool = DTATool(get_connection())
+            result = dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
+            return [types.TextContent(type="text", text=str(result))]
+        except Exception as e:
+            print(f"Error analyzing workload: {e}", file=sys.stderr)
+            raise
+
+    elif name == "analyze_queries":
+        if not arguments or "queries" not in arguments:
+            raise ValueError("Missing queries")
+
+        queries = arguments["queries"]
+        max_index_size_mb = arguments.get("max_index_size_mb", 10000)
+
+        try:
+            dta_tool = DTATool(get_connection())
+            result = dta_tool.analyze_queries(
+                queries=queries, max_index_size_mb=max_index_size_mb
+            )
+            return [types.TextContent(type="text", text=str(result))]
+        except Exception as e:
+            print(f"Error analyzing queries: {e}", file=sys.stderr)
+            raise
+
+    elif name == "analyze_single_query":
+        if not arguments or "query" not in arguments:
+            raise ValueError("Missing query")
+
+        query = arguments["query"]
+        max_index_size_mb = arguments.get("max_index_size_mb", 10000)
+
+        try:
+            dta_tool = DTATool(get_connection())
+            result = dta_tool.analyze_single_query(
+                query=query, max_index_size_mb=max_index_size_mb
+            )
+            return [types.TextContent(type="text", text=str(result))]
+        except Exception as e:
+            print(f"Error analyzing query: {e}", file=sys.stderr)
+            raise
+
+    else:
         raise ValueError(f"Unknown tool: {name}")
 
-    if not arguments or "sql" not in arguments:
-        raise ValueError("Missing SQL query")
-
-    sql = arguments["sql"]
-
-    try:
-        with get_connection().cursor(cursor_factory=RealDictCursor) as cursor:
-            # Start read-only transaction
-            cursor.execute("BEGIN TRANSACTION READ ONLY")
-            try:
-                cursor.execute(sql)
-                rows = cursor.fetchall()
-                return [
-                    types.TextContent(
-                        type="text",
-                        text=str(list(rows))
-                    )
-                ]
-            finally:
-                cursor.execute("ROLLBACK")
-    except Exception as e:
-        print(f"Error executing query: {e}", file=sys.stderr)
-        raise
 
 async def main():
     # Get database URL from command line
     if len(sys.argv) != 2:
-        print("Please provide a database URL as a command-line argument", file=sys.stderr)
+        print(
+            "Please provide a database URL as a command-line argument", file=sys.stderr
+        )
         sys.exit(1)
 
     database_url = sys.argv[1]
@@ -161,6 +270,7 @@ async def main():
         finally:
             if conn:
                 conn.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
