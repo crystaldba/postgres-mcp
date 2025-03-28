@@ -23,7 +23,7 @@ class DTATool:
             conn: The PostgreSQL connection object
         """
         self.conn = conn
-        self.sql_driver = SqlDriver(conn)
+        self.sql_driver = SqlDriver(conn=conn)
         self.dta = None
 
     def do_init(self):
