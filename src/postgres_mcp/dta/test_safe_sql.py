@@ -30,7 +30,9 @@ def test_select_statement(safe_driver, mock_sql_driver):
 def test_update_statement(safe_driver):
     """Test that UPDATE statements are blocked"""
     query = "UPDATE users SET status = 'active' WHERE id = 1"
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -56,7 +58,9 @@ def test_show_variable(safe_driver, mock_sql_driver):
 def test_set_variable(safe_driver):
     """Test that SET statements are blocked"""
     query = "SET search_path TO public"
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -77,14 +81,18 @@ def test_select_current_user(safe_driver, mock_sql_driver):
 def test_drop_table(safe_driver):
     """Test that DROP TABLE statements are blocked"""
     query = "DROP TABLE users"
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
 def test_delete_from_table(safe_driver):
     """Test that DELETE FROM statements are blocked"""
     query = "DELETE FROM users WHERE status = 'inactive'"
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -106,7 +114,9 @@ def test_select_with_malicious_comment(safe_driver):
     query = """
     SELECT * FROM users; DROP TABLE users;
     """
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -161,7 +171,9 @@ def test_select_with_commit(safe_driver):
     COMMIT;
     SELECT name FROM users;
     """
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -194,7 +206,9 @@ def test_begin_transaction_blocked(safe_driver):
     SELECT id, name FROM users;
     """
     # Note the commit is intentionally not included in the query
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -222,7 +236,9 @@ def test_create_index_blocked(safe_driver):
     query = """
     CREATE INDEX idx_user_email ON users(email);
     """
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -231,7 +247,9 @@ def test_drop_index_blocked(safe_driver):
     query = """
     DROP INDEX idx_user_email;
     """
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -244,7 +262,9 @@ def test_create_table_blocked(safe_driver):
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -254,7 +274,9 @@ def test_create_table_as_blocked(safe_driver):
     CREATE TABLE user_backup AS
     SELECT * FROM users;
     """
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -272,7 +294,9 @@ def test_drop_extension_blocked(safe_driver):
     query = """
     DROP EXTENSION pg_stat_statements;
     """
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
 
 
@@ -352,7 +376,10 @@ def test_session_info_functions(safe_driver, mock_sql_driver):
 
 def test_blocking_pids_functions(safe_driver, mock_sql_driver):
     """Test that blocking PIDs related functions are allowed"""
-    queries = ["SELECT pg_blocking_pids(1234)", "SELECT pg_safe_snapshot_blocking_pids(1234)"]
+    queries = [
+        "SELECT pg_blocking_pids(1234)",
+        "SELECT pg_safe_snapshot_blocking_pids(1234)",
+    ]
 
     for query in queries:
         safe_driver.execute_query(query)
@@ -899,10 +926,18 @@ def test_sql_driver_parameter_format(safe_driver, mock_sql_driver):
     min_avg_time = 5.0
     limit = 100
 
-    formatted_query = SQL(query_template).format(LiteralParam(min_calls), LiteralParam(min_avg_time), LiteralParam(limit)).as_string({})  # type: ignore
+    formatted_query = (
+        SQL(query_template)
+        .format(
+            LiteralParam(min_calls), LiteralParam(min_avg_time), LiteralParam(limit)
+        )
+        .as_string({})  # type: ignore
+    )  # type: ignore
 
     safe_driver.execute_query(formatted_query)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + formatted_query)
+    mock_sql_driver.execute_query.assert_called_with(
+        "/* crystaldba */ " + formatted_query
+    )
 
 
 def test_multiple_statements_with_semicolon(safe_driver):
@@ -911,5 +946,7 @@ def test_multiple_statements_with_semicolon(safe_driver):
     SELECT id, name FROM users;
     DROP TABLE important_data;
     """
-    with pytest.raises(ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"):
+    with pytest.raises(
+        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+    ):
         safe_driver.execute_query(query)
