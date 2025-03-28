@@ -175,15 +175,11 @@ async def handle_call_tool(
         sql = arguments["sql"]
 
         try:
-            with get_connection().cursor(cursor_factory=RealDictCursor) as cursor:
-                # Start read-only transaction
-                cursor.execute("BEGIN TRANSACTION READ ONLY")
-                try:
-                    cursor.execute(sql)
-                    rows = cursor.fetchall()
-                    return [types.TextContent(type="text", text=str(list(rows)))]
-                finally:
-                    cursor.execute("ROLLBACK")
+            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+            rows = sql_driver.execute_query(sql)
+            if rows is None:
+                return [types.TextContent(type="text", text="No results")]
+            return [types.TextContent(type="text", text=str(list([r.cells for r in rows])))]
         except Exception as e:
             print(f"Error executing query: {e}", file=sys.stderr)
             raise
