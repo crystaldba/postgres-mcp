@@ -61,6 +61,9 @@ async def handle_read_resource(uri: AnyUrl) -> str:
     if uri.scheme != "postgres":
         raise ValueError(f"Unsupported URI scheme: {uri.scheme}")
 
+    if not uri.path:
+        raise ValueError("Invalid resource URI")
+
     path_parts = uri.path.strip("/").split("/")
     if len(path_parts) != 2 or path_parts[1] != SCHEMA_PATH:
         raise ValueError("Invalid resource URI")
