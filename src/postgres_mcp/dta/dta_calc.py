@@ -9,7 +9,6 @@ from typing import Any
 from typing import Iterable
 
 import humanize
-from griptape.drivers.sql.sql_driver import BaseSqlDriver
 from pglast import parse_sql
 from pglast.ast import A_Expr
 from pglast.ast import ColumnRef
@@ -23,6 +22,7 @@ from pglast.visitors import Visitor
 
 from .artifacts import calculate_improvement_multiple
 from .safe_sql import SafeSqlDriver
+from .sql_driver import SqlDriver
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ class DTASession:
 class DatabaseTuningAdvisor:
     def __init__(
         self,
-        sql_driver: BaseSqlDriver,
+        sql_driver: SqlDriver,
         budget_mb: int = -1,  # no limit by default
         max_runtime_seconds: int = 30,  # 30 seconds
         max_index_width: int = 3,
@@ -1987,7 +1987,7 @@ class DatabaseTuningAdvisor:
 
     @staticmethod
     def generate_explain_plan_with_hypothetical_indexes(
-        sql_driver: BaseSqlDriver,
+        sql_driver: SqlDriver,
         query_text: str,
         indexes: frozenset[IndexConfig],
         dta=None,

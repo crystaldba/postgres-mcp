@@ -7,7 +7,7 @@ import psycopg2.extensions as ext
 from psycopg2.sql import SQL
 from psycopg2.sql import Composable
 
-from griptape.drivers.sql import BaseSqlDriver
+from .sql_driver import SqlDriver
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,8 @@ class SafeSqlDriver:
 
     @staticmethod
     def execute_param_query(
-        sql_driver: BaseSqlDriver, query: str, params: list[Any] | None = None
-    ) -> list[BaseSqlDriver.RowResult] | None:
+        sql_driver: SqlDriver, query: str, params: list[Any] | None = None
+    ):
         """Execute a query after validating it is safe"""
         if params:
             query_params = SafeSqlDriver.param_sql_to_query(query, params)

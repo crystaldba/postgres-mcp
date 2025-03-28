@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from .artifacts import ExplainPlanArtifact
 from .artifacts import calculate_improvement_multiple
 from .dta_calc import DatabaseTuningAdvisor, DTASession, IndexConfig
+from .sql_driver import SqlDriver
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,13 @@ class DTATool:
             conn: The PostgreSQL connection object
         """
         self.conn = conn
+        self.sql_driver = SqlDriver(conn)
         self.dta = None
 
     def do_init(self):
         """Initialize the DatabaseTuningAdvisor if not already initialized."""
         if self.dta is None:
-            self.dta = DatabaseTuningAdvisor(self.conn)
+            self.dta = DatabaseTuningAdvisor(self.sql_driver)
 
     def _create_recommendations_response(self, session: DTASession) -> Dict[str, Any]:
         """
