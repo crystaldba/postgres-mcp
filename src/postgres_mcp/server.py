@@ -22,7 +22,6 @@ conn = None
 SCHEMA_PATH = "schema"
 EXTENSIONS_PATH = "_extensions"
 PG_STAT_STATEMENTS = "pg_stat_statements"
-READ_ONLY_TX = "READ ONLY"
 
 
 def get_connection():
