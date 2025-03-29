@@ -3,13 +3,12 @@ import os
 import sys
 from urllib.parse import urlparse
 
-from psycopg2.extras import RealDictCursor
-import psycopg2
-from mcp.server.models import InitializationOptions
-import mcp.types as types
 from mcp.server import NotificationOptions, Server
-from pydantic import AnyUrl
+from mcp.server.models import InitializationOptions
 import mcp.server.stdio
+import mcp.types as types
+import psycopg2
+from pydantic import AnyUrl
 
 from .dta.dta_tools import DTATool
 from .dta.safe_sql import SafeSqlDriver
