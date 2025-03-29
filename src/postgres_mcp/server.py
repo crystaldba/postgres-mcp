@@ -238,7 +238,9 @@ async def handle_call_tool(
             rows = sql_driver.execute_query(sql)
             if rows is None:
                 return [types.TextContent(type="text", text="No results")]
-            return [types.TextContent(type="text", text=str(list([r.cells for r in rows])))]
+            return [
+                types.TextContent(type="text", text=str(list([r.cells for r in rows])))
+            ]
         except Exception as e:
             print(f"Error executing query: {e}", file=sys.stderr)
             raise
@@ -302,7 +304,9 @@ async def handle_call_tool(
                 # Use read-only transaction for safety, although not strictly necessary for pg_extension
                 cursor.execute("BEGIN TRANSACTION READ ONLY;")
                 try:
-                    cursor.execute("SELECT extname, extversion FROM pg_extension ORDER BY extname;")
+                    cursor.execute(
+                        "SELECT extname, extversion FROM pg_extension ORDER BY extname;"
+                    )
                     extensions = cursor.fetchall()
                     result_text = "Installed PostgreSQL Extensions:\n"
                     result_text += str([dict(ext) for ext in extensions])
@@ -318,8 +322,13 @@ async def handle_call_tool(
             with get_connection().cursor() as cursor:
                 # Use IF NOT EXISTS to avoid errors if already installed
                 cursor.execute(f"CREATE EXTENSION IF NOT EXISTS {PG_STAT_STATEMENTS};")
-                get_connection().commit() # Important: Commit the change
-                return [types.TextContent(type="text", text=f"Successfully ensured '{PG_STAT_STATEMENTS}' extension is installed.")]
+                get_connection().commit()  # Important: Commit the change
+                return [
+                    types.TextContent(
+                        type="text",
+                        text=f"Successfully ensured '{PG_STAT_STATEMENTS}' extension is installed.",
+                    )
+                ]
         except Exception as e:
             get_connection().rollback()
             print(f"Error installing {PG_STAT_STATEMENTS}: {e}", file=sys.stderr)
@@ -332,7 +341,10 @@ async def handle_call_tool(
 
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("SELECT 1 FROM pg_extension WHERE extname = %s", (PG_STAT_STATEMENTS,))
+                cursor.execute(
+                    "SELECT 1 FROM pg_extension WHERE extname = %s",
+                    (PG_STAT_STATEMENTS,),
+                )
                 extension_exists = cursor.fetchone()
 
             if extension_exists:
@@ -369,9 +381,10 @@ async def handle_call_tool(
 
         except Exception as e:
             conn.rollback()
-            print(f"Error checking or querying {PG_STAT_STATEMENTS}: {e}", file=sys.stderr)
+            print(
+                f"Error checking or querying {PG_STAT_STATEMENTS}: {e}", file=sys.stderr
+            )
             raise
-
 
     else:
         raise ValueError(f"Unknown tool: {name}")
