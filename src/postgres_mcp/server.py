@@ -83,10 +83,12 @@ async def handle_read_resource(uri: AnyUrl) -> str:
 
     if len(path_parts) == 1 and path_parts[0] == EXTENSIONS_PATH:
         try:
-            with get_connection().cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("SELECT extname, extversion FROM pg_extension")
-                extensions = cursor.fetchall()
-                return str([dict(ext) for ext in extensions])
+            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+            rows = sql_driver.execute_query(
+                "SELECT extname, extversion FROM pg_extension"
+            )
+            extensions = [row.cells for row in rows] if rows else []
+            return str(extensions)
         except Exception as e:
             print(f"Error reading extensions resource: {e}", file=sys.stderr)
             raise
@@ -95,19 +97,18 @@ async def handle_read_resource(uri: AnyUrl) -> str:
         table_name = path_parts[0]
 
         try:
-            with get_connection().cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT column_name, data_type
-                    FROM information_schema.columns
-                    WHERE table_name = %s
-                    """,
-                    [table_name],
-                )
-                columns = cursor.fetchall()
-                return str(
-                    [{"column_name": col[0], "data_type": col[1]} for col in columns]
-                )
+            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+            rows = SafeSqlDriver.execute_param_query(
+                sql_driver,
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_name = {}
+                """,
+                [table_name],
+            )
+            columns = [row.cells for row in rows] if rows else []
+            return str(columns)
         except Exception as e:
             print(f"Error reading resource: {e}", file=sys.stderr)
             raise
@@ -298,75 +299,86 @@ async def handle_call_tool(
 
     elif name == "list_installed_extensions":
         try:
-            with get_connection().cursor(cursor_factory=RealDictCursor) as cursor:
-                # Use read-only transaction for safety, although not strictly necessary for pg_extension
-                cursor.execute("BEGIN TRANSACTION READ ONLY;")
-                try:
-                    cursor.execute(
-                        "SELECT extname, extversion FROM pg_extension ORDER BY extname;"
-                    )
-                    extensions = cursor.fetchall()
-                    result_text = "Installed PostgreSQL Extensions:\n"
-                    result_text += str([dict(ext) for ext in extensions])
-                    return [types.TextContent(type="text", text=result_text)]
-                finally:
-                    cursor.execute("ROLLBACK;")
+            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+            rows = sql_driver.execute_query(
+                "SELECT extname, extversion FROM pg_extension ORDER BY extname;"
+            )
+            extensions = [row.cells for row in rows] if rows else []
+            result_text = "Installed PostgreSQL Extensions:\n"
+            result_text += str(extensions)
+            return [types.TextContent(type="text", text=result_text)]
         except Exception as e:
-            get_connection().rollback()
             print(f"Error listing extensions: {e}", file=sys.stderr)
             raise
     elif name == "install_extension_pg_stat_statements":
         try:
-            with get_connection().cursor() as cursor:
-                # Use IF NOT EXISTS to avoid errors if already installed
-                cursor.execute(f"CREATE EXTENSION IF NOT EXISTS {PG_STAT_STATEMENTS};")
-                get_connection().commit()  # Important: Commit the change
-                return [
-                    types.TextContent(
-                        type="text",
-                        text=f"Successfully ensured '{PG_STAT_STATEMENTS}' extension is installed.",
-                    )
-                ]
+            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+            sql_driver.execute_query(
+                f"CREATE EXTENSION IF NOT EXISTS {PG_STAT_STATEMENTS};",
+                force_readonly=False,
+            )
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Successfully ensured '{PG_STAT_STATEMENTS}' extension is installed.",
+                )
+            ]
         except Exception as e:
-            get_connection().rollback()
             print(f"Error installing {PG_STAT_STATEMENTS}: {e}", file=sys.stderr)
             error_message = f"Error installing '{PG_STAT_STATEMENTS}': {e}. This might be due to insufficient permissions. Superuser privileges are often required to create extensions."
             return [types.TextContent(type="text", text=error_message)]
 
     elif name == "top_slow_queries":
         limit = arguments.get("limit", 10) if arguments else 10
-        conn = get_connection()
+        sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
 
         try:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(
-                    "SELECT 1 FROM pg_extension WHERE extname = %s",
-                    (PG_STAT_STATEMENTS,),
-                )
-                extension_exists = cursor.fetchone()
+            rows = SafeSqlDriver.execute_param_query(
+                sql_driver,
+                "SELECT 1 FROM pg_extension WHERE extname = {}",
+                [PG_STAT_STATEMENTS],
+            )
+            extension_exists = len(rows) > 0 if rows else False
 
             if extension_exists:
-                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                    cursor.execute("BEGIN TRANSACTION READ ONLY;")
-                    try:
-                        query = """
-                            SELECT
-                                query,
-                                calls,
-                                total_exec_time,
-                                mean_exec_time,
-                                rows
-                            FROM pg_stat_statements
-                            ORDER BY total_exec_time DESC
-                            LIMIT %s;
-                        """
-                        cursor.execute(query, (limit,))
-                        slow_queries = cursor.fetchall()
-                        result_text = f"Top {len(slow_queries)} slowest queries by total execution time:\n"
-                        result_text += str([dict(q) for q in slow_queries])
-                        return [types.TextContent(type="text", text=result_text)]
-                    finally:
-                        cursor.execute("ROLLBACK;")
+                query = """
+                    SELECT
+                        query,
+                        calls,
+                        total_exec_time,
+                        mean_exec_time,
+                        rows
+                    FROM pg_stat_statements
+                    ORDER BY total_exec_time DESC
+                    LIMIT {};
+                """
+                slow_query_rows = SafeSqlDriver.execute_param_query(
+                    sql_driver,
+                    query,
+                    [limit],
+                )
+                slow_queries = (
+                    [
+                        dict(
+                            zip(
+                                [
+                                    "query",
+                                    "calls",
+                                    "total_exec_time",
+                                    "mean_exec_time",
+                                    "rows",
+                                ],
+                                row.cells,
+                            )
+                        )
+                        for row in slow_query_rows
+                    ]
+                    if slow_query_rows
+                    else []
+                )
+                result_text = f"Top {len(slow_queries)} slowest queries by total execution time:\n"
+                result_text += str(slow_queries)
+                return [types.TextContent(type="text", text=result_text)]
             else:
                 message = (
                     f"The '{PG_STAT_STATEMENTS}' extension is required to report slow queries, but it is not currently installed.\n\n"
@@ -378,7 +390,6 @@ async def handle_call_tool(
                 return [types.TextContent(type="text", text=message)]
 
         except Exception as e:
-            conn.rollback()
             print(
                 f"Error checking or querying {PG_STAT_STATEMENTS}: {e}", file=sys.stderr
             )
