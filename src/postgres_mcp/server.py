@@ -3,6 +3,7 @@ import os
 import sys
 from urllib.parse import urlparse
 
+from psycopg2.extras import RealDictCursor
 import psycopg2
 from mcp.server.models import InitializationOptions
 import mcp.types as types
