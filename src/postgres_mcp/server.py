@@ -358,23 +358,7 @@ async def handle_call_tool(
                     [limit],
                 )
                 slow_queries = (
-                    [
-                        dict(
-                            zip(
-                                [
-                                    "query",
-                                    "calls",
-                                    "total_exec_time",
-                                    "mean_exec_time",
-                                    "rows",
-                                ],
-                                row.cells,
-                            )
-                        )
-                        for row in slow_query_rows
-                    ]
-                    if slow_query_rows
-                    else []
+                    [row.cells for row in slow_query_rows] if slow_query_rows else []
                 )
                 result_text = f"Top {len(slow_queries)} slowest queries by total execution time:\n"
                 result_text += str(slow_queries)
