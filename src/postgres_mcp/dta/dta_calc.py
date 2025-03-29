@@ -200,7 +200,6 @@ class DatabaseTuningAdvisor:
         self.max_index_width = max_index_width
         self.min_column_usage = min_column_usage
         self.seed_columns_count = seed_columns_count
-        self._setup_hypopg()
         self._analysis_start_time = 0.0
         self.pareto_alpha = pareto_alpha
         self.min_time_improvement = min_time_improvement
@@ -979,19 +978,6 @@ class DatabaseTuningAdvisor:
             [min_calls, min_avg_time_ms, limit],
         )
         return [dict(row.cells) for row in result] if result else []
-
-    def _setup_hypopg(self) -> None:
-        """Check that HypoPG extension is available."""
-        result = self.sql_driver.execute_query(
-            "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
-        )
-        if not result:
-            error_message = (
-                "The HypoPG extension is required but not installed. "
-                "Please install HypoPG before using the Database Tuning Advisor."
-            )
-            logger.error(error_message)
-            raise RuntimeError(error_message)
 
     def _check_time(self) -> bool:
         """Return True if we have exceeded max_runtime_seconds."""
