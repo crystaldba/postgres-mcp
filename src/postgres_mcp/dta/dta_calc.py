@@ -239,36 +239,14 @@ class DatabaseTuningAdvisor:
                 "SELECT 1 FROM pg_available_extensions WHERE name = 'hypopg'"
             )
             if available_result:
-                # Case 2: Available but not installed - try to install it
-                self.dta_trace(
-                    "HypoPG extension is available but not installed. Attempting to install it..."
+                # Case 2: Available but not installed
+                error_message = (
+                    "The HypoPG extension is available but not installed. "
+                    "Please connect to the database and run this statement: 'CREATE EXTENSION hypopg;'"
                 )
-                try:
-                    install_result = self.sql_driver.execute_query(
-                        "CREATE EXTENSION hypopg;", force_readonly=False
-                    )
-                    if install_result is not None or self.sql_driver.execute_query(
-                        "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
-                    ):
-                        self.dta_trace("Successfully installed HypoPG extension.")
-                    else:
-                        error_message = (
-                            "Failed to install the HypoPG extension. "
-                            "You may need higher database privileges. "
-                            "Please connect to your database as a superuser and run: CREATE EXTENSION hypopg;"
-                        )
-                        session.error = error_message
-                        logger.error(error_message, exc_info=True)
-                        return session
-                except Exception as e:
-                    error_message = (
-                        f"Failed to install the HypoPG extension: {e}. "
-                        "You may need higher database privileges. "
-                        "Please connect to your database as a superuser and run: CREATE EXTENSION hypopg;"
-                    )
-                    session.error = error_message
-                    logger.error(error_message, exc_info=True)
-                    return session
+                session.error = error_message
+                logger.error(error_message)
+                return session
             else:
                 # Case 3: Not available at all
                 error_message = (
