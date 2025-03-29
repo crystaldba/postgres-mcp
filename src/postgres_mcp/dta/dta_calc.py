@@ -241,8 +241,9 @@ class DatabaseTuningAdvisor:
             if available_result:
                 # Case 2: Available but not installed
                 error_message = (
-                    "The HypoPG extension is available but not installed. "
-                    "Please connect to the database and run this statement: 'CREATE EXTENSION hypopg;'"
+                    "The HypoPG extension is available but not installed.\n"
+                    "Please connect to the database and run this statement: 'CREATE EXTENSION hypopg;'\n"
+                    "You can also use the 'install_extension_hypopg' tool to install it if the user agrees and has the necessary permissions."
                 )
                 session.error = error_message
                 logger.error(error_message)
@@ -250,7 +251,7 @@ class DatabaseTuningAdvisor:
             else:
                 # Case 3: Not available at all
                 error_message = (
-                    "The HypoPG extension is not available on this PostgreSQL server. "
+                    "The HypoPG extension is not available on this PostgreSQL server.\n"
                     "To install HypoPG:\n"
                     "1. For Debian/Ubuntu: sudo apt-get install postgresql-hypopg\n"
                     "2. For RHEL/CentOS: sudo yum install postgresql-hypopg\n"

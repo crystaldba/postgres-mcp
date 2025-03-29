@@ -21,6 +21,7 @@ conn = None
 SCHEMA_PATH = "schema"
 EXTENSIONS_PATH = "_extensions"
 PG_STAT_STATEMENTS = "pg_stat_statements"
+HYPOPG_EXTENSION = "hypopg"
 
 
 def get_connection():
@@ -195,6 +196,15 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="install_extension_hypopg",
+            description=f"Installs the '{HYPOPG_EXTENSION}' extension if it's available but not already installed. This extension allows for the creation of temporary indexes that are not visible to other users. Requires appropriate database privileges (often superuser).",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        ),
+        types.Tool(
             name="install_extension_pg_stat_statements",
             description=f"Installs the '{PG_STAT_STATEMENTS}' extension if it's not already installed. This extension tracks execution statistics for all SQL statements executed in the database. Requires appropriate database privileges (often superuser).",
             inputSchema={
@@ -219,6 +229,27 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
     ]
+
+
+def install_extension(
+    extension_name: str,
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    try:
+        sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+        sql_driver.execute_query(
+            f"CREATE EXTENSION IF NOT EXISTS {extension_name};",
+            force_readonly=False,
+        )
+        return [
+            types.TextContent(
+                type="text",
+                text=f"Successfully ensured '{extension_name}' extension is installed.",
+            )
+        ]
+    except Exception as e:
+        print(f"Error installing {extension_name}: {e}", file=sys.stderr)
+        error_message = f"Error installing '{extension_name}': {e}. This might be due to insufficient permissions. Superuser privileges are often required to create extensions."
+        return [types.TextContent(type="text", text=error_message)]
 
 
 @server.call_tool()
@@ -310,24 +341,10 @@ async def handle_call_tool(
         except Exception as e:
             print(f"Error listing extensions: {e}", file=sys.stderr)
             raise
-    elif name == "install_extension_pg_stat_statements":
-        try:
-            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            sql_driver.execute_query(
-                f"CREATE EXTENSION IF NOT EXISTS {PG_STAT_STATEMENTS};",
-                force_readonly=False,
-            )
-            return [
-                types.TextContent(
-                    type="text",
-                    text=f"Successfully ensured '{PG_STAT_STATEMENTS}' extension is installed.",
-                )
-            ]
-        except Exception as e:
-            print(f"Error installing {PG_STAT_STATEMENTS}: {e}", file=sys.stderr)
-            error_message = f"Error installing '{PG_STAT_STATEMENTS}': {e}. This might be due to insufficient permissions. Superuser privileges are often required to create extensions."
-            return [types.TextContent(type="text", text=error_message)]
-
+    elif name == f"install_extension_{HYPOPG_EXTENSION}":
+        return install_extension(HYPOPG_EXTENSION)
+    elif name == f"install_extension_{PG_STAT_STATEMENTS}":
+        return install_extension(PG_STAT_STATEMENTS)
     elif name == "top_slow_queries":
         limit = arguments.get("limit", 10) if arguments else 10
         sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
