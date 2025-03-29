@@ -216,6 +216,51 @@ class DatabaseTuningAdvisor:
         # Add trace accumulator
         self._dta_traces: list[str] = []
 
+    def _run_prechecks(self, session: DTASession) -> DTASession | None:
+        """
+        Run pre-checks before analysis and return a session with error if any check fails.
+
+        Args:
+            session: The current DTASession object
+
+        Returns:
+            The DTASession with error information if any check fails, None if all checks pass
+        """
+        # Pre-check 1: Check if HypoPG extension is installed
+        result = self.sql_driver.execute_query(
+            "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
+        )
+        if not result:
+            error_message = (
+                "The HypoPG extension is required but not installed. "
+                "To install HypoPG:\n"
+                "1. For Debian/Ubuntu: sudo apt-get install postgresql-hypopg\n"
+                "2. For RHEL/CentOS: sudo yum install postgresql-hypopg\n"
+                "3. For MacOS with Homebrew: brew install hypopg\n"
+                "4. For other systems, build from source: git clone https://github.com/HypoPG/hypopg\n"
+                "Then connect to your database and run: CREATE EXTENSION hypopg;"
+            )
+            session.error = error_message
+            logger.error(error_message)
+            return session
+
+        # Pre-check 2: Check if ANALYZE has been run at least once
+        result = self.sql_driver.execute_query(
+            "SELECT s.last_analyze FROM pg_stat_user_tables s LIMIT 1"
+        )
+        if not result or all(row.cells.get("last_analyze") is None for row in result):
+            error_message = (
+                "Statistics are not up-to-date. The database needs to be analyzed first. "
+                "Please run 'ANALYZE;' on your database before using the tuning advisor. "
+                "Without up-to-date statistics, the index recommendations may be inaccurate."
+            )
+            session.error = error_message
+            logger.error(error_message)
+            return session
+
+        # All checks passed
+        return None
+
     def analyze_workload(
         self,
         workload: list[dict[str, Any]] | None = None,
@@ -264,6 +309,11 @@ class DatabaseTuningAdvisor:
         )
 
         try:
+            # Run pre-checks
+            precheck_result = self._run_prechecks(session)
+            if precheck_result:
+                return precheck_result
+
             # First try to use explicit workload if provided
             if workload:
                 logger.debug(f"Using explicit workload with {len(workload)} queries")
@@ -931,18 +981,17 @@ class DatabaseTuningAdvisor:
         return [dict(row.cells) for row in result] if result else []
 
     def _setup_hypopg(self) -> None:
-        """Ensure HypoPG extension is installed."""
+        """Check that HypoPG extension is available."""
         result = self.sql_driver.execute_query(
             "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
         )
         if not result:
-            try:
-                self.sql_driver.execute_query("CREATE EXTENSION IF NOT EXISTS hypopg")
-            except Exception as e:
-                logger.error(f"Failed to create HypoPG extension: {e}", exc_info=True)
-                raise RuntimeError(
-                    "HypoPG extension required but could not be installed"
-                ) from e
+            error_message = (
+                "The HypoPG extension is required but not installed. "
+                "Please install HypoPG before using the Database Tuning Advisor."
+            )
+            logger.error(error_message)
+            raise RuntimeError(error_message)
 
     def _check_time(self) -> bool:
         """Return True if we have exceeded max_runtime_seconds."""

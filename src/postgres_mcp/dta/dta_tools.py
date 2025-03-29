@@ -39,6 +39,11 @@ class DTATool:
         Returns:
             Dictionary with summary and recommendations
         """
+        if session.error:
+            return {
+                "error": session.error,
+                "_langfuse_trace": session.dta_traces,
+            }
         if not session.recommendations:
             return {
                 "recommendations": "No index recommendations found.",
