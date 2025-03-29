@@ -33,7 +33,9 @@ class SqlDriver:
         else:
             raise ValueError("Either conn or engine_url must be provided")
 
-    def execute_query(self, query: str) -> Optional[List[RowResult]]:
+    def execute_query(
+        self, query: str, force_readonly: bool = True
+    ) -> Optional[List[RowResult]]:
         """
         Execute a query and return results.
 
@@ -46,15 +48,19 @@ class SqlDriver:
         try:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 # Start read-only transaction
-                cursor.execute("BEGIN TRANSACTION READ ONLY")
+                if force_readonly:
+                    cursor.execute("BEGIN TRANSACTION READ ONLY")
                 try:
                     cursor.execute(query)
                     if cursor.description is None:  # No results (like DDL statements)
                         return None
                     rows = cursor.fetchall()
+                    if not force_readonly:
+                        cursor.execute("COMMIT")
                     return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
                 finally:
-                    cursor.execute("ROLLBACK")
+                    if force_readonly:
+                        cursor.execute("ROLLBACK")
         except Exception as e:
             logger.error(f"Error executing query: {e}")
             self.conn.rollback()

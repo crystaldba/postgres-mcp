@@ -245,7 +245,7 @@ class DatabaseTuningAdvisor:
                 )
                 try:
                     install_result = self.sql_driver.execute_query(
-                        "CREATE EXTENSION hypopg;"
+                        "CREATE EXTENSION hypopg;", force_readonly=False
                     )
                     if install_result is not None or self.sql_driver.execute_query(
                         "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"

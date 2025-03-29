@@ -708,10 +708,14 @@ class SafeSqlDriver(SqlDriver):
         except pglast.parser.ParseError as e:
             raise ValueError("Failed to parse SQL statement") from e
 
-    def execute_query(self, query: str) -> Optional[list[SqlDriver.RowResult]]:  # noqa: UP007
+    def execute_query(
+        self, query: str, force_readonly: bool = True
+    ) -> Optional[list[SqlDriver.RowResult]]:  # noqa: UP007
         """Execute a query after validating it is safe"""
         self._validate(query)
-        return self.sql_driver.execute_query(f"/* crystaldba */ {query}")
+        return self.sql_driver.execute_query(
+            f"/* crystaldba */ {query}", force_readonly=force_readonly
+        )
 
     @staticmethod
     def sql_to_query(sql: Composable) -> str:
