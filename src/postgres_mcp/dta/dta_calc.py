@@ -200,7 +200,6 @@ class DatabaseTuningAdvisor:
         self.max_index_width = max_index_width
         self.min_column_usage = min_column_usage
         self.seed_columns_count = seed_columns_count
-        self._setup_hypopg()
         self._analysis_start_time = 0.0
         self.pareto_alpha = pareto_alpha
         self.min_time_improvement = min_time_improvement
@@ -215,6 +214,92 @@ class DatabaseTuningAdvisor:
 
         # Add trace accumulator
         self._dta_traces: list[str] = []
+
+    def _run_prechecks(self, session: DTASession) -> DTASession | None:
+        """
+        Run pre-checks before analysis and return a session with error if any check fails.
+
+        Args:
+            session: The current DTASession object
+
+        Returns:
+            The DTASession with error information if any check fails, None if all checks pass
+        """
+        # Pre-check 1: Check HypoPG with more granular feedback
+        # First check if HypoPG is installed
+        installed_result = self.sql_driver.execute_query(
+            "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
+        )
+        if installed_result:
+            # Case 1: HypoPG is installed and ready to use
+            pass
+        else:
+            # Check if HypoPG is available but not installed
+            available_result = self.sql_driver.execute_query(
+                "SELECT 1 FROM pg_available_extensions WHERE name = 'hypopg'"
+            )
+            if available_result:
+                # Case 2: Available but not installed - try to install it
+                self.dta_trace(
+                    "HypoPG extension is available but not installed. Attempting to install it..."
+                )
+                try:
+                    install_result = self.sql_driver.execute_query(
+                        "CREATE EXTENSION hypopg;", force_readonly=False
+                    )
+                    if install_result is not None or self.sql_driver.execute_query(
+                        "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
+                    ):
+                        self.dta_trace("Successfully installed HypoPG extension.")
+                    else:
+                        error_message = (
+                            "Failed to install the HypoPG extension. "
+                            "You may need higher database privileges. "
+                            "Please connect to your database as a superuser and run: CREATE EXTENSION hypopg;"
+                        )
+                        session.error = error_message
+                        logger.error(error_message, exc_info=True)
+                        return session
+                except Exception as e:
+                    error_message = (
+                        f"Failed to install the HypoPG extension: {e}. "
+                        "You may need higher database privileges. "
+                        "Please connect to your database as a superuser and run: CREATE EXTENSION hypopg;"
+                    )
+                    session.error = error_message
+                    logger.error(error_message, exc_info=True)
+                    return session
+            else:
+                # Case 3: Not available at all
+                error_message = (
+                    "The HypoPG extension is not available on this PostgreSQL server. "
+                    "To install HypoPG:\n"
+                    "1. For Debian/Ubuntu: sudo apt-get install postgresql-hypopg\n"
+                    "2. For RHEL/CentOS: sudo yum install postgresql-hypopg\n"
+                    "3. For MacOS with Homebrew: brew install hypopg\n"
+                    "4. For other systems, build from source: git clone https://github.com/HypoPG/hypopg\n"
+                    "After installing the extension packages, connect to your database and run: CREATE EXTENSION hypopg;"
+                )
+                session.error = error_message
+                logger.error(error_message)
+                return session
+
+        # Pre-check 2: Check if ANALYZE has been run at least once
+        result = self.sql_driver.execute_query(
+            "SELECT s.last_analyze FROM pg_stat_user_tables s LIMIT 1"
+        )
+        if not result or all(row.cells.get("last_analyze") is None for row in result):
+            error_message = (
+                "Statistics are not up-to-date. The database needs to be analyzed first. "
+                "Please run 'ANALYZE;' on your database before using the tuning advisor. "
+                "Without up-to-date statistics, the index recommendations may be inaccurate."
+            )
+            session.error = error_message
+            logger.error(error_message)
+            return session
+
+        # All checks passed
+        return None
 
     def analyze_workload(
         self,
@@ -264,6 +349,11 @@ class DatabaseTuningAdvisor:
         )
 
         try:
+            # Run pre-checks
+            precheck_result = self._run_prechecks(session)
+            if precheck_result:
+                return precheck_result
+
             # First try to use explicit workload if provided
             if workload:
                 logger.debug(f"Using explicit workload with {len(workload)} queries")
@@ -929,20 +1019,6 @@ class DatabaseTuningAdvisor:
             [min_calls, min_avg_time_ms, limit],
         )
         return [dict(row.cells) for row in result] if result else []
-
-    def _setup_hypopg(self) -> None:
-        """Ensure HypoPG extension is installed."""
-        result = self.sql_driver.execute_query(
-            "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
-        )
-        if not result:
-            try:
-                self.sql_driver.execute_query("CREATE EXTENSION IF NOT EXISTS hypopg")
-            except Exception as e:
-                logger.error(f"Failed to create HypoPG extension: {e}", exc_info=True)
-                raise RuntimeError(
-                    "HypoPG extension required but could not be installed"
-                ) from e
 
     def _check_time(self) -> bool:
         """Return True if we have exceeded max_runtime_seconds."""

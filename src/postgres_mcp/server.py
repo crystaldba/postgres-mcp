@@ -4,7 +4,6 @@ import sys
 from urllib.parse import urlparse
 
 import psycopg2
-from psycopg2.extras import RealDictCursor
 from mcp.server.models import InitializationOptions
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
@@ -35,37 +34,37 @@ def get_connection():
 async def handle_list_resources() -> list[types.Resource]:
     """List available database tables as resources."""
     try:
-        with get_connection().cursor() as cursor:
-            cursor.execute(
-                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+        sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+        rows = sql_driver.execute_query(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+        )
+        tables = [row.cells["table_name"] for row in rows] if rows else []
+
+        base_url = urlparse(os.environ.get("DATABASE_URL", ""))
+        base_url = base_url._replace(scheme="postgres", password="")
+        base_url = base_url.geturl()
+
+        resources = [
+            types.Resource(
+                uri=AnyUrl(f"{base_url}/{table}/{SCHEMA_PATH}"),
+                name=f'"{table}" database schema',
+                description=f"Schema for table {table}",
+                mimeType="application/json",
             )
-            tables = cursor.fetchall()
+            for table in tables
+        ]
 
-            base_url = urlparse(os.environ.get("DATABASE_URL", ""))
-            base_url = base_url._replace(scheme="postgres", password="")
-            base_url = base_url.geturl()
-
-            resources = [
-                types.Resource(
-                    uri=AnyUrl(f"{base_url}/{table[0]}/{SCHEMA_PATH}"),
-                    name=f'"{table[0]}" database schema',
-                    description=f"Schema for table {table[0]}",
-                    mimeType="application/json",
-                )
-                for table in tables
-            ]
-
-            extensions_uri = AnyUrl(f"{base_url}/{EXTENSIONS_PATH}")
-            resources.append(
-                types.Resource(
-                    uri=extensions_uri,
-                    name="Installed PostgreSQL Extensions",
-                    description="List of installed PostgreSQL extensions in the current database.",
-                    mimeType="application/json",
-                )
+        extensions_uri = AnyUrl(f"{base_url}/{EXTENSIONS_PATH}")
+        resources.append(
+            types.Resource(
+                uri=extensions_uri,
+                name="Installed PostgreSQL Extensions",
+                description="List of installed PostgreSQL extensions in the current database.",
+                mimeType="application/json",
             )
+        )
 
-            return resources
+        return resources
     except Exception as e:
         print(f"Error listing resources: {e}", file=sys.stderr)
         return []
