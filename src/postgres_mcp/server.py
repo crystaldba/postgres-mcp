@@ -1,11 +1,9 @@
 import asyncio
-import os
 import sys
-from urllib.parse import urlparse
+import functools
+from typing import Any, Callable, TypeVar, Awaitable, List, Optional
 
-from mcp.server import NotificationOptions, Server
-from mcp.server.models import InitializationOptions
-import mcp.server.stdio
+from mcp.server.fastmcp import Context, FastMCP
 import mcp.types as types
 import psycopg2
 from pydantic import AnyUrl
@@ -14,373 +12,257 @@ from .dta.dta_tools import DTATool
 from .dta.safe_sql import SafeSqlDriver
 from .dta.sql_driver import SqlDriver
 
-server = Server("postgres-mcp")
+mcp = FastMCP("postgres-mcp")
 
-# Global connection pool
-conn = None
+# Constants
 SCHEMA_PATH = "schema"
 EXTENSIONS_PATH = "_extensions"
 PG_STAT_STATEMENTS = "pg_stat_statements"
 
-
-def get_connection():
-    global conn
-    if not conn:
-        raise ValueError("Database connection not initialized")
-    return conn
+# Type definitions for type hinting
+T = TypeVar("T")
+ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResource]
 
 
-@server.list_resources()
-async def handle_list_resources() -> list[types.Resource]:
+class DatabaseConnection:
+    """Database connection manager."""
+
+    def __init__(self, connection_url: Optional[str] = None):
+        self.connection_url = connection_url
+        self.conn = None
+
+    def connect(self, connection_url: Optional[str] = None) -> Any:
+        """Connect to the database."""
+        url = connection_url or self.connection_url
+        if not url:
+            raise ValueError("Database connection URL not provided")
+        try:
+            self.conn = psycopg2.connect(url)
+            return self.conn
+        except Exception as e:
+            print(f"Error connecting to database: {e}", file=sys.stderr)
+            raise
+
+    def get_connection(self) -> Any:
+        """Get the database connection."""
+        if not self.conn:
+            raise ValueError("Database connection not initialized")
+        return self.conn
+
+    def close(self) -> None:
+        """Close the database connection."""
+        if self.conn:
+            self.conn.close()
+            self.conn = None
+
+
+# Global connection manager
+db_connection = DatabaseConnection()
+
+
+def get_safe_sql_driver() -> SafeSqlDriver:
+    """Get a SafeSqlDriver instance with the current connection."""
+    return SafeSqlDriver(sql_driver=SqlDriver(conn=db_connection.get_connection()))
+
+
+def format_text_response(text: Any) -> ResponseType:
+    """Format a text response."""
+    return [types.TextContent(type="text", text=str(text))]
+
+
+def handle_db_errors(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+    """Decorator to handle database operation errors."""
+
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs) -> T:
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            print(f"Error in {func.__name__}: {e}", file=sys.stderr)
+            raise
+
+    return wrapper
+
+
+@mcp.resource("postgres://resources")
+@handle_db_errors
+async def list_resources() -> list[types.Resource]:
     """List available database tables as resources."""
-    try:
-        sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-        rows = sql_driver.execute_query(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+    sql_driver = get_safe_sql_driver()
+    rows = sql_driver.execute_query(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
+    )
+    tables = [row.cells["table_name"] for row in rows] if rows else []
+
+    base_url = "postgres://"
+
+    resources = [
+        types.Resource(
+            uri=AnyUrl(f"{base_url}/{table}/schema"),
+            name=f'"{table}" database schema',
+            description=f"Schema for table {table}",
+            mimeType="application/json",
         )
-        tables = [row.cells["table_name"] for row in rows] if rows else []
-
-        base_url = urlparse(os.environ.get("DATABASE_URL", ""))
-        base_url = base_url._replace(scheme="postgres", password="")
-        base_url = base_url.geturl()
-
-        resources = [
-            types.Resource(
-                uri=AnyUrl(f"{base_url}/{table}/{SCHEMA_PATH}"),
-                name=f'"{table}" database schema',
-                description=f"Schema for table {table}",
-                mimeType="application/json",
-            )
-            for table in tables
-        ]
-
-        extensions_uri = AnyUrl(f"{base_url}/{EXTENSIONS_PATH}")
-        resources.append(
-            types.Resource(
-                uri=extensions_uri,
-                name="Installed PostgreSQL Extensions",
-                description="List of installed PostgreSQL extensions in the current database.",
-                mimeType="application/json",
-            )
-        )
-
-        return resources
-    except Exception as e:
-        print(f"Error listing resources: {e}", file=sys.stderr)
-        return []
-
-
-@server.read_resource()
-async def handle_read_resource(uri: AnyUrl) -> str:
-    """Read schema information for a specific table."""
-    if uri.scheme != "postgres":
-        raise ValueError(f"Unsupported URI scheme: {uri.scheme}")
-
-    if not uri.path:
-        raise ValueError("Invalid resource URI")
-
-    path_parts = uri.path.strip("/").split("/")
-
-    if len(path_parts) == 1 and path_parts[0] == EXTENSIONS_PATH:
-        try:
-            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            rows = sql_driver.execute_query(
-                "SELECT extname, extversion FROM pg_extension"
-            )
-            extensions = [row.cells for row in rows] if rows else []
-            return str(extensions)
-        except Exception as e:
-            print(f"Error reading extensions resource: {e}", file=sys.stderr)
-            raise
-
-    elif len(path_parts) == 2 and path_parts[1] == SCHEMA_PATH:
-        table_name = path_parts[0]
-
-        try:
-            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            rows = SafeSqlDriver.execute_param_query(
-                sql_driver,
-                """
-                SELECT column_name, data_type
-                FROM information_schema.columns
-                WHERE table_name = {}
-                """,
-                [table_name],
-            )
-            columns = [row.cells for row in rows] if rows else []
-            return str(columns)
-        except Exception as e:
-            print(f"Error reading resource: {e}", file=sys.stderr)
-            raise
-    else:
-        raise ValueError("Invalid resource URI")
-
-
-@server.list_tools()
-async def handle_list_tools() -> list[types.Tool]:
-    """List available database tools."""
-    return [
-        types.Tool(
-            name="query",
-            description="Run a read-only SQL query",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "sql": {"type": "string"},
-                },
-                "required": ["sql"],
-            },
-        ),
-        types.Tool(
-            name="analyze_workload",
-            description="Analyze frequently executed queries in the database and recommend optimal indexes",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "max_index_size_mb": {
-                        "type": "integer",
-                        "description": "Maximum total size for recommended indexes in MB",
-                        "default": 10000,
-                    },
-                },
-                "required": [],
-            },
-        ),
-        types.Tool(
-            name="analyze_queries",
-            description="Analyze a list of SQL queries and recommend optimal indexes",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "queries": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Two or more SQL queries to analyze",
-                    },
-                    "max_index_size_mb": {
-                        "type": "integer",
-                        "description": "Maximum total size for recommended indexes in MB",
-                        "default": 10000,
-                    },
-                },
-                "required": ["queries"],
-            },
-        ),
-        types.Tool(
-            name="analyze_single_query",
-            description="Analyze a single SQL query and recommend optimal indexes",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "SQL query to analyze",
-                    },
-                    "max_index_size_mb": {
-                        "type": "integer",
-                        "description": "Maximum total size for recommended indexes in MB",
-                        "default": 10000,
-                    },
-                },
-                "required": ["query"],
-            },
-        ),
-        types.Tool(
-            name="list_installed_extensions",
-            description="Lists all extensions currently installed in the PostgreSQL database.",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        ),
-        types.Tool(
-            name="install_extension_pg_stat_statements",
-            description=f"Installs the '{PG_STAT_STATEMENTS}' extension if it's not already installed. This extension tracks execution statistics for all SQL statements executed in the database. Requires appropriate database privileges (often superuser).",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        ),
-        types.Tool(
-            name="top_slow_queries",
-            description=f"Reports the slowest SQL queries based on total execution time, using data from the '{PG_STAT_STATEMENTS}' extension. If the extension is not installed, provides instructions on how to install it.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "limit": {
-                        "type": "integer",
-                        "description": "Number of slowest queries to return.",
-                        "default": 10,
-                    },
-                },
-                "required": [],
-            },
-        ),
+        for table in tables
     ]
 
-
-@server.call_tool()
-async def handle_call_tool(
-    name: str, arguments: dict | None
-) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
-    """Handle tool execution requests."""
-    if name == "query":
-        if not arguments or "sql" not in arguments:
-            raise ValueError("Missing SQL query")
-
-        sql = arguments["sql"]
-
-        try:
-            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            rows = sql_driver.execute_query(sql)
-            if rows is None:
-                return [types.TextContent(type="text", text="No results")]
-            return [
-                types.TextContent(type="text", text=str(list([r.cells for r in rows])))
-            ]
-        except Exception as e:
-            print(f"Error executing query: {e}", file=sys.stderr)
-            raise
-
-    elif name == "analyze_workload":
-        max_index_size_mb = (
-            arguments.get("max_index_size_mb", 10000) if arguments else 10000
+    extensions_uri = AnyUrl(f"{base_url}/_extensions")
+    resources.append(
+        types.Resource(
+            uri=extensions_uri,
+            name="Installed PostgreSQL Extensions",
+            description="List of installed PostgreSQL extensions in the current database.",
+            mimeType="application/json",
         )
+    )
 
-        try:
-            dta_tool = DTATool(
-                SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            )
-            result = dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
-            return [types.TextContent(type="text", text=str(result))]
-        except Exception as e:
-            print(f"Error analyzing workload: {e}", file=sys.stderr)
-            raise
+    return resources
 
-    elif name == "analyze_queries":
-        if not arguments or "queries" not in arguments:
-            raise ValueError("Missing queries")
 
-        queries = arguments["queries"]
-        max_index_size_mb = arguments.get("max_index_size_mb", 10000)
+@mcp.resource("postgres://_extensions")
+@handle_db_errors
+async def extensions_resource() -> str:
+    """Get information about installed PostgreSQL extensions."""
+    sql_driver = get_safe_sql_driver()
+    rows = sql_driver.execute_query(
+        "SELECT extname, extversion FROM pg_extension ORDER BY extname;"
+    )
+    extensions = [row.cells for row in rows] if rows else []
+    return str(extensions)
 
-        try:
-            dta_tool = DTATool(
-                SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            )
-            result = dta_tool.analyze_queries(
-                queries=queries, max_index_size_mb=max_index_size_mb
-            )
-            return [types.TextContent(type="text", text=str(result))]
-        except Exception as e:
-            print(f"Error analyzing queries: {e}", file=sys.stderr)
-            raise
 
-    elif name == "analyze_single_query":
-        if not arguments or "query" not in arguments:
-            raise ValueError("Missing query")
+@mcp.resource("postgres://{table_name}/schema")
+@handle_db_errors
+async def table_schema_resource(table_name: str) -> str:
+    """Get schema information for a specific table."""
+    sql_driver = get_safe_sql_driver()
+    rows = SafeSqlDriver.execute_param_query(
+        sql_driver,
+        """
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_name = {}
+        """,
+        [table_name],
+    )
+    columns = [row.cells for row in rows] if rows else []
+    return str(columns)
 
-        query = arguments["query"]
-        max_index_size_mb = arguments.get("max_index_size_mb", 10000)
 
-        try:
-            dta_tool = DTATool(
-                SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            )
-            result = dta_tool.analyze_single_query(
-                query=query, max_index_size_mb=max_index_size_mb
-            )
-            return [types.TextContent(type="text", text=str(result))]
-        except Exception as e:
-            print(f"Error analyzing query: {e}", file=sys.stderr)
-            raise
+@mcp.tool()
+@handle_db_errors
+async def query(sql: str) -> ResponseType:
+    """Run a read-only SQL query."""
+    sql_driver = get_safe_sql_driver()
+    rows = sql_driver.execute_query(sql)
+    if rows is None:
+        return format_text_response("No results")
+    return format_text_response(list([r.cells for r in rows]))
 
-    elif name == "list_installed_extensions":
-        try:
-            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            rows = sql_driver.execute_query(
-                "SELECT extname, extversion FROM pg_extension ORDER BY extname;"
-            )
-            extensions = [row.cells for row in rows] if rows else []
-            result_text = "Installed PostgreSQL Extensions:\n"
-            result_text += str(extensions)
-            return [types.TextContent(type="text", text=result_text)]
-        except Exception as e:
-            print(f"Error listing extensions: {e}", file=sys.stderr)
-            raise
-    elif name == "install_extension_pg_stat_statements":
-        try:
-            sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            sql_driver.execute_query(
-                f"CREATE EXTENSION IF NOT EXISTS {PG_STAT_STATEMENTS};",
-                force_readonly=False,
-            )
-            return [
-                types.TextContent(
-                    type="text",
-                    text=f"Successfully ensured '{PG_STAT_STATEMENTS}' extension is installed.",
-                )
-            ]
-        except Exception as e:
-            print(f"Error installing {PG_STAT_STATEMENTS}: {e}", file=sys.stderr)
-            error_message = f"Error installing '{PG_STAT_STATEMENTS}': {e}. This might be due to insufficient permissions. Superuser privileges are often required to create extensions."
-            return [types.TextContent(type="text", text=error_message)]
 
-    elif name == "top_slow_queries":
-        limit = arguments.get("limit", 10) if arguments else 10
-        sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+@mcp.tool()
+@handle_db_errors
+async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
+    """Analyze frequently executed queries in the database and recommend optimal indexes."""
+    dta_tool = DTATool(get_safe_sql_driver())
+    result = dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
+    return format_text_response(result)
 
-        try:
-            rows = SafeSqlDriver.execute_param_query(
-                sql_driver,
-                "SELECT 1 FROM pg_extension WHERE extname = {}",
-                [PG_STAT_STATEMENTS],
-            )
-            extension_exists = len(rows) > 0 if rows else False
 
-            if extension_exists:
-                query = """
-                    SELECT
-                        query,
-                        calls,
-                        total_exec_time,
-                        mean_exec_time,
-                        rows
-                    FROM pg_stat_statements
-                    ORDER BY total_exec_time DESC
-                    LIMIT {};
-                """
-                slow_query_rows = SafeSqlDriver.execute_param_query(
-                    sql_driver,
-                    query,
-                    [limit],
-                )
-                slow_queries = (
-                    [row.cells for row in slow_query_rows] if slow_query_rows else []
-                )
-                result_text = f"Top {len(slow_queries)} slowest queries by total execution time:\n"
-                result_text += str(slow_queries)
-                return [types.TextContent(type="text", text=result_text)]
-            else:
-                message = (
-                    f"The '{PG_STAT_STATEMENTS}' extension is required to report slow queries, but it is not currently installed.\n\n"
-                    f"You can ask me to install it using the 'install_extension_pg_stat_statements' tool.\n\n"
-                    f"**Is it safe?** Installing '{PG_STAT_STATEMENTS}' is generally safe and a standard practice for performance monitoring. It adds performance overhead by tracking statistics, but this is usually negligible unless your server is under extreme load. It requires database privileges (often superuser) to install.\n\n"
-                    f"**What does it do?** It records statistics (like execution time, number of calls, rows returned) for every query executed against the database.\n\n"
-                    f"**How to undo?** If you later decide to remove it, you can ask me to run 'DROP EXTENSION {PG_STAT_STATEMENTS};'."
-                )
-                return [types.TextContent(type="text", text=message)]
+@mcp.tool()
+@handle_db_errors
+async def analyze_queries(
+    queries: list[str], max_index_size_mb: int = 10000
+) -> ResponseType:
+    """Analyze a list of SQL queries and recommend optimal indexes."""
+    dta_tool = DTATool(get_safe_sql_driver())
+    result = dta_tool.analyze_queries(
+        queries=queries, max_index_size_mb=max_index_size_mb
+    )
+    return format_text_response(result)
 
-        except Exception as e:
-            print(
-                f"Error checking or querying {PG_STAT_STATEMENTS}: {e}", file=sys.stderr
-            )
-            raise
 
+@mcp.tool()
+@handle_db_errors
+async def analyze_single_query(
+    query: str, max_index_size_mb: int = 10000
+) -> ResponseType:
+    """Analyze a single SQL query and recommend optimal indexes."""
+    dta_tool = DTATool(get_safe_sql_driver())
+    result = dta_tool.analyze_single_query(
+        query=query, max_index_size_mb=max_index_size_mb
+    )
+    return format_text_response(result)
+
+
+@mcp.tool()
+@handle_db_errors
+async def list_installed_extensions(ctx: Context) -> ResponseType:
+    """Lists all extensions currently installed in the PostgreSQL database."""
+    extensions = await ctx.read_resource("postgres://_extensions")
+    result_text = f"Installed PostgreSQL Extensions:\n{extensions}"
+    return format_text_response(result_text)
+
+
+@mcp.tool()
+@handle_db_errors
+async def install_extension_pg_stat_statements() -> ResponseType:
+    """Installs the 'pg_stat_statements' extension if it's not already installed."""
+    sql_driver = get_safe_sql_driver()
+    sql_driver.execute_query(
+        f"CREATE EXTENSION IF NOT EXISTS {PG_STAT_STATEMENTS};",
+        force_readonly=False,
+    )
+    return format_text_response(
+        f"Successfully ensured '{PG_STAT_STATEMENTS}' extension is installed."
+    )
+
+
+@mcp.tool()
+@handle_db_errors
+async def top_slow_queries(limit: int = 10) -> ResponseType:
+    """Reports the slowest SQL queries based on total execution time."""
+    sql_driver = get_safe_sql_driver()
+
+    rows = SafeSqlDriver.execute_param_query(
+        sql_driver,
+        "SELECT 1 FROM pg_extension WHERE extname = {}",
+        [PG_STAT_STATEMENTS],
+    )
+    extension_exists = len(rows) > 0 if rows else False
+
+    if extension_exists:
+        query = """
+            SELECT
+                query,
+                calls,
+                total_exec_time,
+                mean_exec_time,
+                rows
+            FROM pg_stat_statements
+            ORDER BY total_exec_time DESC
+            LIMIT {};
+        """
+        slow_query_rows = SafeSqlDriver.execute_param_query(
+            sql_driver,
+            query,
+            [limit],
+        )
+        slow_queries = [row.cells for row in slow_query_rows] if slow_query_rows else []
+        result_text = (
+            f"Top {len(slow_queries)} slowest queries by total execution time:\n"
+        )
+        result_text += str(slow_queries)
+        return format_text_response(result_text)
     else:
-        raise ValueError(f"Unknown tool: {name}")
+        message = (
+            f"The '{PG_STAT_STATEMENTS}' extension is required to report slow queries, but it is not currently installed.\n\n"
+            f"You can ask me to install it using the 'install_extension_pg_stat_statements' tool.\n\n"
+            f"**Is it safe?** Installing '{PG_STAT_STATEMENTS}' is generally safe and a standard practice for performance monitoring. It adds performance overhead by tracking statistics, but this is usually negligible unless your server is under extreme load. It requires database privileges (often superuser) to install.\n\n"
+            f"**What does it do?** It records statistics (like execution time, number of calls, rows returned) for every query executed against the database.\n\n"
+            f"**How to undo?** If you later decide to remove it, you can ask me to run 'DROP EXTENSION {PG_STAT_STATEMENTS};'."
+        )
+        return format_text_response(message)
 
 
 async def main():
@@ -393,32 +275,18 @@ async def main():
 
     database_url = sys.argv[1]
 
-    # Initialize global connection
-    global conn
+    # Initialize database connection
     try:
-        conn = psycopg2.connect(database_url)
+        db_connection.connect(database_url)
     except Exception as e:
         print(f"Error connecting to database: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Run the server using stdin/stdout streams
-    async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-        try:
-            await server.run(
-                read_stream,
-                write_stream,
-                InitializationOptions(
-                    server_name="postgres-mcp",
-                    server_version="0.1.0",
-                    capabilities=server.get_capabilities(
-                        notification_options=NotificationOptions(),
-                        experimental_capabilities={},
-                    ),
-                ),
-            )
-        finally:
-            if conn:
-                conn.close()
+    # Run the app with FastMCP's stdio method
+    try:
+        await mcp.run_stdio_async()
+    finally:
+        db_connection.close()
 
 
 if __name__ == "__main__":
