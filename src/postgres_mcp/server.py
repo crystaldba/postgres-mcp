@@ -196,21 +196,17 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
-            name="install_extension_hypopg",
-            description=f"Installs the '{HYPOPG_EXTENSION}' extension if it's available but not already installed. This extension allows for the creation of temporary indexes that are not visible to other users. Requires appropriate database privileges (often superuser).",
+            name="install_extension",
+            description="Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser).",
             inputSchema={
                 "type": "object",
-                "properties": {},
-                "required": [],
-            },
-        ),
-        types.Tool(
-            name="install_extension_pg_stat_statements",
-            description=f"Installs the '{PG_STAT_STATEMENTS}' extension if it's not already installed. This extension tracks execution statistics for all SQL statements executed in the database. Requires appropriate database privileges (often superuser).",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": [],
+                "properties": {
+                    "extension_name": {
+                        "type": "string",
+                        "description": "Name of the extension to install (e.g., 'pg_stat_statements', 'hypopg')",
+                    },
+                },
+                "required": ["extension_name"],
             },
         ),
         types.Tool(
@@ -235,21 +231,65 @@ def install_extension(
     extension_name: str,
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     try:
+        # First check if the extension exists in pg_available_extensions
         sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
+        check_rows = SafeSqlDriver.execute_param_query(
+            sql_driver,
+            "SELECT name, default_version FROM pg_available_extensions WHERE name = {}",
+            [extension_name],
+        )
+
+        if not check_rows:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Error: Extension '{extension_name}' is not available in the PostgreSQL installation. Please check if the extension is properly installed on the server.",
+                )
+            ]
+
+        # Check if extension is already installed
+        installed_rows = SafeSqlDriver.execute_param_query(
+            sql_driver,
+            "SELECT extversion FROM pg_extension WHERE extname = {}",
+            [extension_name],
+        )
+
+        if installed_rows:
+            return [
+                types.TextContent(
+                    type="text",
+                    text=f"Extension '{extension_name}' version {installed_rows[0].cells['extversion']} is already installed.",
+                )
+            ]
+
+        # Attempt to create the extension
         sql_driver.execute_query(
-            f"CREATE EXTENSION IF NOT EXISTS {extension_name};",
+            f"CREATE EXTENSION {extension_name};",
             force_readonly=False,
         )
+
         return [
             types.TextContent(
                 type="text",
-                text=f"Successfully ensured '{extension_name}' extension is installed.",
+                text=f"Successfully installed '{extension_name}' extension.",
             )
         ]
+    except psycopg2.OperationalError as e:
+        error_msg = (
+            f"Error installing '{extension_name}': {e}\n\n"
+            "This is likely due to insufficient permissions. The following are common causes:\n"
+            "1. The database user lacks superuser privileges\n"
+            "2. The extension is not available in the PostgreSQL installation\n"
+            "3. The extension requires additional system-level dependencies\n\n"
+            "Please ensure you have the necessary permissions and the extension is available on your PostgreSQL server."
+        )
+        return [types.TextContent(type="text", text=error_msg)]
     except Exception as e:
-        print(f"Error installing {extension_name}: {e}", file=sys.stderr)
-        error_message = f"Error installing '{extension_name}': {e}. This might be due to insufficient permissions. Superuser privileges are often required to create extensions."
-        return [types.TextContent(type="text", text=error_message)]
+        error_msg = (
+            f"Unexpected error installing '{extension_name}': {e}\n\n"
+            "Please check the error message and ensure all prerequisites are met."
+        )
+        return [types.TextContent(type="text", text=error_msg)]
 
 
 @server.call_tool()
@@ -341,10 +381,10 @@ async def handle_call_tool(
         except Exception as e:
             print(f"Error listing extensions: {e}", file=sys.stderr)
             raise
-    elif name == f"install_extension_{HYPOPG_EXTENSION}":
-        return install_extension(HYPOPG_EXTENSION)
-    elif name == f"install_extension_{PG_STAT_STATEMENTS}":
-        return install_extension(PG_STAT_STATEMENTS)
+    elif name == "install_extension":
+        if not arguments or "extension_name" not in arguments:
+            raise ValueError("Missing extension_name parameter")
+        return install_extension(arguments["extension_name"])
     elif name == "top_slow_queries":
         limit = arguments.get("limit", 10) if arguments else 10
         sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
