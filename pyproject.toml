@@ -12,6 +12,7 @@ dependencies = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.25.0",
     "attrs>=25.3.0",
+    "sqlalchemy>=2.0.40",
 ]
 [[project.authors]]
 name = "Johann Schleier-Smith"
@@ -24,9 +25,9 @@ build-backend = "hatchling.build"
 [project.scripts]
 postgres-mcp = "postgres_mcp:main"
 
-[tool.pyright]
-venvPath = "."
-venv = ".venv"
+# [tool.pyright]
+# venvPath = "."
+# venv = ".venv"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -34,6 +35,8 @@ asyncio_default_fixture_loop_scope = "function"
 
 [dependency-groups]
 dev = [
+    "docker>=7.1.0",
     "pyright>=1.1.398",
     "ruff>=0.11.2",
+    "sqlalchemy>=2.0.40",
 ]
