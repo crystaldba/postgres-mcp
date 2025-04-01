@@ -768,6 +768,7 @@ class DatabaseTuningAdvisor:
             best_time = current_time
             best_space = current_space
             best_objective = current_objective
+            best_time_improvement = 0
 
             for candidate in candidate_indexes:
                 self.dta_trace(
@@ -799,11 +800,10 @@ class DatabaseTuningAdvisor:
                     queries, frozenset(current_indexes | {candidate})
                 )
                 self.dta_trace(f"    + Eval cost (time): {test_time}")
+
                 # Calculate relative time improvement
                 time_improvement = (current_time - test_time) / current_time
 
-                # Calculate objective for this configuration
-                test_objective = math.log(test_time) + alpha * math.log(test_space)
                 # Skip if time improvement is below threshold
                 if time_improvement < min_time_improvement:
                     self.dta_trace(
@@ -811,8 +811,14 @@ class DatabaseTuningAdvisor:
                     )
                     continue
 
+                # Calculate objective for this configuration
+                test_objective = math.log(test_time) + alpha * math.log(test_space)
+
                 # Select the index with the best time improvement that meets our threshold
-                if test_objective < best_objective:
+                if (
+                    test_objective < best_objective
+                    and time_improvement > best_time_improvement
+                ):
                     self.dta_trace(
                         f"  - Updating best candidate: {self.candidate_str([candidate])}"
                     )
@@ -820,6 +826,7 @@ class DatabaseTuningAdvisor:
                     best_time = test_time
                     best_space = test_space
                     best_objective = test_objective
+                    best_time_improvement = time_improvement
                 else:
                     self.dta_trace(
                         f"  - Skipping candidate: {self.candidate_str([candidate])} because it doesn't have the best objective improvement"
