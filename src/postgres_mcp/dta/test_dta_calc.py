@@ -31,32 +31,33 @@ async def async_sql_driver():
     return driver
 
 
-def create_dta_instance(sql_driver):
+@pytest_asyncio.fixture
+async def create_dta(async_sql_driver):
     return DatabaseTuningAdvisor(
-        sql_driver=sql_driver, budget_mb=10, max_runtime_seconds=60
+        sql_driver=async_sql_driver, budget_mb=10, max_runtime_seconds=60
     )
 
 
 # Convert the unittest.TestCase class to use pytest
 @pytest.mark.asyncio
-async def test_extract_columns_empty_query(async_sql_driver):
-    dta = create_dta_instance(async_sql_driver)
+async def test_extract_columns_empty_query(create_dta):
+    dta = create_dta
     query = "SELECT 1"
     columns = dta.extract_columns(query)
     assert columns == {}
 
 
 @pytest.mark.asyncio
-async def test_extract_columns_invalid_sql(async_sql_driver):
-    dta = create_dta_instance(async_sql_driver)
+async def test_extract_columns_invalid_sql(create_dta):
+    dta = create_dta
     query = "INVALID SQL"
     columns = dta.extract_columns(query)
     assert columns == {}
 
 
 @pytest.mark.asyncio
-async def test_extract_columns_subquery(async_sql_driver):
-    dta = create_dta_instance(async_sql_driver)
+async def test_extract_columns_subquery(create_dta):
+    dta = create_dta
     query = "SELECT * FROM users WHERE id IN (SELECT user_id FROM orders WHERE status = 'pending')"
     columns = dta.extract_columns(query)
     assert columns == {"users": {"id"}, "orders": {"user_id", "status"}}
@@ -93,18 +94,18 @@ async def test_index_equality():
 
 
 @pytest.mark.asyncio
-async def test_extract_columns_from_simple_query(async_sql_driver):
+async def test_extract_columns_from_simple_query(create_dta):
     """Test column extraction from a simple SELECT query."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
     query = "SELECT * FROM users WHERE name = 'Alice' ORDER BY age"
     columns = dta.extract_columns(query)
     assert columns == {"users": {"name", "age"}}
 
 
 @pytest.mark.asyncio
-async def test_extract_columns_from_join_query(async_sql_driver):
+async def test_extract_columns_from_join_query(create_dta):
     """Test column extraction from a query with JOINs."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
     query = """
     SELECT u.name, o.order_date
     FROM users u
@@ -119,7 +120,7 @@ async def test_extract_columns_from_join_query(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_generate_candidates(async_sql_driver):
+async def test_generate_candidates(async_sql_driver, create_dta):
     """Test index candidate generation."""
     global responses
     responses = [
@@ -164,7 +165,7 @@ async def test_generate_candidates(async_sql_driver):
 
     async_sql_driver.execute_query = AsyncMock(side_effect=mock_execute_query)
 
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     q1 = "SELECT * FROM users WHERE name = 'Alice'"
     queries = [(q1, parse_sql(q1)[0].stmt, 1.0)]
@@ -175,8 +176,8 @@ async def test_generate_candidates(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_analyze_workload(async_sql_driver):
-    async def mock_execute_query(query, *args, **kwargs):
+async def test_analyze_workload(async_sql_driver, create_dta):
+    async def mock_execute_query(query):
         logger.info(f"Query: {query}")
         if "pg_stat_statements" in query:
             return [
@@ -231,7 +232,7 @@ async def test_analyze_workload(async_sql_driver):
 
     async_sql_driver.execute_query = AsyncMock(side_effect=mock_execute_query)
 
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     session = await dta.analyze_workload(min_calls=50, min_avg_time_ms=5.0)
 
@@ -240,19 +241,19 @@ async def test_analyze_workload(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_error_handling(async_sql_driver):
+async def test_error_handling(async_sql_driver, create_dta):
     """Test error handling in critical methods."""
     # Test HypoPG setup failure
     async_sql_driver.execute_query = AsyncMock(
         side_effect=RuntimeError("HypoPG not available")
     )
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
     session = await dta.analyze_workload(min_calls=50, min_avg_time_ms=5.0)
     assert session.error == "HypoPG not available"
 
     # Test invalid query handling
     async_sql_driver.execute_query = AsyncMock(return_value=None)
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     invalid_query = "INVALID SQL"
     columns = dta.extract_columns(invalid_query)
@@ -260,9 +261,9 @@ async def test_error_handling(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_index_exists(async_sql_driver):
+async def test_index_exists(create_dta):
     """Test the robust index comparison functionality."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     # Create test cases with various index definition patterns
     test_cases = [
@@ -365,9 +366,9 @@ async def test_index_exists(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_ndistinct_handling(async_sql_driver):
+async def test_ndistinct_handling(create_dta):
     """Test handling of ndistinct values in row estimation calculations."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     # Test cases with different ndistinct values
     test_cases = [
@@ -399,9 +400,9 @@ async def test_ndistinct_handling(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_filter_long_text_columns(async_sql_driver):
+async def test_filter_long_text_columns(async_sql_driver, create_dta):
     """Test filtering of long text columns from index candidates."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     # Mock the column type query results
     type_query_results = [
@@ -627,9 +628,9 @@ async def test_basic_workload_analysis(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_replace_parameters_basic(async_sql_driver):
+async def test_replace_parameters_basic(create_dta):
     """Test basic parameter replacement functionality."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     dta._column_stats_cache = {}
     dta.extract_columns = MagicMock(return_value={"users": ["name", "id", "status"]})
@@ -651,9 +652,9 @@ async def test_replace_parameters_basic(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_replace_parameters_numeric(async_sql_driver):
+async def test_replace_parameters_numeric(create_dta):
     """Test parameter replacement for numeric columns."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     dta._column_stats_cache = {}
     dta.extract_columns = MagicMock(
@@ -681,9 +682,9 @@ async def test_replace_parameters_numeric(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_replace_parameters_date(async_sql_driver):
+async def test_replace_parameters_date(create_dta):
     """Test parameter replacement for date columns."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     dta._column_stats_cache = {}
     dta.extract_columns = MagicMock(
@@ -704,9 +705,9 @@ async def test_replace_parameters_date(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_replace_parameters_like(async_sql_driver):
+async def test_replace_parameters_like(create_dta):
     """Test parameter replacement for LIKE patterns."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     dta._column_stats_cache = {}
     dta.extract_columns = MagicMock(return_value={"users": ["name", "email"]})
@@ -725,9 +726,9 @@ async def test_replace_parameters_like(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_replace_parameters_multiple(async_sql_driver):
+async def test_replace_parameters_multiple(create_dta):
     """Test replacement of multiple parameters in a complex query."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     dta._column_stats_cache = {}
     dta.extract_columns = MagicMock(
@@ -783,9 +784,9 @@ async def test_replace_parameters_multiple(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_replace_parameters_fallback(async_sql_driver):
+async def test_replace_parameters_fallback(create_dta):
     """Test fallback behavior when column information is not available."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     dta.extract_columns = MagicMock(return_value={})
 
@@ -810,9 +811,9 @@ async def test_replace_parameters_fallback(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_extract_columns(async_sql_driver):
+async def test_extract_columns(create_dta):
     """Test extracting table and column information from queries."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     dta.extract_columns = MagicMock(return_value={"users": {"id", "name", "status"}})
 
@@ -822,9 +823,9 @@ async def test_extract_columns(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_identify_parameter_column(async_sql_driver):
+async def test_identify_parameter_column(create_dta):
     """Test identifying which column a parameter belongs to."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
     table_columns = {
         "users": ["id", "name", "status", "email"],
         "orders": ["id", "user_id", "amount", "order_date"],
@@ -857,9 +858,9 @@ async def test_identify_parameter_column(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_get_replacement_value(async_sql_driver):
+async def test_get_replacement_value(create_dta):
     """Test generating replacement values based on statistics."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     # String type with common values for equality
     stats = {
@@ -1019,9 +1020,9 @@ async def test_complex_query_with_alias_in_conditions(async_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_filter_candidates_by_query_conditions(async_sql_driver):
+async def test_filter_candidates_by_query_conditions(async_sql_driver, create_dta):
     """Test filtering index candidates based on query conditions."""
-    dta = create_dta_instance(async_sql_driver)
+    dta = create_dta
 
     # Mock the sql_driver for _column_exists
     async_sql_driver.execute_query.return_value = [MockCell({"1": 1})]
