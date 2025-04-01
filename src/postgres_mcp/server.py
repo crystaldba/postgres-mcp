@@ -10,7 +10,7 @@ from pydantic import AnyUrl, Field
 from .dta.dta_tools import DTATool
 from .dta.safe_sql import SafeSqlDriver
 from .dta.sql_driver import SqlDriver
-from .orchestration.database_health import DatabaseHealthTool, HealthType
+from .database_health.database_health import DatabaseHealthTool, HealthType
 
 mcp = FastMCP("postgres-mcp")
 
