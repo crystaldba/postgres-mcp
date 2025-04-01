@@ -84,6 +84,8 @@ class SqlDriver:
                         pass
 
                     if cursor.description is None:  # No results (like DDL statements)
+                        if not force_readonly:
+                            await cursor.execute("COMMIT")
                         return None
 
                     # Get results from the last statement only
@@ -99,6 +101,9 @@ class SqlDriver:
         except Exception as e:
             logger.error(f"Error executing query ({query}): {e}")
             if self.conn:
-                await self.conn.rollback()
+                try:
+                    await self.conn.rollback()
+                except Exception as e:
+                    logger.error(f"Error rolling back transaction: {e}")
                 self.conn = None
-            return None
+            raise e
