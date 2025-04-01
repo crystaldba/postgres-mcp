@@ -5,12 +5,12 @@ from typing import Any, List, Optional
 from mcp.server.fastmcp import Context, FastMCP
 import mcp.types as types
 import psycopg2
-from pydantic import AnyUrl
+from pydantic import AnyUrl, Field
 
 from .dta.dta_tools import DTATool
 from .dta.safe_sql import SafeSqlDriver
 from .dta.sql_driver import SqlDriver
-from .orchestration.database_health import DatabaseHealthTool
+from .orchestration.database_health import DatabaseHealthTool, HealthType
 
 mcp = FastMCP("postgres-mcp")
 
@@ -156,7 +156,9 @@ async def table_schema_resource(table_name: str) -> str:
 
 
 @mcp.tool(description="Run a read-only SQL query")
-async def query(sql: str) -> ResponseType:
+async def query(
+    sql: str = Field(description="SQL to run", default="all"),
+) -> ResponseType:
     """Run a read-only SQL query."""
     sql_driver = get_safe_sql_driver()
     rows = sql_driver.execute_query(sql)
@@ -168,7 +170,9 @@ async def query(sql: str) -> ResponseType:
 @mcp.tool(
     description="Analyze frequently executed queries in the database and recommend optimal indexes"
 )
-async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
+async def analyze_workload(
+    max_index_size_mb: int = Field(description="Max index size in MB", default=10000),
+) -> ResponseType:
     """Analyze frequently executed queries in the database and recommend optimal indexes."""
     dta_tool = DTATool(get_safe_sql_driver())
     result = dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
@@ -177,7 +181,8 @@ async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
 
 @mcp.tool(description="Analyze a list of SQL queries and recommend optimal indexes")
 async def analyze_queries(
-    queries: list[str], max_index_size_mb: int = 10000
+    queries: list[str] = Field(description="List of Query strings to analyze"),
+    max_index_size_mb: int = Field(description="Max index size in MB", default=10000),
 ) -> ResponseType:
     """Analyze a list of SQL queries and recommend optimal indexes."""
     dta_tool = DTATool(get_safe_sql_driver())
@@ -189,7 +194,8 @@ async def analyze_queries(
 
 @mcp.tool(description="Analyze a single SQL query and recommend optimal indexes")
 async def analyze_single_query(
-    query: str, max_index_size_mb: int = 10000
+    query: str = Field(description="SQL query to analyze"),
+    max_index_size_mb: int = Field(description="Max index size in MB", default=10000),
 ) -> ResponseType:
     """Analyze a single SQL query and recommend optimal indexes."""
     dta_tool = DTATool(get_safe_sql_driver())
@@ -204,7 +210,12 @@ async def analyze_single_query(
     "identifies duplicate, unused, or invalid indexes, sequence health, constraint health "
     "vacuum health, and connection health."
 )
-async def database_health(health_type: str = "all") -> ResponseType:
+async def database_health(
+    health_type: str = Field(
+        description=f"Valid values are: {', '.join(sorted([t.value for t in HealthType]))}.",
+        default="all",
+    ),
+) -> ResponseType:
     """Analyze database health for specified components.
 
     Args:
@@ -229,7 +240,7 @@ async def list_installed_extensions(ctx: Context) -> ResponseType:
 @mcp.tool(
     description="Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser)."
 )
-async def install_extension(extension_name: str) -> ResponseType:
+async def install_extension(extension_name: str = Field(description="Extension to install. e.g. pg_stat_statements")) -> ResponseType:
     """ "Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser)."""
 
     try:
@@ -288,7 +299,9 @@ async def install_extension(extension_name: str) -> ResponseType:
 @mcp.tool(
     description=f"Reports the slowest SQL queries based on total execution time, using data from the '{PG_STAT_STATEMENTS}' extension. If the extension is not installed, provides instructions on how to install it."
 )
-async def top_slow_queries(limit: int = 10) -> ResponseType:
+async def top_slow_queries(
+    limit: int = Field(description="Number of slow queries to return", default=10),
+) -> ResponseType:
     """Reports the slowest SQL queries based on total execution time."""
     sql_driver = get_safe_sql_driver()
 
