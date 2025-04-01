@@ -27,13 +27,13 @@ class DatabaseConnection:
         self.connection_url = connection_url
         self.conn = None
 
-    def connect(self, connection_url: Optional[str] = None) -> Any:
+    async def connect(self, connection_url: Optional[str] = None) -> Any:
         """Connect to the database."""
         url = connection_url or self.connection_url
         if not url:
             raise ValueError("Database connection URL not provided")
         try:
-            self.conn = psycopg2.connect(url)
+            self.conn = await psycopg.AsyncConnection.connect(url)
             return self.conn
         except Exception as e:
             print(f"Error connecting to database: {e}", file=sys.stderr)
@@ -45,10 +45,10 @@ class DatabaseConnection:
             raise ValueError("Database connection not initialized")
         return self.conn
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close the database connection."""
         if self.conn:
-            self.conn.close()
+            await self.conn.close()
             self.conn = None
 
 
@@ -74,7 +74,7 @@ def format_text_response(text: Any) -> ResponseType:
 async def list_resources() -> list[types.Resource]:
     """List available database tables as resources."""
     sql_driver = get_safe_sql_driver()
-    rows = sql_driver.execute_query(
+    rows = await sql_driver.execute_query(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
     )
     tables = [row.cells["table_name"] for row in rows] if rows else []
@@ -112,7 +112,7 @@ async def list_resources() -> list[types.Resource]:
 async def extensions_resource() -> str:
     """Get information about installed PostgreSQL extensions."""
     sql_driver = get_safe_sql_driver()
-    rows = sql_driver.execute_query(
+    rows = await sql_driver.execute_query(
         """
         SELECT
             pae.name AS extname,
@@ -141,7 +141,7 @@ async def extensions_resource() -> str:
 async def table_schema_resource(table_name: str) -> str:
     """Get schema information for a specific table."""
     sql_driver = get_safe_sql_driver()
-    rows = SafeSqlDriver.execute_param_query(
+    rows = await SafeSqlDriver.execute_param_query(
         sql_driver,
         """
         SELECT column_name, data_type
@@ -158,7 +158,7 @@ async def table_schema_resource(table_name: str) -> str:
 async def query(sql: str) -> ResponseType:
     """Run a read-only SQL query."""
     sql_driver = get_safe_sql_driver()
-    rows = sql_driver.execute_query(sql)
+    rows = await sql_driver.execute_query(sql)  # type: ignore
     if rows is None:
         return format_text_response("No results")
     return format_text_response(list([r.cells for r in rows]))
@@ -170,7 +170,7 @@ async def query(sql: str) -> ResponseType:
 async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
     """Analyze frequently executed queries in the database and recommend optimal indexes."""
     dta_tool = DTATool(get_safe_sql_driver())
-    result = dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
+    result = await dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
     return format_text_response(result)
 
 
@@ -180,7 +180,7 @@ async def analyze_queries(
 ) -> ResponseType:
     """Analyze a list of SQL queries and recommend optimal indexes."""
     dta_tool = DTATool(get_safe_sql_driver())
-    result = dta_tool.analyze_queries(
+    result = await dta_tool.analyze_queries(
         queries=queries, max_index_size_mb=max_index_size_mb
     )
     return format_text_response(result)
@@ -192,7 +192,7 @@ async def analyze_single_query(
 ) -> ResponseType:
     """Analyze a single SQL query and recommend optimal indexes."""
     dta_tool = DTATool(get_safe_sql_driver())
-    result = dta_tool.analyze_single_query(
+    result = await dta_tool.analyze_single_query(
         query=query, max_index_size_mb=max_index_size_mb
     )
     return format_text_response(result)
@@ -217,7 +217,7 @@ async def install_extension(extension_name: str) -> ResponseType:
     try:
         # First check if the extension exists in pg_available_extensions
         sql_driver = get_safe_sql_driver()
-        check_rows = SafeSqlDriver.execute_param_query(
+        check_rows = await SafeSqlDriver.execute_param_query(
             sql_driver,
             "SELECT name, default_version FROM pg_available_extensions WHERE name = {}",
             [extension_name],
@@ -229,7 +229,7 @@ async def install_extension(extension_name: str) -> ResponseType:
             )
 
         # Check if extension is already installed
-        installed_rows = SafeSqlDriver.execute_param_query(
+        installed_rows = await SafeSqlDriver.execute_param_query(
             sql_driver,
             "SELECT extversion FROM pg_extension WHERE extname = {}",
             [extension_name],
@@ -241,15 +241,15 @@ async def install_extension(extension_name: str) -> ResponseType:
             )
 
         # Attempt to create the extension
-        sql_driver.execute_query(
-            f"CREATE EXTENSION {extension_name};",
+        await sql_driver.execute_query(
+            f"CREATE EXTENSION {extension_name};",  # type: ignore
             force_readonly=False,
         )
 
         return format_text_response(
             f"Successfully installed '{extension_name}' extension.",
         )
-    except psycopg2.OperationalError as e:
+    except psycopg.OperationalError as e:
         error_msg = (
             f"Error installing '{extension_name}': {e}\n\n"
             "This is likely due to insufficient permissions. The following are common causes:\n"
@@ -274,7 +274,7 @@ async def top_slow_queries(limit: int = 10) -> ResponseType:
     """Reports the slowest SQL queries based on total execution time."""
     sql_driver = get_safe_sql_driver()
 
-    rows = SafeSqlDriver.execute_param_query(
+    rows = await SafeSqlDriver.execute_param_query(
         sql_driver,
         "SELECT 1 FROM pg_extension WHERE extname = {}",
         [PG_STAT_STATEMENTS],
@@ -293,7 +293,7 @@ async def top_slow_queries(limit: int = 10) -> ResponseType:
             ORDER BY total_exec_time DESC
             LIMIT {};
         """
-        slow_query_rows = SafeSqlDriver.execute_param_query(
+        slow_query_rows = await SafeSqlDriver.execute_param_query(
             sql_driver,
             query,
             [limit],
@@ -327,7 +327,7 @@ async def main():
 
     # Initialize database connection
     try:
-        db_connection.connect(database_url)
+        await db_connection.connect(database_url)
     except Exception as e:
         print(f"Error connecting to database: {e}", file=sys.stderr)
         sys.exit(1)
@@ -336,7 +336,7 @@ async def main():
     try:
         await mcp.run_stdio_async()
     finally:
-        db_connection.close()
+        await db_connection.close()
 
 
 if __name__ == "__main__":
