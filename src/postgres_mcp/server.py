@@ -7,7 +7,7 @@ from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 import mcp.server.stdio
 import mcp.types as types
-import psycopg2
+import psycopg
 from pydantic import AnyUrl
 
 from .dta.dta_tools import DTATool
@@ -36,7 +36,7 @@ async def handle_list_resources() -> list[types.Resource]:
     """List available database tables as resources."""
     try:
         sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-        rows = sql_driver.execute_query(
+        rows = await sql_driver.execute_query(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
         )
         tables = [row.cells["table_name"] for row in rows] if rows else []
@@ -85,7 +85,7 @@ async def handle_read_resource(uri: AnyUrl) -> str:
     if len(path_parts) == 1 and path_parts[0] == EXTENSIONS_PATH:
         try:
             sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            rows = sql_driver.execute_query(
+            rows = await sql_driver.execute_query(
                 "SELECT extname, extversion FROM pg_extension"
             )
             extensions = [row.cells for row in rows] if rows else []
@@ -99,7 +99,7 @@ async def handle_read_resource(uri: AnyUrl) -> str:
 
         try:
             sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            rows = SafeSqlDriver.execute_param_query(
+            rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
                 SELECT column_name, data_type
@@ -231,13 +231,13 @@ async def handle_list_tools() -> list[types.Tool]:
     ]
 
 
-def install_extension(
+async def install_extension(
     extension_name: str,
 ) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
     try:
         sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-        sql_driver.execute_query(
-            f"CREATE EXTENSION IF NOT EXISTS {extension_name};",
+        await sql_driver.execute_query(
+            f"CREATE EXTENSION IF NOT EXISTS {extension_name};",  # type: ignore
             force_readonly=False,
         )
         return [
@@ -265,7 +265,7 @@ async def handle_call_tool(
 
         try:
             sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            rows = sql_driver.execute_query(sql)
+            rows = await sql_driver.execute_query(sql)
             if rows is None:
                 return [types.TextContent(type="text", text="No results")]
             return [
@@ -284,7 +284,9 @@ async def handle_call_tool(
             dta_tool = DTATool(
                 SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
             )
-            result = dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
+            result = await dta_tool.analyze_workload(
+                max_index_size_mb=max_index_size_mb
+            )
             return [types.TextContent(type="text", text=str(result))]
         except Exception as e:
             print(f"Error analyzing workload: {e}", file=sys.stderr)
@@ -301,7 +303,7 @@ async def handle_call_tool(
             dta_tool = DTATool(
                 SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
             )
-            result = dta_tool.analyze_queries(
+            result = await dta_tool.analyze_queries(
                 queries=queries, max_index_size_mb=max_index_size_mb
             )
             return [types.TextContent(type="text", text=str(result))]
@@ -320,7 +322,7 @@ async def handle_call_tool(
             dta_tool = DTATool(
                 SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
             )
-            result = dta_tool.analyze_single_query(
+            result = await dta_tool.analyze_single_query(
                 query=query, max_index_size_mb=max_index_size_mb
             )
             return [types.TextContent(type="text", text=str(result))]
@@ -331,7 +333,7 @@ async def handle_call_tool(
     elif name == "list_installed_extensions":
         try:
             sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
-            rows = sql_driver.execute_query(
+            rows = await sql_driver.execute_query(
                 "SELECT extname, extversion FROM pg_extension ORDER BY extname;"
             )
             extensions = [row.cells for row in rows] if rows else []
@@ -342,15 +344,15 @@ async def handle_call_tool(
             print(f"Error listing extensions: {e}", file=sys.stderr)
             raise
     elif name == f"install_extension_{HYPOPG_EXTENSION}":
-        return install_extension(HYPOPG_EXTENSION)
+        return await install_extension(HYPOPG_EXTENSION)
     elif name == f"install_extension_{PG_STAT_STATEMENTS}":
-        return install_extension(PG_STAT_STATEMENTS)
+        return await install_extension(PG_STAT_STATEMENTS)
     elif name == "top_slow_queries":
         limit = arguments.get("limit", 10) if arguments else 10
         sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=get_connection()))
 
         try:
-            rows = SafeSqlDriver.execute_param_query(
+            rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 "SELECT 1 FROM pg_extension WHERE extname = {}",
                 [PG_STAT_STATEMENTS],
@@ -369,7 +371,7 @@ async def handle_call_tool(
                     ORDER BY total_exec_time DESC
                     LIMIT {};
                 """
-                slow_query_rows = SafeSqlDriver.execute_param_query(
+                slow_query_rows = await SafeSqlDriver.execute_param_query(
                     sql_driver,
                     query,
                     [limit],
@@ -413,7 +415,7 @@ async def main():
     # Initialize global connection
     global conn
     try:
-        conn = psycopg2.connect(database_url)
+        conn = await psycopg.AsyncConnection.connect(database_url)
     except Exception as e:
         print(f"Error connecting to database: {e}", file=sys.stderr)
         sys.exit(1)
@@ -435,7 +437,7 @@ async def main():
             )
         finally:
             if conn:
-                conn.close()
+                await conn.close()
 
 
 if __name__ == "__main__":

@@ -30,3 +30,4 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+asyncio_default_fixture_loop_scope = "function"

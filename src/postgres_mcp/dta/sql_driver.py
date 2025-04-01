@@ -4,8 +4,11 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from typing_extensions import LiteralString
+from psycopg.rows import dict_row
+
+
+import psycopg
 
 logger = logging.getLogger(__name__)
 
@@ -29,39 +32,64 @@ class SqlDriver:
         if conn:
             self.conn = conn
         elif engine_url:
-            self.conn = psycopg2.connect(engine_url)
+            # Don't connect here since we need async connection
+            self.engine_url = engine_url
+            self.conn = None
         else:
             raise ValueError("Either conn or engine_url must be provided")
 
-    def execute_query(
-        self, query: str, force_readonly: bool = True
+    async def connect(self):
+        if self.conn is None and self.engine_url:
+            self.conn = await psycopg.AsyncConnection.connect(self.engine_url)
+        else:
+            raise ValueError("Either conn or engine_url must be provided")
+
+    async def execute_query(
+        self,
+        query: LiteralString,
+        params: list[Any] | None = None,
+        force_readonly: bool = True,
     ) -> Optional[List[RowResult]]:
         """
         Execute a query and return results.
 
         Args:
             query: SQL query to execute
+            params: Query parameters
+            force_readonly: Whether to enforce read-only mode
 
         Returns:
             List of RowResult objects or None on error
         """
         try:
-            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            await self.connect()
+            if self.conn is None:
+                raise ValueError("Connection not established")
+            async with self.conn.cursor(row_factory=dict_row) as cursor:
                 # Start read-only transaction
                 if force_readonly:
-                    cursor.execute("BEGIN TRANSACTION READ ONLY")
+                    await cursor.execute("BEGIN TRANSACTION READ ONLY")
                 try:
-                    cursor.execute(query)
+                    if params:
+                        await cursor.execute(query, params)
+                    else:
+                        await cursor.execute(query)
+
                     if cursor.description is None:  # No results (like DDL statements)
                         return None
-                    rows = cursor.fetchall()
+
+                    rows = await cursor.fetchall()
+
                     if not force_readonly:
-                        cursor.execute("COMMIT")
+                        await cursor.execute("COMMIT")
+
                     return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
                 finally:
                     if force_readonly:
-                        cursor.execute("ROLLBACK")
+                        await cursor.execute("ROLLBACK")
         except Exception as e:
             logger.error(f"Error executing query: {e}")
-            self.conn.rollback()
+            if self.conn:
+                await self.conn.rollback()
+                self.conn = None
             return None

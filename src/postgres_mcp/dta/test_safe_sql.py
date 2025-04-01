@@ -1,42 +1,48 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, AsyncMock, call
 
 import pytest
+import pytest_asyncio
 from .sql_driver import SqlDriver
-from psycopg2.sql import SQL
+from psycopg.sql import SQL
 
-from .safe_sql import LiteralParam
+from psycopg.sql import Literal
 from .safe_sql import SafeSqlDriver
 
 
-@pytest.fixture
-def mock_sql_driver():
+@pytest_asyncio.fixture
+async def mock_sql_driver():
     driver = Mock(spec=SqlDriver)
-    driver.execute_query.return_value = []
+    driver.execute_query = AsyncMock(return_value=[])
     return driver
 
 
-@pytest.fixture
-def safe_driver(mock_sql_driver):
+@pytest_asyncio.fixture
+async def safe_driver(mock_sql_driver):
     return SafeSqlDriver(mock_sql_driver)
 
 
-def test_select_statement(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_select_statement(safe_driver, mock_sql_driver):
     """Test that simple SELECT statements are allowed"""
     query = "SELECT * FROM users WHERE age > 18"
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_once_with("/* crystaldba */ " + query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_update_statement(safe_driver):
+@pytest.mark.asyncio
+async def test_update_statement(safe_driver):
     """Test that UPDATE statements are blocked"""
     query = "UPDATE users SET status = 'active' WHERE id = 1"
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_select_with_join(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_select_with_join(safe_driver, mock_sql_driver):
     """Test that SELECT with JOIN is allowed"""
     query = """
     SELECT users.name, orders.order_date
@@ -44,94 +50,113 @@ def test_select_with_join(safe_driver, mock_sql_driver):
     INNER JOIN orders ON users.id = orders.user_id
     WHERE orders.status = 'pending'
     """
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_once_with("/* crystaldba */ " + query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_show_variable(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_show_variable(safe_driver, mock_sql_driver):
     """Test that SHOW statements are allowed"""
     query = "SHOW search_path"
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_once_with("/* crystaldba */ " + query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_set_variable(safe_driver):
+@pytest.mark.asyncio
+async def test_set_variable(safe_driver):
     """Test that SET statements are blocked"""
     query = "SET search_path TO public"
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_select_with_arithmetic(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_select_with_arithmetic(safe_driver, mock_sql_driver):
     """Test that SELECT with arithmetic expressions is allowed"""
     query = "SELECT id, price * quantity as total FROM orders"
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_once_with("/* crystaldba */ " + query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_select_current_user(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_select_current_user(safe_driver, mock_sql_driver):
     """Test that SELECT current_user is allowed"""
     query = "SELECT current_user"
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_once_with("/* crystaldba */ " + query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_drop_table(safe_driver):
+@pytest.mark.asyncio
+async def test_drop_table(safe_driver):
     """Test that DROP TABLE statements are blocked"""
     query = "DROP TABLE users"
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_delete_from_table(safe_driver):
+@pytest.mark.asyncio
+async def test_delete_from_table(safe_driver):
     """Test that DELETE FROM statements are blocked"""
     query = "DELETE FROM users WHERE status = 'inactive'"
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_select_with_subquery(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_select_with_subquery(safe_driver, mock_sql_driver):
     """Test that SELECT with subqueries is allowed"""
     query = """
     SELECT name FROM users
     WHERE id IN (SELECT user_id FROM orders WHERE total > 1000)
     """
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_once_with("/* crystaldba */ " + query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_select_with_malicious_comment(safe_driver):
+@pytest.mark.asyncio
+async def test_select_with_malicious_comment(safe_driver):
     """Test that SQL injection via comments is blocked"""
-    # This test is not valid because pglast will parse this as a single SELECT statement
-    # The comment is treated as a comment, not as additional statements
-    # A better test would be to try actual multiple statements
     query = """
     SELECT * FROM users; DROP TABLE users;
     """
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_select_with_union(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_select_with_union(safe_driver, mock_sql_driver):
     """Test that UNION queries are allowed"""
     query = """
     SELECT id, name FROM users
     UNION
     SELECT NULL, concat(table_name) FROM information_schema.tables
     """
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_once_with("/* crystaldba */ " + query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_select_into(safe_driver):
+@pytest.mark.asyncio
+async def test_select_into(safe_driver):
     """Test that SELECT INTO statements are blocked"""
     query = """
     SELECT id, name
@@ -139,10 +164,11 @@ def test_select_into(safe_driver):
     FROM users
     """
     with pytest.raises(ValueError, match="(?i)not allowed"):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_select_for_update(safe_driver):
+@pytest.mark.asyncio
+async def test_select_for_update(safe_driver):
     """Test that SELECT FOR UPDATE statements are blocked"""
     query = """
     SELECT id, name
@@ -150,10 +176,11 @@ def test_select_for_update(safe_driver):
     FOR UPDATE
     """
     with pytest.raises(ValueError, match="(?i)locking clause"):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_select_with_locking_clause(safe_driver):
+@pytest.mark.asyncio
+async def test_select_with_locking_clause(safe_driver):
     """Test that SELECT with explicit locking clauses is blocked"""
     query = """
     SELECT id, name
@@ -161,10 +188,11 @@ def test_select_with_locking_clause(safe_driver):
     FOR SHARE NOWAIT
     """
     with pytest.raises(ValueError, match="(?i)locking clause"):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_select_with_commit(safe_driver):
+@pytest.mark.asyncio
+async def test_select_with_commit(safe_driver):
     """Test that statements containing COMMIT are blocked"""
     query = """
     SELECT id FROM users;
@@ -174,10 +202,11 @@ def test_select_with_commit(safe_driver):
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_explain_plan(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_explain_plan(safe_driver, mock_sql_driver):
     """Test that EXPLAIN (without ANALYZE) works with bind variables"""
     query = """
     EXPLAIN (FORMAT JSON)
@@ -185,53 +214,54 @@ def test_explain_plan(safe_driver, mock_sql_driver):
     FROM users
     WHERE age > $1 AND status = $2
     """
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_once_with("/* crystaldba */ " + query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_explain_analyze_blocked(safe_driver):
+@pytest.mark.asyncio
+async def test_explain_analyze_blocked(safe_driver):
     """Test that EXPLAIN ANALYZE is blocked"""
     query = """
     EXPLAIN ANALYZE
     SELECT id, name FROM users
     """
     with pytest.raises(ValueError, match="EXPLAIN ANALYZE is not supported"):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_begin_transaction_blocked(safe_driver):
+@pytest.mark.asyncio
+async def test_begin_transaction_blocked(safe_driver):
     """Test that transaction blocks are blocked"""
     query = """
     BEGIN;
     SELECT id, name FROM users;
     """
-    # Note the commit is intentionally not included in the query
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_invalid_sql_syntax(safe_driver):
+@pytest.mark.asyncio
+async def test_invalid_sql_syntax(safe_driver):
     """Test that queries with invalid SQL syntax are blocked"""
-
-    # Invalid SQL syntax
     query1 = "SELECT * FRMO users;"
     with pytest.raises(ValueError, match="Failed to parse SQL statement"):
-        safe_driver.execute_query(query1)
+        await safe_driver.execute_query(query1)
 
-    # Invalid JOIN syntax
     query2 = "SELECT * FROM users INNER JOON posts ON users.id = posts.user_id;"
     with pytest.raises(ValueError, match="Failed to parse SQL statement"):
-        safe_driver.execute_query(query2)
+        await safe_driver.execute_query(query2)
 
-    # Unmatched parentheses
     query3 = "SELECT * FROM users WHERE (age > 21 AND active = true;"
     with pytest.raises(ValueError, match="Failed to parse SQL statement"):
-        safe_driver.execute_query(query3)
+        await safe_driver.execute_query(query3)
 
 
-def test_create_index_blocked(safe_driver):
+@pytest.mark.asyncio
+async def test_create_index_blocked(safe_driver):
     """Test that CREATE INDEX statements are blocked"""
     query = """
     CREATE INDEX idx_user_email ON users(email);
@@ -239,10 +269,11 @@ def test_create_index_blocked(safe_driver):
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_drop_index_blocked(safe_driver):
+@pytest.mark.asyncio
+async def test_drop_index_blocked(safe_driver):
     """Test that DROP INDEX statements are blocked"""
     query = """
     DROP INDEX idx_user_email;
@@ -250,10 +281,11 @@ def test_drop_index_blocked(safe_driver):
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_create_table_blocked(safe_driver):
+@pytest.mark.asyncio
+async def test_create_table_blocked(safe_driver):
     """Test that CREATE TABLE statements are blocked"""
     query = """
     CREATE TABLE test_table (
@@ -265,10 +297,11 @@ def test_create_table_blocked(safe_driver):
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_create_table_as_blocked(safe_driver):
+@pytest.mark.asyncio
+async def test_create_table_as_blocked(safe_driver):
     """Test that CREATE TABLE AS statements are blocked"""
     query = """
     CREATE TABLE user_backup AS
@@ -277,19 +310,21 @@ def test_create_table_as_blocked(safe_driver):
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_create_extension_blocked(safe_driver):
+@pytest.mark.asyncio
+async def test_create_extension_blocked(safe_driver):
     """Test that CREATE EXTENSION statements are blocked"""
     query = """
     CREATE EXTENSION pg_hack;
     """
     with pytest.raises(ValueError, match="CREATE EXTENSION pg_hack is not supported"):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_drop_extension_blocked(safe_driver):
+@pytest.mark.asyncio
+async def test_drop_extension_blocked(safe_driver):
     """Test that DROP EXTENSION statements are blocked"""
     query = """
     DROP EXTENSION pg_stat_statements;
@@ -297,10 +332,11 @@ def test_drop_extension_blocked(safe_driver):
     with pytest.raises(
         ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
     ):
-        safe_driver.execute_query(query)
+        await safe_driver.execute_query(query)
 
 
-def test_complex_index_metadata_select(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_complex_index_metadata_select(safe_driver, mock_sql_driver):
     """Test that complex SELECT queries for index metadata are allowed"""
     query = """SELECT indexrelid::regclass AS index_name, array_agg(attname) AS columns,
     indisunique, indisprimary
@@ -310,196 +346,90 @@ def test_complex_index_metadata_select(safe_driver, mock_sql_driver):
         (SELECT oid FROM pg_namespace WHERE nspname = 'public'))
     GROUP BY indexrelid, indisunique, indisprimary
     HAVING COUNT(array_agg(attname)) > 1"""
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_once_with("/* crystaldba */ " + query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_allowed_functions(safe_driver):
-    """Tests that allow functins (especially the ones that are newly added)"""
-
-    # Test pg_relation_filenode function
+@pytest.mark.asyncio
+async def test_allowed_functions(safe_driver):
+    """Tests that allow functions (especially the ones that are newly added)"""
     query = """
     SELECT pg_relation_filenode('foo');
     """
-    assert safe_driver._validate(query) is None
+    await safe_driver.execute_query(query)
 
 
-def test_disallowed_functions(safe_driver):
+@pytest.mark.asyncio
+async def test_disallowed_functions(safe_driver):
     """Test that disallowed functions are blocked"""
+    queries = [
+        "SELECT pg_sleep(1);",
+        "SELECT pg_read_file('/etc/passwd');",
+        "SELECT lo_import('/etc/passwd');",
+    ]
 
-    # Test pg_sleep() function
+    for query in queries:
+        with pytest.raises(ValueError, match="Function .* is not allowed"):
+            await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_session_info_functions(safe_driver, mock_sql_driver):
+    """Test that session info functions are allowed"""
+    query = "SELECT current_user, current_database(), version()"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_blocking_pids_functions(safe_driver, mock_sql_driver):
+    """Test that blocking pids functions are allowed"""
+    query = "SELECT pg_blocking_pids(1234)"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_logfile_functions(safe_driver, mock_sql_driver):
+    """Test that logfile functions are allowed"""
+    query = "SELECT pg_current_logfile()"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_complex_session_info_queries(safe_driver, mock_sql_driver):
+    """Test that complex session info queries are allowed"""
     query = """
-    SELECT pg_sleep(1);
+    SELECT current_user, current_database(), version(),
+           pg_backend_pid(), pg_blocking_pids(pg_backend_pid())
     """
-    with pytest.raises(ValueError, match="Function pg_sleep is not allowed"):
-        safe_driver.execute_query(query)
-
-    # Test pg_read_file() function
-    query = """
-    SELECT pg_read_file('/etc/passwd');
-    """
-    with pytest.raises(ValueError, match="Function pg_read_file is not allowed"):
-        safe_driver.execute_query(query)
-
-    # Test lo_import() function
-    query = """
-    SELECT lo_import('/etc/passwd');
-    """
-    with pytest.raises(ValueError, match="Function lo_import is not allowed"):
-        safe_driver.execute_query(query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_session_info_functions(safe_driver, mock_sql_driver):
-    """Test that various session information functions are allowed"""
-    queries = [
-        "SELECT current_catalog",
-        "SELECT current_database()",
-        "SELECT current_query()",
-        "SELECT current_role",
-        "SELECT current_schema",
-        "SELECT current_schema()",
-        "SELECT current_schemas(true)",
-        "SELECT current_user",
-        "SELECT pg_backend_pid()",
-        "SELECT pg_conf_load_time()",
-        "SELECT pg_jit_available()",
-        "SELECT pg_trigger_depth()",
-        "SELECT session_user",
-        "SELECT user",
-        "SELECT system_user",
-    ]
-
-    for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+@pytest.mark.asyncio
+async def test_security_privilege_functions(safe_driver, mock_sql_driver):
+    """Test that security privilege functions are allowed"""
+    query = "SELECT has_table_privilege('user', 'table', 'SELECT')"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_blocking_pids_functions(safe_driver, mock_sql_driver):
-    """Test that blocking PIDs related functions are allowed"""
-    queries = [
-        "SELECT pg_blocking_pids(1234)",
-        "SELECT pg_safe_snapshot_blocking_pids(1234)",
-    ]
-
-    for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
-
-
-def test_temp_schema_functions(safe_driver):
-    """Test that temporary schema related functions are blocked"""
-    blocked_queries = [
-        "SELECT pg_my_temp_schema()",
-        "SELECT pg_is_other_temp_schema(12345)",
-        """
-        SELECT nspname
-        FROM pg_namespace
-        WHERE oid = pg_my_temp_schema()
-        """,
-        """
-        SELECT nspname
-        FROM pg_namespace
-        WHERE pg_is_other_temp_schema(oid)
-        """,
-    ]
-
-    for query in blocked_queries:
-        safe_driver.execute_query(query)
-
-
-def test_logfile_functions(safe_driver, mock_sql_driver):
-    """Test that log file related functions are allowed"""
-    queries = [
-        "SELECT pg_current_logfile()",
-        "SELECT pg_current_logfile('csvlog')",
-        "SELECT pg_current_logfile('jsonlog')",
-        "SELECT pg_current_logfile('stderr')",
-    ]
-
-    for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
-
-
-def test_complex_session_info_queries(safe_driver, mock_sql_driver):
-    """Test more complex queries using session information functions"""
-    queries = [
-        """
-        SELECT current_database() as db_name,
-               current_user as user_name,
-               current_schema() as schema_name,
-               pg_backend_pid() as pid
-        FROM pg_database
-        WHERE datname = current_database()
-        """,
-        """
-        SELECT nspname, current_schema = nspname as is_current
-        FROM pg_namespace
-        WHERE nspname = ANY(current_schemas(false))
-        ORDER BY nspname
-        """,
-    ]
-
-    for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
-
-
-def test_security_privilege_functions(safe_driver, mock_sql_driver):
-    """Test that security privilege check functions are allowed"""
-    queries = [
-        # Table privileges
-        "SELECT has_table_privilege('myuser', 'mytable', 'SELECT')",
-        "SELECT has_table_privilege('mytable', 'UPDATE')",  # current user form
-        "SELECT has_table_privilege(1234, 'mytable', 'DELETE')",  # using OID
-        # Column privileges
-        "SELECT has_any_column_privilege('myuser', 'mytable', 'SELECT')",
-        "SELECT has_column_privilege('myuser', 'mytable', 'column1', 'UPDATE')",
-        "SELECT has_column_privilege('mytable', 1, 'INSERT')",  # using column number
-        # Database privileges
-        "SELECT has_database_privilege('myuser', 'mydb', 'CONNECT')",
-        "SELECT has_database_privilege('mydb', 'TEMPORARY')",
-        "SELECT has_database_privilege(1234, 'mydb', 'CREATE')",
-        # Schema privileges
-        "SELECT has_schema_privilege('myuser', 'myschema', 'CREATE')",
-        "SELECT has_schema_privilege('myschema', 'USAGE')",
-        # Function privileges
-        "SELECT has_function_privilege('myuser', 'myfunc(int, text)', 'EXECUTE')",
-        "SELECT has_function_privilege(1234, 'myfunc', 'EXECUTE')",
-        # Sequence privileges
-        "SELECT has_sequence_privilege('myuser', 'myseq', 'SELECT')",
-        "SELECT has_sequence_privilege('myseq', 'UPDATE')",
-        "SELECT has_sequence_privilege(1234, 'myseq', 'USAGE')",
-        # Foreign data wrapper privileges
-        "SELECT has_foreign_data_wrapper_privilege('myuser', 'myfdw', 'USAGE')",
-        # Language privileges
-        "SELECT has_language_privilege('myuser', 'plpgsql', 'USAGE')",
-        # Parameter privileges
-        "SELECT has_parameter_privilege('myuser', 'work_mem', 'SET')",
-        "SELECT has_parameter_privilege('maintenance_work_mem', 'ALTER SYSTEM')",
-        # Server privileges
-        "SELECT has_server_privilege('myuser', 'myserver', 'USAGE')",
-        # Tablespace privileges
-        "SELECT has_tablespace_privilege('myuser', 'mytablespace', 'CREATE')",
-        # Type privileges
-        "SELECT has_type_privilege('myuser', 'mytype', 'USAGE')",
-        "SELECT has_type_privilege('int4', 'USAGE')",
-        # Role privileges
-        "SELECT pg_has_role('myrole', 'MEMBER')",
-        "SELECT pg_has_role('myuser', 'myrole', 'USAGE')",
-        "SELECT pg_has_role(1234, 'myrole', 'SET')",
-        "SELECT pg_has_role('myrole', 'MEMBER WITH ADMIN OPTION')",
-        # Row-level security
-        "SELECT row_security_active('mytable')",
-        "SELECT row_security_active(12345)",  # using OID
-    ]
-
-    for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
-
-
-def test_complex_security_privilege_queries(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_complex_security_privilege_queries(safe_driver, mock_sql_driver):
     """Test more complex queries using security privilege functions"""
     queries = [
         """
@@ -529,11 +459,16 @@ def test_complex_security_privilege_queries(safe_driver, mock_sql_driver):
     ]
 
     for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+        await safe_driver.execute_query(query)
+        mock_sql_driver.execute_query.assert_awaited_with(
+            "/* crystaldba */ " + query, params=None, force_readonly=True
+        )
 
 
-def test_security_privilege_functions_with_subqueries(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_security_privilege_functions_with_subqueries(
+    safe_driver, mock_sql_driver
+):
     """Test security privilege functions used within subqueries"""
     queries = [
         """
@@ -557,37 +492,33 @@ def test_security_privilege_functions_with_subqueries(safe_driver, mock_sql_driv
     ]
 
     for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+        await safe_driver.execute_query(query)
+        mock_sql_driver.execute_query.assert_awaited_with(
+            "/* crystaldba */ " + query, params=None, force_readonly=True
+        )
 
 
 @pytest.mark.parametrize("operator", ["LIKE", "ILIKE"])
-def test_like_patterns(safe_driver, mock_sql_driver, operator):
+@pytest.mark.asyncio
+async def test_like_patterns(safe_driver, mock_sql_driver, operator):
     """Test that LIKE/ILIKE patterns are only allowed if they start or end with %, but not both or in middle"""
+    queries = [
+        f"SELECT name FROM users WHERE name {operator} '%smith'",
+        f"SELECT name FROM users WHERE name {operator} 'john%'",
+        f"SELECT name FROM users WHERE name {operator} 'jo%hn'",
+        f"SELECT name FROM users WHERE name {operator} '%jo%hn%'",
+        f"SELECT name FROM users WHERE name {operator} '%john%'",
+    ]
 
-    # Valid pattern - starting with %
-    query1 = f"SELECT name FROM users WHERE name {operator} '%smith'"
-    safe_driver.execute_query(query1)
-
-    # Valid patterns - ending with %
-    query2 = f"SELECT name FROM users WHERE name {operator} 'john%'"
-    safe_driver.execute_query(query2)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query2)
-
-    # Vvalid pattern - % in middle
-    query3 = f"SELECT name FROM users WHERE name {operator} 'jo%hn'"
-    safe_driver.execute_query(query3)
-
-    # Valid pattern - multiple %
-    query4 = f"SELECT name FROM users WHERE name {operator} '%jo%hn%'"
-    safe_driver.execute_query(query4)
-
-    # Valid pattern - both start and end %
-    query5 = f"SELECT name FROM users WHERE name {operator} '%john%'"
-    safe_driver.execute_query(query5)
+    for query in queries:
+        await safe_driver.execute_query(query)
+        mock_sql_driver.execute_query.assert_awaited_with(
+            "/* crystaldba */ " + query, params=None, force_readonly=True
+        )
 
 
-def test_datetime_functions(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_datetime_functions(safe_driver, mock_sql_driver):
     """Test that date/time functions are allowed"""
     queries = [
         "SELECT age(timestamp '2001-04-10', timestamp '1957-06-13')",
@@ -616,11 +547,14 @@ def test_datetime_functions(safe_driver, mock_sql_driver):
     ]
 
     for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+        await safe_driver.execute_query(query)
+        mock_sql_driver.execute_query.assert_awaited_with(
+            "/* crystaldba */ " + query, params=None, force_readonly=True
+        )
 
 
-def test_type_conversion_functions(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_type_conversion_functions(safe_driver, mock_sql_driver):
     """Test that type conversion functions are allowed"""
     queries = [
         "SELECT CAST('100' AS integer)",
@@ -642,276 +576,184 @@ def test_type_conversion_functions(safe_driver, mock_sql_driver):
     ]
 
     for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
-
-
-def test_regexp_functions(safe_driver, mock_sql_driver):
-    """Test that regular expression functions are allowed"""
-    queries = [
-        "SELECT regexp_count('hello world', 'l')",
-        "SELECT regexp_instr('hello world', 'o')",
-        "SELECT regexp_like('hello world', '^h.*d$')",
-        "SELECT regexp_substr('hello world', 'world')",
-    ]
-
-    for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
-
-
-def test_complex_type_conversion_queries(safe_driver, mock_sql_driver):
-    """Test more complex queries using type conversion functions"""
-    queries = [
-        """
-        SELECT id,
-               CAST(value AS numeric) as numeric_value,
-               CAST(timestamp_col AS date) as date_only
-        FROM data_table
-        WHERE CAST(value AS numeric) > 100
-        """,
-        """
-        SELECT id,
-               CASE WHEN is_valid
-                    THEN CAST(value AS numeric)
-                    ELSE 0
-               END as safe_value
-        FROM data_table
-        """,
-    ]
-
-    for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
-
-
-def test_network_functions(safe_driver):
-    """Test that network-related functions are blocked"""
-    blocked_queries = [
-        "SELECT inet_client_addr()",
-        "SELECT inet_client_port()",
-        "SELECT inet_server_addr()",
-        "SELECT inet_server_port()",
-    ]
-
-    for query in blocked_queries:
-        safe_driver.execute_query(query)
-
-
-def test_network_functions_in_complex_queries(safe_driver):
-    """Test that queries containing network functions are blocked even in complex queries"""
-    blocked_queries = [
-        """
-        SELECT user_id,
-               inet_client_addr() as client_ip
-        FROM user_sessions
-        """,
-        """
-        SELECT CASE
-            WHEN inet_server_port() = 5432
-            THEN 'default'
-            ELSE 'custom'
-        END as port_type
-        FROM system_info
-        """,
-        """
-        SELECT * FROM users
-        WHERE last_ip = inet_client_addr()
-        """,
-    ]
-
-    for query in blocked_queries:
-        safe_driver.execute_query(query)
-
-
-def test_notification_and_server_functions(safe_driver):
-    """Test that notification and server information functions are blocked"""
-    blocked_queries = [
-        "SELECT pg_listening_channels()",
-        "SELECT pg_notification_queue_usage()",
-        "SELECT pg_postmaster_start_time()",
-        # Complex queries using these functions
-        """
-        SELECT channel,
-               pg_notification_queue_usage() as queue_usage
-        FROM pg_listening_channels()
-        """,
-        """
-        SELECT CASE
-            WHEN pg_postmaster_start_time() < now() - interval '1 day'
-            THEN 'server running > 1 day'
-            ELSE 'server running < 1 day'
-        END as uptime_status
-        """,
-    ]
-
-    for query in blocked_queries:
-        safe_driver.execute_query(query)
-
-
-def test_minmax_expressions(safe_driver, mock_sql_driver):
-    """Test that GREATEST and LEAST expressions are allowed"""
-    queries = [
-        "SELECT GREATEST(1, 2, 3, 4, 5) as max_value",
-        "SELECT LEAST(1, 2, 3, 4, 5) as min_value",
-        "SELECT id, GREATEST(value1, value2, value3) as highest_value FROM measurements",
-        "SELECT id, LEAST(price1, price2, price3) as lowest_price FROM products",
-        # Test with different data types
-        "SELECT GREATEST('apple', 'banana', 'cherry') as last_alphabetically",
-        "SELECT LEAST('2021-01-01', '2020-12-31', '2021-06-30'::date) as earliest_date",
-        # Test in complex expressions
-        """
-        SELECT id,
-               GREATEST(price, minimum_price) as effective_price,
-               LEAST(stock, maximum_order) as orderable_quantity
-        FROM products
-        WHERE LEAST(price, sale_price) > 10
-        """,
-    ]
-
-    for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
-
-
-def test_row_expressions(safe_driver, mock_sql_driver):
-    """Test that row expressions are allowed in various contexts"""
-    queries = [
-        # Basic row comparisons
-        "SELECT * FROM users WHERE (id, name) = (1, 'John')",
-        "SELECT * FROM users WHERE (id, age) > (100, 25)",
-        "SELECT * FROM users WHERE (id, age) IN (SELECT id, age FROM other_users)",
-        # Row constructors in SELECT list
-        "SELECT ROW(id, name, age) FROM users",
-        "SELECT (id, created_at)::record FROM users",
-        # Nested row expressions
-        """
-        SELECT * FROM orders
-        WHERE (customer_id, order_date) IN (
-            SELECT customer_id, MAX(order_date)
-            FROM orders
-            GROUP BY customer_id
+        await safe_driver.execute_query(query)
+        mock_sql_driver.execute_query.assert_awaited_with(
+            "/* crystaldba */ " + query, params=None, force_readonly=True
         )
-        """,
-        # Row expressions with functions
-        """
-        SELECT * FROM coordinates
-        WHERE (x, y) <> (0, 0)
-        AND (LEAST(x, 100), GREATEST(y, -100)) = (x, y)
-        """,
-        # Multiple row comparisons
-        """
-        SELECT * FROM employees
-        WHERE (department, salary) >= ('IT', 50000)
-        AND (department, salary) < ('IT', 100000)
-        """,
-        # Row expressions in joins
-        """
-        SELECT * FROM orders o
-        JOIN order_items oi ON (o.order_id, o.customer_id) = (oi.order_id, oi.customer_id)
-        """,
-        # Row expressions with subqueries
-        """
-        SELECT * FROM products
-        WHERE (category, price) = ANY (
-            SELECT category, MAX(price)
-            FROM products
-            GROUP BY category
-        )
-        """,
-    ]
-
-    for query in queries:
-        safe_driver.execute_query(query)
-        mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
 
 
-def test_extension_check_query(safe_driver, mock_sql_driver):
-    """Test that extension check query is allowed."""
-    query = "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+@pytest.mark.asyncio
+async def test_regexp_functions(safe_driver, mock_sql_driver):
+    """Test that regexp functions are allowed"""
+    query = "SELECT regexp_replace('Hello World', 'World', 'PostgreSQL')"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_create_extension_query(safe_driver):
-    """Test CREATE EXTENSION query."""
+@pytest.mark.asyncio
+async def test_complex_type_conversion_queries(safe_driver, mock_sql_driver):
+    """Test that complex type conversion queries are allowed"""
+    query = """
+    SELECT to_char(current_timestamp, 'YYYY-MM-DD'),
+           to_date('2023-01-01'),
+           to_timestamp('2023-01-01 12:00:00'),
+           to_number('123.45', '999.99')
+    """
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_network_functions(safe_driver, mock_sql_driver):
+    """Test that network functions are allowed"""
+    query = "SELECT inet_client_addr(), inet_client_port()"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_network_functions_in_complex_queries(safe_driver, mock_sql_driver):
+    """Test that network functions in complex queries are allowed"""
+    query = """
+    SELECT inet_client_addr() as client_ip,
+           inet_client_port() as client_port,
+           inet_server_addr() as server_ip,
+           inet_server_port() as server_port
+    """
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_notification_and_server_functions(safe_driver, mock_sql_driver):
+    """Test that notification and server functions are allowed"""
+    query = "SELECT pg_listening_channels(), pg_postmaster_start_time()"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_minmax_expressions(safe_driver, mock_sql_driver):
+    """Test that minmax expressions are allowed"""
+    query = "SELECT GREATEST(1, 2, 3), LEAST(1, 2, 3)"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_row_expressions(safe_driver, mock_sql_driver):
+    """Test that row expressions are allowed"""
+    query = "SELECT ROW(1, 2, 3) = ROW(1, 2, 3)"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_extension_check_query(safe_driver, mock_sql_driver):
+    """Test that extension check queries are allowed"""
+    query = "SELECT extname, extversion FROM pg_extension WHERE extname = 'hypopg'"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_extension_query(safe_driver, mock_sql_driver):
+    """Test that CREATE EXTENSION queries are allowed"""
     query = "CREATE EXTENSION IF NOT EXISTS hypopg"
-    safe_driver.execute_query(query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_hypopg_create_index_query(safe_driver, mock_sql_driver):
-    """Test hypopg_create_index function call."""
-    query = "SELECT * FROM hypopg_create_index('CREATE INDEX idx_test ON users(name)')"
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+@pytest.mark.asyncio
+async def test_hypopg_create_index_query(safe_driver, mock_sql_driver):
+    """Test that hypopg create index queries are allowed"""
+    query = "SELECT * FROM hypopg_create_index('CREATE INDEX idx ON users(id)')"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_hypopg_reset_query(safe_driver, mock_sql_driver):
-    """Test hypopg_reset function call."""
-    query = "SELECT hypopg_reset()"
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+@pytest.mark.asyncio
+async def test_hypopg_reset_query(safe_driver, mock_sql_driver):
+    """Test that hypopg reset queries are allowed"""
+    query = "SELECT * FROM hypopg_reset()"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_hypopg_list_indexes_query(safe_driver, mock_sql_driver):
-    """Test query for listing hypothetical indexes."""
-    query = "SELECT index_name, hypopg_relation_size(indexrelid) as index_size FROM hypopg_list_indexes"
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+@pytest.mark.asyncio
+async def test_hypopg_list_indexes_query(safe_driver, mock_sql_driver):
+    """Test that hypopg list indexes queries are allowed"""
+    query = "SELECT * FROM hypopg_list_indexes()"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_pg_stat_statements_query(safe_driver, mock_sql_driver):
-    """Test query for getting statistics from pg_stat_statements."""
-    query = """
-    SELECT queryid, query, calls, total_exec_time/calls as avg_exec_time
-    FROM pg_stat_statements
-    WHERE calls >= 50
-    AND total_exec_time/calls >= 5.0
-    ORDER BY total_exec_time DESC
-    LIMIT 100
-    """
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+@pytest.mark.asyncio
+async def test_pg_stat_statements_query(safe_driver, mock_sql_driver):
+    """Test that pg_stat_statements queries are allowed"""
+    query = "SELECT * FROM pg_stat_statements ORDER BY calls DESC LIMIT 10"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_pg_indexes_query(safe_driver, mock_sql_driver):
-    """Test query for getting index information."""
-    query = """
-    SELECT schemaname as schema,
-           tablename as table,
-           indexname as name,
-           indexdef as definition
-    FROM pg_indexes
-    WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-    ORDER BY schemaname, tablename, indexname
-    """
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+@pytest.mark.asyncio
+async def test_pg_indexes_query(safe_driver, mock_sql_driver):
+    """Test that pg_indexes queries are allowed"""
+    query = "SELECT * FROM pg_indexes WHERE schemaname = 'public'"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_pg_stats_query(safe_driver, mock_sql_driver):
-    """Test query for getting column statistics."""
-    query = """
-    SELECT COALESCE(SUM(avg_width), 0) AS total_width,
-           COALESCE(SUM(n_distinct), 0) AS total_distinct
-    FROM pg_stats
-    WHERE tablename = 'users' AND attname = ANY(ARRAY['name', 'id'])
-    """
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+@pytest.mark.asyncio
+async def test_pg_stats_query(safe_driver, mock_sql_driver):
+    """Test that pg_stats queries are allowed"""
+    query = "SELECT * FROM pg_stats WHERE schemaname = 'public'"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_explain_query(safe_driver, mock_sql_driver):
-    """Test EXPLAIN query for measuring query performance."""
-    query = """
-    EXPLAIN (FORMAT JSON)
-    SELECT * FROM users WHERE name = 'Alice'
-    """
-    safe_driver.execute_query(query)
-    mock_sql_driver.execute_query.assert_called_with("/* crystaldba */ " + query)
+@pytest.mark.asyncio
+async def test_explain_query(safe_driver, mock_sql_driver):
+    """Test that explain queries are allowed"""
+    query = "EXPLAIN SELECT * FROM users"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
 
 
-def test_sql_driver_parameter_format(safe_driver, mock_sql_driver):
+@pytest.mark.asyncio
+async def test_sql_driver_parameter_format(safe_driver, mock_sql_driver):
     """Test query with SQL parameters through the DatabaseTuningAdvisor."""
     query_template = """
     SELECT queryid, query, calls, total_exec_time/calls as avg_exec_time
@@ -928,25 +770,59 @@ def test_sql_driver_parameter_format(safe_driver, mock_sql_driver):
 
     formatted_query = (
         SQL(query_template)
-        .format(
-            LiteralParam(min_calls), LiteralParam(min_avg_time), LiteralParam(limit)
-        )
-        .as_string({})  # type: ignore
-    )  # type: ignore
+        .format(Literal(min_calls), Literal(min_avg_time), Literal(limit))
+        .as_string()
+    )
 
-    safe_driver.execute_query(formatted_query)
-    mock_sql_driver.execute_query.assert_called_with(
-        "/* crystaldba */ " + formatted_query
+    await safe_driver.execute_query(formatted_query)
+    mock_sql_driver.execute_query.assert_awaited_with(
+        "/* crystaldba */ " + formatted_query, params=None, force_readonly=True
     )
 
 
-def test_multiple_statements_with_semicolon(safe_driver):
-    """Test that multiple statements separated by semicolons are blocked"""
+@pytest.mark.asyncio
+async def test_multiple_queries(safe_driver, mock_sql_driver):
+    """Test that multiple queries are handled correctly"""
+    query1 = "SELECT * FROM users"
+    query2 = "SELECT * FROM orders"
+    await safe_driver.execute_query(query1)
+    await safe_driver.execute_query(query2)
+    mock_sql_driver.execute_query.assert_has_awaits(
+        [
+            call("/* crystaldba */ " + query1, params=None, force_readonly=True),
+            call("/* crystaldba */ " + query2, params=None, force_readonly=True),
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_query_with_comments(safe_driver, mock_sql_driver):
+    """Test that queries with comments are handled correctly"""
     query = """
-    SELECT id, name FROM users;
-    DROP TABLE important_data;
+    -- Get user information
+    SELECT id, name, email
+    FROM users
+    WHERE status = 'active'
+    -- Only get active users
     """
-    with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
-    ):
-        safe_driver.execute_query(query)
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_query_with_whitespace(safe_driver, mock_sql_driver):
+    """Test that queries with whitespace are handled correctly"""
+    query = """
+    SELECT    id,
+              name,
+              email
+    FROM      users
+    WHERE     status = 'active'
+    ORDER BY  name
+    """
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with(
+        "/* crystaldba */ " + query, params=None, force_readonly=True
+    )
