@@ -22,13 +22,6 @@ class MockCell:
     def __init__(self, data: Dict[str, Any]):
         self.cells = data
 
-
-# Helper functions for async test conversion
-async def async_mock_execute_query(query, *args, **kwargs):
-    """Helper to convert mock execute_query to be awaitable"""
-    return []
-
-
 # Using pytest-asyncio's fixture to run async tests
 @pytest_asyncio.fixture
 async def async_sql_driver():
