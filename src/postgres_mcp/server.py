@@ -18,6 +18,7 @@ mcp = FastMCP("postgres-mcp")
 SCHEMA_PATH = "schema"
 EXTENSIONS_PATH = "_extensions"
 PG_STAT_STATEMENTS = "pg_stat_statements"
+HYPOPG_EXTENSION = "hypopg"
 
 # Type definitions for type hinting
 T = TypeVar("T")
@@ -206,16 +207,61 @@ async def list_installed_extensions(ctx: Context) -> ResponseType:
 
 @mcp.tool()
 @handle_db_errors
-async def install_extension_pg_stat_statements() -> ResponseType:
-    """Installs the 'pg_stat_statements' extension if it's not already installed."""
-    sql_driver = get_safe_sql_driver()
-    sql_driver.execute_query(
-        f"CREATE EXTENSION IF NOT EXISTS {PG_STAT_STATEMENTS};",
-        force_readonly=False,
-    )
-    return format_text_response(
-        f"Successfully ensured '{PG_STAT_STATEMENTS}' extension is installed."
-    )
+async def install_extension(extension_name: str) -> ResponseType:
+    """ "Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser)."""
+
+    try:
+        # First check if the extension exists in pg_available_extensions
+        sql_driver = get_safe_sql_driver()
+        check_rows = SafeSqlDriver.execute_param_query(
+            sql_driver,
+            "SELECT name, default_version FROM pg_available_extensions WHERE name = {}",
+            [extension_name],
+        )
+
+        if not check_rows:
+            return format_text_response(
+                f"Error: Extension '{extension_name}' is not available in the PostgreSQL installation. Please check if the extension is properly installed on the server."
+            )
+
+        # Check if extension is already installed
+        installed_rows = SafeSqlDriver.execute_param_query(
+            sql_driver,
+            "SELECT extversion FROM pg_extension WHERE extname = {}",
+            [extension_name],
+        )
+
+        if installed_rows:
+            return format_text_response(
+                f"Extension '{extension_name}' version {installed_rows[0].cells['extversion']} is already installed."
+            )
+
+        # Attempt to create the extension
+        sql_driver.execute_query(
+            f"CREATE EXTENSION {extension_name};",
+            force_readonly=False,
+        )
+
+        return format_text_response(
+            f"Successfully installed '{extension_name}' extension.",
+        )
+    except psycopg2.OperationalError as e:
+        error_msg = (
+            f"Error installing '{extension_name}': {e}\n\n"
+            "This is likely due to insufficient permissions. The following are common causes:\n"
+            "1. The database user lacks superuser privileges\n"
+            "2. The extension is not available in the PostgreSQL installation\n"
+            "3. The extension requires additional system-level dependencies\n\n"
+            "Please ensure you have the necessary permissions and the extension is available on your PostgreSQL server."
+        )
+        return format_text_response(error_msg)
+    except Exception as e:
+        error_msg = (
+            f"Unexpected error installing '{extension_name}': {e}\n\n"
+            "Please check the error message and ensure all prerequisites are met."
+        )
+        return format_text_response(error_msg)
+
 
 
 @mcp.tool()
@@ -257,7 +303,7 @@ async def top_slow_queries(limit: int = 10) -> ResponseType:
     else:
         message = (
             f"The '{PG_STAT_STATEMENTS}' extension is required to report slow queries, but it is not currently installed.\n\n"
-            f"You can ask me to install it using the 'install_extension_pg_stat_statements' tool.\n\n"
+            f"You can ask me to install 'pg_stat_statements' using the 'install_extension' tool.\n\n"
             f"**Is it safe?** Installing '{PG_STAT_STATEMENTS}' is generally safe and a standard practice for performance monitoring. It adds performance overhead by tracking statistics, but this is usually negligible unless your server is under extreme load. It requires database privileges (often superuser) to install.\n\n"
             f"**What does it do?** It records statistics (like execution time, number of calls, rows returned) for every query executed against the database.\n\n"
             f"**How to undo?** If you later decide to remove it, you can ask me to run 'DROP EXTENSION {PG_STAT_STATEMENTS};'."
