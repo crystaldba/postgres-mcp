@@ -1,0 +1,3 @@
+- Fow now, just keeping all the components that interact to "orchestrate" the llm in one folder
+- eg. Agents, Tasks, Rules, Workflows, Pipelines
+- Once the system design gets more complex, we can reorganize - maybe with a folder for each type of component

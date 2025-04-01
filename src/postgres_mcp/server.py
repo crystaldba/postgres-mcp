@@ -10,6 +10,7 @@ from pydantic import AnyUrl
 from .dta.dta_tools import DTATool
 from .dta.safe_sql import SafeSqlDriver
 from .dta.sql_driver import SqlDriver
+from .orchestration.database_health import DatabaseHealthTool
 
 mcp = FastMCP("postgres-mcp")
 
@@ -195,6 +196,23 @@ async def analyze_single_query(
     result = dta_tool.analyze_single_query(
         query=query, max_index_size_mb=max_index_size_mb
     )
+    return format_text_response(result)
+
+
+@mcp.tool(
+    description="Analyzes database health for specified components including buffer cache hit rates, "
+    "identifies duplicate, unused, or invalid indexes, sequence health, constraint health "
+    "vacuum health, and connection health."
+)
+async def database_health(health_type: str = "all") -> ResponseType:
+    """Analyze database health for specified components.
+
+    Args:
+        health_type: Comma-separated list of health check types to perform.
+                    Valid values: index, connection, vacuum, sequence, replication, buffer, constraint, all
+    """
+    health_tool = DatabaseHealthTool(get_safe_sql_driver())
+    result = health_tool.health(health_type=health_type)
     return format_text_response(result)
 
 
