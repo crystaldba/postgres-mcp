@@ -267,7 +267,7 @@ class DatabaseTuningAdvisor:
         result = await self.sql_driver.execute_query(
             "SELECT s.last_analyze FROM pg_stat_user_tables s LIMIT 1"
         )
-        if not result or all(row.cells.get("last_analyze") is None for row in result):
+        if not result or any(row.cells.get("last_analyze") is not None for row in result):
             error_message = (
                 "Statistics are not up-to-date. The database needs to be analyzed first. "
                 "Please run 'ANALYZE;' on your database before using the tuning advisor. "
@@ -436,6 +436,10 @@ class DatabaseTuningAdvisor:
         self, query_weights: list[tuple[str, SelectStmt, float]]
     ) -> list[IndexRecommendation]:
         """Generate index recommendations using a hybrid 'seed + greedy' approach with a time cutoff."""
+        if query_weights is None or len(query_weights) == 0:
+            self.dta_trace("No query provided")
+            return []
+        
         # Gather queries as strings
         workload_queries = [q for q, _, _ in query_weights]
 
@@ -622,7 +626,6 @@ class DatabaseTuningAdvisor:
             result = await self.sql_driver.execute_query(
                 "SELECT index_name, hypopg_relation_size(indexrelid) as index_size FROM hypopg_list_indexes;"
             )
-            logger.info(f">>> Estimated sizes: {result}")
             if result is not None:
                 index_map = {
                     r.cells["index_name"]: r.cells["index_size"] for r in result
@@ -750,7 +753,7 @@ class DatabaseTuningAdvisor:
         # Total space is base relation plus indexes
         current_space = base_relation_size + indexes_size
         current_time = current_cost
-        current_objective = math.log(current_time) + alpha * math.log(current_space)
+        current_objective = math.log(current_time) + alpha * math.log(current_space) if current_cost > 0 and current_space > 0 else float("inf")
 
         self.dta_trace(
             f"  - Initial configuration: Time={current_time:.2f}, "
