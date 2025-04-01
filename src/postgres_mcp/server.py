@@ -85,6 +85,7 @@ def wrap_with_try_and_reraise(func: Callable[..., Awaitable[T]]) -> Callable[...
 
 
 @mcp.resource(
+    name="list_resources",
     uri="postgres://resources",
     description="List available resources, such as database tables and extensions",
 )
@@ -123,6 +124,7 @@ async def list_resources() -> list[types.Resource]:
 
 
 @mcp.resource(
+    name="list_extensions",
     uri="postgres://extensions",
     description="List available and installed extensions",
 )
@@ -152,6 +154,7 @@ async def extensions_resource() -> str:
 
 
 @mcp.resource(
+    name="list_table_columns",
     uri="postgres://{table_name}/schema",
     description="Show columns for the table",
 )
