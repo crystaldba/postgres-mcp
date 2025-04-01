@@ -265,9 +265,9 @@ class DatabaseTuningAdvisor:
 
         # Pre-check 2: Check if ANALYZE has been run at least once
         result = await self.sql_driver.execute_query(
-            "SELECT s.last_analyze FROM pg_stat_user_tables s LIMIT 1"
+            "SELECT s.last_analyze FROM pg_stat_user_tables s ORDER BY s.last_analyze LIMIT 1;"
         )
-        if not result or any(
+        if not result or not any(
             row.cells.get("last_analyze") is not None for row in result
         ):
             error_message = (

@@ -103,7 +103,7 @@ class SqlDriver:
             if self.conn:
                 try:
                     await self.conn.rollback()
-                except Exception as e:
-                    logger.error(f"Error rolling back transaction: {e}")
+                except Exception as re:
+                    logger.error(f"Error rolling back transaction: {re}")
                 self.conn = None
             raise e

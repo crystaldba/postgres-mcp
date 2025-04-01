@@ -36,7 +36,6 @@ async def db_connection():
         "CREATE EXTENSION IF NOT EXISTS hypopg", force_readonly=False
     )
 
-    logger.info(f"Connected to {database_url}")
     return driver
 
 
@@ -682,12 +681,6 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
             except Exception as e:
                 logger.warning(f"Query execution error (expected during testing): {e}")
 
-    # Create a pseudo-query-store by directly inserting into pg_stat_statements
-    # This ensures the workload appears with appropriate weights
-    await db_connection.execute_query(
-        "CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False
-    )
-
     # Manually populate query stats in session class to ensure proper weighting
     workload = []
     for i, query_info in enumerate(multi_column_queries):
@@ -865,6 +858,11 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
 async def test_diminishing_returns(db_connection, create_dta):
     """Test that the DTA correctly implements the diminishing returns behavior."""
     dta = create_dta
+
+    # Clear pg_stat_statements
+    await db_connection.execute_query(
+        "SELECT pg_stat_statements_reset()", force_readonly=False
+    )
 
     # Set up schema with tables designed to show diminishing returns
     await db_connection.execute_query(
