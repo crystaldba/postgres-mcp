@@ -39,10 +39,12 @@ class SqlDriver:
             raise ValueError("Either conn or engine_url must be provided")
 
     async def connect(self):
-        if self.conn is None and self.engine_url:
+        if self.conn is not None:
+            return
+        if self.engine_url:
             self.conn = await psycopg.AsyncConnection.connect(self.engine_url)
         else:
-            raise ValueError("Either conn or engine_url must be provided")
+            raise ValueError("Connection not established. Either conn or engine_url must be provided")
 
     async def execute_query(
         self,
@@ -88,7 +90,7 @@ class SqlDriver:
                     if force_readonly:
                         await cursor.execute("ROLLBACK")
         except Exception as e:
-            logger.error(f"Error executing query: {e}")
+            logger.error(f"Error executing query ({query}): {e}")
             if self.conn:
                 await self.conn.rollback()
                 self.conn = None
