@@ -7,7 +7,6 @@ from typing import ClassVar
 from typing import Optional
 
 import pglast
-import psycopg2.extensions as ext
 from .sql_driver import SqlDriver
 
 from pglast.ast import A_ArrayExpr
@@ -54,46 +53,12 @@ from pglast.ast import TypeName
 from pglast.ast import VariableShowStmt
 from pglast.ast import WithClause
 from pglast.enums import A_Expr_Kind
-from psycopg2.sql import SQL
-from psycopg2.sql import Composable
+from psycopg.sql import SQL
+from psycopg.sql import Composable
+from psycopg.sql import Literal
+from typing_extensions import LiteralString
 
 logger = logging.getLogger(__name__)
-
-
-class LiteralParam(Composable):
-    """
-    A `Composable` representing an SQL value to include in a query.
-
-    Usually you will want to include placeholders in the query and pass values
-    as `~cursor.execute()` arguments. If however you really really need to
-    include a literal value in the query you can use this object.
-
-    The string returned by `!as_string()` follows the normal :ref:`adaptation
-    rules <python-types-adaptation>` for Python objects.
-
-    Example::
-
-        >>> s1 = LiteralParam("foo")
-        >>> s2 = LiteralParam("ba'r")
-        >>> s3 = LiteralParam(42)
-        >>> print(sql.SQL(', ').join([s1, s2, s3]).as_string(conn))
-        'foo', 'ba''r', 42
-
-    """
-
-    @property
-    def wrapped(self):
-        """The object wrapped by the `!LiteralParam`."""
-        return self._wrapped  # type: ignore
-
-    def as_string(self, context):
-        a = ext.adapt(self.wrapped)
-
-        rv = a.getquoted()
-        if isinstance(rv, bytes):
-            rv = rv.decode(ext.encodings["UTF8"])
-
-        return rv
 
 
 class SafeSqlDriver(SqlDriver):
@@ -708,34 +673,39 @@ class SafeSqlDriver(SqlDriver):
         except pglast.parser.ParseError as e:
             raise ValueError("Failed to parse SQL statement") from e
 
-    def execute_query(
-        self, query: str, force_readonly: bool = True
+    async def execute_query(
+        self,
+        query: LiteralString,
+        params: list[Any] | None = None,
+        force_readonly: bool = True,
     ) -> Optional[list[SqlDriver.RowResult]]:  # noqa: UP007
         """Execute a query after validating it is safe"""
         self._validate(query)
-        return self.sql_driver.execute_query(
-            f"/* crystaldba */ {query}", force_readonly=force_readonly
+        return await self.sql_driver.execute_query(
+            f"/* crystaldba */ {query}",
+            params=params,
+            force_readonly=force_readonly,
         )
 
     @staticmethod
     def sql_to_query(sql: Composable) -> str:
         """Convert a SQL string to a query string."""
-        return sql.as_string({})  # type: ignore
+        return sql.as_string()
 
     @staticmethod
     def param_sql_to_query(query: str, params: list[Any]) -> str:
         """Convert a SQL string to a query string."""
         return SafeSqlDriver.sql_to_query(
-            SQL(query).format(*[LiteralParam(p) for p in params])
+            SQL(query).format(*[Literal(p) for p in params])  # type: ignore
         )
 
     @staticmethod
-    def execute_param_query(
+    async def execute_param_query(
         sql_driver: SqlDriver, query: str, params: list[Any] | None = None
     ) -> list[SqlDriver.RowResult] | None:
         """Execute a query after validating it is safe"""
         if params:
             query_params = SafeSqlDriver.param_sql_to_query(query, params)
-            return sql_driver.execute_query(query_params)
+            return await sql_driver.execute_query(query_params)  # type: ignore
         else:
-            return sql_driver.execute_query(query)
+            return await sql_driver.execute_query(query)  # type: ignore

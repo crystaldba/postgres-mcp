@@ -215,7 +215,7 @@ class DatabaseTuningAdvisor:
         # Add trace accumulator
         self._dta_traces: list[str] = []
 
-    def _run_prechecks(self, session: DTASession) -> DTASession | None:
+    async def _run_prechecks(self, session: DTASession) -> DTASession | None:
         """
         Run pre-checks before analysis and return a session with error if any check fails.
 
@@ -227,7 +227,7 @@ class DatabaseTuningAdvisor:
         """
         # Pre-check 1: Check HypoPG with more granular feedback
         # First check if HypoPG is installed
-        installed_result = self.sql_driver.execute_query(
+        installed_result = await self.sql_driver.execute_query(
             "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
         )
         if installed_result:
@@ -235,7 +235,7 @@ class DatabaseTuningAdvisor:
             pass
         else:
             # Check if HypoPG is available but not installed
-            available_result = self.sql_driver.execute_query(
+            available_result = await self.sql_driver.execute_query(
                 "SELECT 1 FROM pg_available_extensions WHERE name = 'hypopg'"
             )
             if available_result:
@@ -264,10 +264,12 @@ class DatabaseTuningAdvisor:
                 return session
 
         # Pre-check 2: Check if ANALYZE has been run at least once
-        result = self.sql_driver.execute_query(
-            "SELECT s.last_analyze FROM pg_stat_user_tables s LIMIT 1"
+        result = await self.sql_driver.execute_query(
+            "SELECT s.last_analyze FROM pg_stat_user_tables s ORDER BY s.last_analyze LIMIT 1;"
         )
-        if not result or all(row.cells.get("last_analyze") is None for row in result):
+        if not result or not any(
+            row.cells.get("last_analyze") is not None for row in result
+        ):
             error_message = (
                 "Statistics are not up-to-date. The database needs to be analyzed first. "
                 "Please run 'ANALYZE;' on your database before using the tuning advisor. "
@@ -280,7 +282,7 @@ class DatabaseTuningAdvisor:
         # All checks passed
         return None
 
-    def analyze_workload(
+    async def analyze_workload(
         self,
         workload: list[dict[str, Any]] | None = None,
         sql_file: str | None = None,
@@ -329,7 +331,7 @@ class DatabaseTuningAdvisor:
 
         try:
             # Run pre-checks
-            precheck_result = self._run_prechecks(session)
+            precheck_result = await self._run_prechecks(session)
             if precheck_result:
                 return precheck_result
 
@@ -364,7 +366,7 @@ class DatabaseTuningAdvisor:
             else:
                 logger.debug("Using query statistics from the database")
                 session.workload_source = "query_store"
-                session.workload = self._get_query_stats(
+                session.workload = await self._get_query_stats(
                     min_calls, min_avg_time_ms, limit
                 )
 
@@ -372,14 +374,16 @@ class DatabaseTuningAdvisor:
                 logger.warning("No workload to analyze")
                 return session
 
-            session.workload = self._validate_and_parse_workload(session.workload)
+            session.workload = await self._validate_and_parse_workload(session.workload)
 
             query_weights = self._covert_workload_to_query_weights(session.workload)
 
             # Generate and evaluate index recommendations
-            session.recommendations = self._generate_recommendations(query_weights)
+            session.recommendations = await self._generate_recommendations(
+                query_weights
+            )
             # Reset HypoPG only once at the end
-            self.sql_driver.execute_query("SELECT hypopg_reset();")
+            await self.sql_driver.execute_query("SELECT hypopg_reset();")
 
         except Exception as e:
             logger.error(f"Error in workload analysis: {e}", exc_info=True)
@@ -388,7 +392,7 @@ class DatabaseTuningAdvisor:
         session.dta_traces = self._dta_traces
         return session
 
-    def _validate_and_parse_workload(
+    async def _validate_and_parse_workload(
         self, workload: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
         """Validate the workload to ensure it is analyzable."""
@@ -401,7 +405,7 @@ class DatabaseTuningAdvisor:
             query_text = query_text.strip().lower()
 
             # Replace parameter placeholders with dummy values
-            query_text = self._replace_parameters(query_text)
+            query_text = await self._replace_parameters(query_text)
 
             parsed = parse_sql(query_text)
             if not parsed:
@@ -430,10 +434,14 @@ class DatabaseTuningAdvisor:
         """Convert query info to weight based on query frequency."""
         return query_info.get("calls", 1.0) * query_info.get("avg_exec_time", 1.0)
 
-    def _generate_recommendations(
+    async def _generate_recommendations(
         self, query_weights: list[tuple[str, SelectStmt, float]]
     ) -> list[IndexRecommendation]:
         """Generate index recommendations using a hybrid 'seed + greedy' approach with a time cutoff."""
+        if query_weights is None or len(query_weights) == 0:
+            self.dta_trace("No query provided")
+            return []
+
         # Gather queries as strings
         workload_queries = [q for q, _, _ in query_weights]
 
@@ -442,14 +450,16 @@ class DatabaseTuningAdvisor:
         )
 
         # get existing indexes
-        existing_defs = {idx["definition"] for idx in self._get_existing_indexes()}
+        existing_defs = {
+            idx["definition"] for idx in await self._get_existing_indexes()
+        }
 
         logger.debug(
             f"Existing indexes ({len(existing_defs)}): {self._pp_list(existing_defs)}"
         )
 
         # generate initial candidates
-        all_candidates = self.generate_candidates(query_weights, existing_defs)
+        all_candidates = await self.generate_candidates(query_weights, existing_defs)
 
         self.dta_trace(
             f"All candidates ({len(all_candidates)}): {self.candidate_str(all_candidates)}"
@@ -480,7 +490,7 @@ class DatabaseTuningAdvisor:
                 break
 
             self.dta_trace("Evaluating seed:")
-            current_cost = self._evaluate_configuration_cost(
+            current_cost = await self._evaluate_configuration_cost(
                 query_weights, frozenset(seed)
             )
             candidate_indexes = set(
@@ -494,7 +504,7 @@ class DatabaseTuningAdvisor:
                     for c in all_candidates
                 }
             )
-            final_indexes, final_cost = self._enumerate_greedy(
+            final_indexes, final_cost = await self._enumerate_greedy(
                 query_weights, seed.copy(), current_cost, candidate_indexes - seed
             )
 
@@ -505,23 +515,23 @@ class DatabaseTuningAdvisor:
         total_size = 0
         budget_bytes = self.budget_mb * 1024 * 1024
         individual_base_cost = (
-            self._evaluate_configuration_cost(query_weights, frozenset()) or 1.0
+            await self._evaluate_configuration_cost(query_weights, frozenset()) or 1.0
         )
         progressive_base_cost = individual_base_cost
         indexes_so_far = []
         for index_config in best_config[0]:
             indexes_so_far.append(index_config)
             # Calculate the cost with only this index
-            progressive_cost = self._evaluate_configuration_cost(
+            progressive_cost = await self._evaluate_configuration_cost(
                 query_weights,
                 frozenset(indexes_so_far),  # Indexes so far
             )
-            individual_cost = self._evaluate_configuration_cost(
+            individual_cost = await self._evaluate_configuration_cost(
                 query_weights,
                 frozenset([index_config]),  # Only this index
             )
 
-            size = self._estimate_index_size(
+            size = await self._estimate_index_size(
                 index_config.table, list(index_config.columns)
             )
             if budget_bytes < 0 or total_size + size <= budget_bytes:
@@ -550,7 +560,7 @@ class DatabaseTuningAdvisor:
         # Sort recs by benefit desc
         return recommendations
 
-    def generate_candidates(
+    async def generate_candidates(
         self, workload: list[tuple[str, SelectStmt, float]], existing_defs: set[str]
     ) -> list[Index]:
         """Generates index candidates from queries, with batch creation."""
@@ -593,7 +603,7 @@ class DatabaseTuningAdvisor:
         )
 
         # filter out long text columns
-        condition_filtered = self._filter_long_text_columns(condition_filtered1)
+        condition_filtered = await self._filter_long_text_columns(condition_filtered1)
 
         self.dta_trace(f"Generated {len(candidates)} total candidates")
         self.dta_trace(
@@ -608,14 +618,14 @@ class DatabaseTuningAdvisor:
         # Batch create all hypothetical indexes and store their size estimates
         if len(condition_filtered) > 0:
             query = "SELECT hypopg_create_index({});" * len(condition_filtered)
-            SafeSqlDriver.execute_param_query(
+            await SafeSqlDriver.execute_param_query(
                 self.sql_driver,
                 query,
                 [idx.definition for idx in condition_filtered],
             )
 
             # Get estimated sizes without resetting indexes yet
-            result = self.sql_driver.execute_query(
+            result = await self.sql_driver.execute_query(
                 "SELECT index_name, hypopg_relation_size(indexrelid) as index_size FROM hypopg_list_indexes;"
             )
             if result is not None:
@@ -626,7 +636,7 @@ class DatabaseTuningAdvisor:
                     if idx.name in index_map:
                         idx.estimated_size = index_map[idx.name]
 
-            self.sql_driver.execute_query("SELECT hypopg_reset();")
+            await self.sql_driver.execute_query("SELECT hypopg_reset();")
         return condition_filtered
 
     def candidate_str(self, indexes: Iterable[Index] | Iterable[IndexConfig]) -> str:
@@ -636,7 +646,7 @@ class DatabaseTuningAdvisor:
             else "(no indexes)"
         )
 
-    def _evaluate_configuration_cost(
+    async def _evaluate_configuration_cost(
         self,
         weighted_workload: list[tuple[str, SelectStmt, float]],
         indexes: frozenset[IndexConfig],
@@ -661,7 +671,9 @@ class DatabaseTuningAdvisor:
             for query_text, _stmt, weight in weighted_workload:
                 try:
                     # Get the explain plan using our memoized helper
-                    plan_data = self.get_explain_plan_with_indexes(query_text, indexes)
+                    plan_data = await self.get_explain_plan_with_indexes(
+                        query_text, indexes
+                    )
 
                     # Extract cost from the plan data
                     cost = self.extract_cost_from_json_plan(plan_data)
@@ -689,7 +701,7 @@ class DatabaseTuningAdvisor:
             self.dta_trace(f"    + error evaluating configuration: {e}")
             return float("inf")
 
-    def _enumerate_greedy(
+    async def _enumerate_greedy(
         self,
         queries: list[tuple[str, SelectStmt, float]],
         current_indexes: set[IndexConfig],
@@ -724,7 +736,9 @@ class DatabaseTuningAdvisor:
             tables.add(idx.table)
 
         # Estimate base relation size for each table
-        base_relation_size = sum(self._get_table_size(table) for table in tables)
+        base_relation_size = sum(
+            [await self._get_table_size(table) for table in tables]
+        )
 
         self.dta_trace(
             f"  - Base relation size: {humanize.naturalsize(base_relation_size)}"
@@ -732,14 +746,20 @@ class DatabaseTuningAdvisor:
 
         # Calculate current indexes size
         indexes_size = sum(
-            self._estimate_index_size(idx.table, list(idx.columns))
-            for idx in current_indexes
+            [
+                await self._estimate_index_size(idx.table, list(idx.columns))
+                for idx in current_indexes
+            ]
         )
 
         # Total space is base relation plus indexes
         current_space = base_relation_size + indexes_size
         current_time = current_cost
-        current_objective = math.log(current_time) + alpha * math.log(current_space)
+        current_objective = (
+            math.log(current_time) + alpha * math.log(current_space)
+            if current_cost > 0 and current_space > 0
+            else float("inf")
+        )
 
         self.dta_trace(
             f"  - Initial configuration: Time={current_time:.2f}, "
@@ -757,13 +777,14 @@ class DatabaseTuningAdvisor:
             best_time = current_time
             best_space = current_space
             best_objective = current_objective
+            best_time_improvement = 0
 
             for candidate in candidate_indexes:
                 self.dta_trace(
                     f"Evaluating candidate: {self.candidate_str([candidate])}"
                 )
                 # Calculate additional size from this index
-                index_size = self._estimate_index_size(
+                index_size = await self._estimate_index_size(
                     candidate.table, list(candidate.columns)
                 )
                 self.dta_trace(f"    + Index size: {humanize.naturalsize(index_size)}")
@@ -784,15 +805,14 @@ class DatabaseTuningAdvisor:
                     continue
 
                 # Calculate new time (cost) with this index
-                test_time = self._evaluate_configuration_cost(
+                test_time = await self._evaluate_configuration_cost(
                     queries, frozenset(current_indexes | {candidate})
                 )
                 self.dta_trace(f"    + Eval cost (time): {test_time}")
+
                 # Calculate relative time improvement
                 time_improvement = (current_time - test_time) / current_time
 
-                # Calculate objective for this configuration
-                test_objective = math.log(test_time) + alpha * math.log(test_space)
                 # Skip if time improvement is below threshold
                 if time_improvement < min_time_improvement:
                     self.dta_trace(
@@ -800,8 +820,14 @@ class DatabaseTuningAdvisor:
                     )
                     continue
 
+                # Calculate objective for this configuration
+                test_objective = math.log(test_time) + alpha * math.log(test_space)
+
                 # Select the index with the best time improvement that meets our threshold
-                if test_objective < best_objective:
+                if (
+                    test_objective < best_objective
+                    and time_improvement > best_time_improvement
+                ):
                     self.dta_trace(
                         f"  - Updating best candidate: {self.candidate_str([candidate])}"
                     )
@@ -809,6 +835,7 @@ class DatabaseTuningAdvisor:
                     best_time = test_time
                     best_space = test_space
                     best_objective = test_objective
+                    best_time_improvement = time_improvement
                 else:
                     self.dta_trace(
                         f"  - Skipping candidate: {self.candidate_str([candidate])} because it doesn't have the best objective improvement"
@@ -855,8 +882,10 @@ class DatabaseTuningAdvisor:
         self.dta_trace("\n[SEARCH COMPLETE]")
         if added_indexes:
             indexes_size = sum(
-                self._estimate_index_size(idx.table, list(idx.columns))
-                for idx in current_indexes
+                [
+                    await self._estimate_index_size(idx.table, list(idx.columns))
+                    for idx in current_indexes
+                ]
             )
             self.dta_trace(
                 f"  - Final configuration: {len(added_indexes)} indexes added"
@@ -870,7 +899,7 @@ class DatabaseTuningAdvisor:
 
         return current_indexes, current_time
 
-    def _get_table_size(self, table: str) -> int:
+    async def _get_table_size(self, table: str) -> int:
         """
         Get the total size of a table including indexes and toast tables.
         Uses memoization to avoid repeated database queries.
@@ -889,7 +918,7 @@ class DatabaseTuningAdvisor:
         try:
             # Use the proper way to calculate table size with quoted identifiers
             query = f"SELECT pg_total_relation_size(quote_ident('{table}')) as rel_size"
-            result = self.sql_driver.execute_query(query)
+            result = await self.sql_driver.execute_query(query)  # type: ignore
             if result and len(result) > 0 and len(result[0].cells) > 0:
                 size = int(result[0].cells["rel_size"])
                 # Cache the result
@@ -897,22 +926,22 @@ class DatabaseTuningAdvisor:
                 return size
             else:
                 # If query fails, use our estimation method
-                size = self._estimate_table_size(table)
+                size = await self._estimate_table_size(table)
                 self._table_size_cache[table] = size
                 return size
         except Exception as e:
             logger.warning(f"Error getting table size for {table}: {e}")
             # Use estimation method
-            size = self._estimate_table_size(table)
+            size = await self._estimate_table_size(table)
             self._table_size_cache[table] = size
             return size
 
-    def _estimate_table_size(self, table: str) -> int:
+    async def _estimate_table_size(self, table: str) -> int:
         """Estimate the size of a table if we can't get it from the database."""
         try:
             # Try a simple query to get row count and then estimate size
-            result = self.sql_driver.execute_query(
-                f"SELECT count(*) as row_count FROM {table}"
+            result = await self.sql_driver.execute_query(
+                f"SELECT count(*) as row_count FROM {table}"  # type: ignore
             )
             if result and len(result) > 0 and len(result[0].cells) > 0:
                 row_count = int(result[0].cells["row_count"])
@@ -929,7 +958,7 @@ class DatabaseTuningAdvisor:
     #     single_col = [c for c in all_candidates if len(c.columns) == 1]
     #     # For each candidate, let's check the cost improvement
     #     # We'll do a naive approach: cost(workload) w/o indexes vs. with just that index.
-    #     base_cost = self._evaluate_configuration_cost(weighted_workload, frozenset())
+    #     base_cost = await self._evaluate_configuration_cost(weighted_workload, frozenset())
     #     if base_cost <= 0:
     #         return set()
 
@@ -939,7 +968,7 @@ class DatabaseTuningAdvisor:
     #         if self._check_time():
     #             break
     #         cfg_set = frozenset({IndexConfig(c.table, tuple(c.columns), c.using, c.potential_problematic_reason)})
-    #         new_cost = self._evaluate_configuration_cost(weighted_workload, cfg_set)
+    #         new_cost = await self._evaluate_configuration_cost(weighted_workload, cfg_set)
     #         improvement = base_cost - new_cost if new_cost < base_cost else 0
     #         improvements.append((c, improvement))
     #     # pick top seed_columns_count
@@ -972,15 +1001,15 @@ class DatabaseTuningAdvisor:
             )
             return []
 
-    def _get_query_stats(
+    async def _get_query_stats(
         self, min_calls: int, min_avg_time_ms: float, limit: int
     ) -> list[dict[str, Any]]:
         """Get query statistics from pg_stat_statements"""
 
         # Reference to original implementation
-        return self._get_query_stats_direct(min_calls, min_avg_time_ms, limit)
+        return await self._get_query_stats_direct(min_calls, min_avg_time_ms, limit)
 
-    def _get_query_stats_direct(
+    async def _get_query_stats_direct(
         self, min_calls: int = 50, min_avg_time_ms: float = 5.0, limit: int = 100
     ) -> list[dict[str, Any]]:
         """Direct implementation of query stats collection."""
@@ -992,7 +1021,7 @@ class DatabaseTuningAdvisor:
         ORDER BY total_exec_time DESC
         LIMIT {}
         """
-        result = SafeSqlDriver.execute_param_query(
+        result = await SafeSqlDriver.execute_param_query(
             self.sql_driver,
             query,
             [min_calls, min_avg_time_ms, limit],
@@ -1213,7 +1242,7 @@ class DatabaseTuningAdvisor:
             logger.error(f"Error extracting cost from plan: {e}", exc_info=True)
             return float("inf")
 
-    def _get_existing_indexes(self) -> list[dict[str, Any]]:
+    async def _get_existing_indexes(self) -> list[dict[str, Any]]:
         """Get existing indexes"""
         query = """
         SELECT schemaname as schema,
@@ -1224,12 +1253,12 @@ class DatabaseTuningAdvisor:
         WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
         ORDER BY schemaname, tablename, indexname
         """
-        result = self.sql_driver.execute_query(query)
+        result = await self.sql_driver.execute_query(query)
         if result is not None:
             return [dict(row.cells) for row in result]
         return []
 
-    def _estimate_index_size(self, table: str, columns: list[str]) -> int:
+    async def _estimate_index_size(self, table: str, columns: list[str]) -> int:
         # Create a hashable key for the cache
         cache_key = (table, frozenset(columns))
 
@@ -1245,7 +1274,7 @@ class DatabaseTuningAdvisor:
             FROM pg_stats
             WHERE tablename = {} AND attname = ANY({})
             """
-            result = SafeSqlDriver.execute_param_query(
+            result = await SafeSqlDriver.execute_param_query(
                 self.sql_driver,
                 stats_query,
                 [table, columns],
@@ -1313,7 +1342,7 @@ class DatabaseTuningAdvisor:
 
         return filtered_candidates
 
-    def _filter_long_text_columns(
+    async def _filter_long_text_columns(
         self, candidates: list[Index], max_text_length: int = 100
     ) -> list[Index]:
         """Filter out indexes that contain long text columns based on catalog information.
@@ -1362,7 +1391,7 @@ class DatabaseTuningAdvisor:
             AND c.column_name IN ({columns_array})
         """
 
-        result = self.sql_driver.execute_query(type_query)
+        result = await self.sql_driver.execute_query(type_query)  # type: ignore
 
         logger.debug(f"Column types and length limits: {result}")
 
@@ -1412,7 +1441,7 @@ class DatabaseTuningAdvisor:
 
     # --- Parameter replacement ---
 
-    def _replace_parameters(self, query: str) -> str:
+    async def _replace_parameters(self, query: str) -> str:
         """Replace parameter placeholders with appropriate values based on column statistics.
 
         This handles queries from pg_stat_statements where literals
@@ -1490,7 +1519,7 @@ class DatabaseTuningAdvisor:
                 lower_bound = 10
                 upper_bound = 100
                 if table_name and col_name:
-                    stats = self._get_column_statistics(table_name, col_name)
+                    stats = await self._get_column_statistics(table_name, col_name)
                     if stats:
                         # Get appropriate values for both bounds
                         lower_bound = self._get_bound_values(stats, is_lower=True)
@@ -1548,7 +1577,7 @@ class DatabaseTuningAdvisor:
                 )
                 if column_info:
                     table_name, column_name = column_info
-                    stats = self._get_column_statistics(table_name, column_name)
+                    stats = await self._get_column_statistics(table_name, column_name)
                     if stats:
                         replacement = self._get_replacement_value(stats, preceding_text)
                     else:
@@ -1699,26 +1728,6 @@ class DatabaseTuningAdvisor:
             logger.error(f"Error extracting table aliases: {e}", exc_info=True)
             return [table_name]  # Fallback to just the table name
 
-    def _get_table_columns(self, table: str) -> set[str]:
-        """Get column names for a table from the catalog."""
-        try:
-            query = """
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = {}
-            """
-            result = SafeSqlDriver.execute_param_query(
-                self.sql_driver,
-                query,
-                [table],
-            )
-            return (
-                set([row.cells["column_name"] for row in result]) if result else set()
-            )
-        except Exception as e:
-            logger.error(f"Error getting columns for table {table}: {e}", exc_info=True)
-            return set()
-
     def _identify_parameter_column(
         self, context: str, table_columns: dict[str, set[str]]
     ) -> tuple[str, str] | None:
@@ -1744,7 +1753,7 @@ class DatabaseTuningAdvisor:
 
         return None
 
-    def _get_column_statistics(
+    async def _get_column_statistics(
         self, table_name: str, column_name: str
     ) -> dict[str, Any] | None:
         """Get statistics for a column from pg_stats."""
@@ -1780,7 +1789,7 @@ class DatabaseTuningAdvisor:
 
             self.dta_trace(f"Getting statistics for {table_name}.{column_name}")
 
-            result = SafeSqlDriver.execute_param_query(
+            result = await SafeSqlDriver.execute_param_query(
                 self.sql_driver,
                 query,
                 [table_name, column_name],
@@ -2009,7 +2018,7 @@ class DatabaseTuningAdvisor:
             [str(item) for item in lst]
         )
 
-    def get_explain_plan_with_indexes(
+    async def get_explain_plan_with_indexes(
         self, query_text: str, indexes: frozenset[IndexConfig]
     ) -> dict[str, Any]:
         """
@@ -2032,7 +2041,7 @@ class DatabaseTuningAdvisor:
             return existing_plan
 
         # Generate the plan using the static method
-        plan = self.generate_explain_plan_with_hypothetical_indexes(
+        plan = await self.generate_explain_plan_with_hypothetical_indexes(
             self.sql_driver, query_text, indexes, self
         )
 
@@ -2041,7 +2050,7 @@ class DatabaseTuningAdvisor:
         return plan
 
     @staticmethod
-    def generate_explain_plan_with_hypothetical_indexes(
+    async def generate_explain_plan_with_hypothetical_indexes(
         sql_driver: SqlDriver,
         query_text: str,
         indexes: frozenset[IndexConfig],
@@ -2069,7 +2078,7 @@ class DatabaseTuningAdvisor:
 
             # Execute explain with the indexes
             explain_plan_query = f"{create_indexes_query} EXPLAIN ({'COSTS TRUE, ' if indexes else ''}FORMAT JSON) {query_text}"
-            plan_result = sql_driver.execute_query(explain_plan_query)
+            plan_result = await sql_driver.execute_query(explain_plan_query)  # type: ignore
 
             # Extract the plan
             if plan_result and plan_result[0].cells.get("QUERY PLAN"):

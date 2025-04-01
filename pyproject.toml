@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "mcp[cli]>=1.5.0",
-    "psycopg2-binary>=2.9.10",
+    "psycopg[binary]>=3.2.6",
     "humanize>=4.8.0",
     "pglast==7.2.0",
     "pytest>=8.3.4",
@@ -30,3 +30,10 @@ venv = ".venv"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+asyncio_default_fixture_loop_scope = "function"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.398",
+    "ruff>=0.11.2",
+]

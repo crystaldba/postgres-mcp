@@ -25,11 +25,13 @@ class DTATool:
         self.sql_driver = sql_driver
         self.dta = None
 
-    def do_init(self):
+    async def do_init(self):
         """Initialize the DatabaseTuningAdvisor if not already initialized."""
         self.dta = DatabaseTuningAdvisor(self.sql_driver)
 
-    def _create_recommendations_response(self, session: DTASession) -> Dict[str, Any]:
+    async def _create_recommendations_response(
+        self, session: DTASession
+    ) -> Dict[str, Any]:
         """
         Create a structured JSON response from a DTASession.
 
@@ -110,7 +112,7 @@ class DTATool:
         }
 
         # Generate query impact section using helper function
-        query_impact = self._generate_query_impact(session)
+        query_impact = await self._generate_query_impact(session)
 
         return {
             "summary": summary,
@@ -119,7 +121,7 @@ class DTATool:
             "_langfuse_trace": session.dta_traces,
         }
 
-    def _generate_query_impact(self, session: DTASession) -> List[Dict[str, Any]]:
+    async def _generate_query_impact(self, session: DTASession) -> List[Dict[str, Any]]:
         """
         Generate the query impact section showing before/after explain plans.
 
@@ -150,14 +152,16 @@ class DTATool:
         if unique_queries and self.dta:
             for query in unique_queries:
                 # Get plan with no indexes
-                before_plan = self.dta.get_explain_plan_with_indexes(query, frozenset())
+                before_plan = await self.dta.get_explain_plan_with_indexes(
+                    query, frozenset()
+                )
 
                 # Get plan with all recommended indexes
                 index_configs = frozenset(
                     IndexConfig(rec.table, rec.columns, rec.using)
                     for rec in session.recommendations
                 )
-                after_plan = self.dta.get_explain_plan_with_indexes(
+                after_plan = await self.dta.get_explain_plan_with_indexes(
                     query, index_configs
                 )
 
@@ -193,7 +197,7 @@ class DTATool:
 
         return query_impact
 
-    def _execute_analysis(
+    async def _execute_analysis(
         self,
         query_list=None,
         min_calls=50,
@@ -211,25 +215,25 @@ class DTATool:
             Dict with recommendations or dict with error
         """
         try:
-            self.do_init()
+            await self.do_init()
             if self.dta is None:
                 return {"error": "DatabaseTuningAdvisor not initialized"}
 
-            session = self.dta.analyze_workload(
+            session = await self.dta.analyze_workload(
                 query_list=query_list,
                 min_calls=min_calls,
                 min_avg_time_ms=min_avg_time_ms,
                 limit=limit,
                 max_index_size_mb=max_index_size_mb,
             )
-            result = self._create_recommendations_response(session)
+            result = await self._create_recommendations_response(session)
 
             return result
         except Exception as e:
             logger.error(f"Error analyzing queries: {e}", exc_info=True)
             return {"error": f"Error analyzing queries: {e}"}
 
-    def analyze_workload(self, max_index_size_mb=10000):
+    async def analyze_workload(self, max_index_size_mb=10000):
         """
         Analyze SQL workload and recommend indexes.
 
@@ -242,22 +246,22 @@ class DTATool:
         Returns:
             Dict with recommendations or error
         """
-        return self._execute_analysis(
+        return await self._execute_analysis(
             min_calls=50,
             min_avg_time_ms=5.0,
             limit=100,
             max_index_size_mb=max_index_size_mb,
         )
 
-    def analyze_queries(self, queries, max_index_size_mb=10000):
+    async def analyze_queries(self, queries, max_index_size_mb=10000):
         """
-        Analyze specific list of SQL queries and recommend indexes.
+        Analyze a list of SQL queries and recommend indexes.
 
-        This method takes two or more SQL queries directly and analyzes them to recommend
-        the most beneficial indexes.
+        This method examines the provided SQL queries and recommends
+        indexes that would improve their performance.
 
         Args:
-            queries: List of SQL query strings to analyze
+            queries: List of SQL queries to analyze
             max_index_size_mb: Maximum total size for recommended indexes in MB
 
         Returns:
@@ -266,17 +270,20 @@ class DTATool:
         if not queries:
             return {"error": "No queries provided for analysis"}
 
-        # Add query count to the result for analyze_queries
-        return self._execute_analysis(
-            query_list=queries, max_index_size_mb=max_index_size_mb
+        return await self._execute_analysis(
+            query_list=queries,
+            min_calls=0,  # Ignore min calls for explicit query list
+            min_avg_time_ms=0,  # Ignore min time for explicit query list
+            limit=0,  # Ignore limit for explicit query list
+            max_index_size_mb=max_index_size_mb,
         )
 
-    def analyze_single_query(self, query, max_index_size_mb=10000):
+    async def analyze_single_query(self, query, max_index_size_mb=10000):
         """
-        Analyze single SQL query and recommend indexes.
+        Analyze a single SQL query and recommend indexes.
 
-        This method takes one SQL query and analyzes it to recommend
-        the most beneficial indexes.
+        This method examines the provided SQL query and recommends
+        indexes that would improve its performance.
 
         Args:
             query: SQL query to analyze
@@ -285,10 +292,10 @@ class DTATool:
         Returns:
             Dict with recommendations or error
         """
-        if not query:
-            return {"error": "No query provided for analysis"}
-
-        # Add query count to the result for analyze_queries
-        return self._execute_analysis(
-            query_list=[query], max_index_size_mb=max_index_size_mb
+        return await self._execute_analysis(
+            query_list=[query],
+            min_calls=0,  # Ignore min calls for explicit query
+            min_avg_time_ms=0,  # Ignore min time for explicit query
+            limit=0,  # Ignore limit for explicit query
+            max_index_size_mb=max_index_size_mb,
         )
