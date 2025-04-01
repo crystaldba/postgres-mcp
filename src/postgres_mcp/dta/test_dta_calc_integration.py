@@ -29,8 +29,12 @@ async def db_connection():
     assert result is not None
 
     # Create pg_stat_statements extension if needed
-    await driver.execute_query("CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False)
-    await driver.execute_query("CREATE EXTENSION IF NOT EXISTS hypopg", force_readonly=False)
+    await driver.execute_query(
+        "CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False
+    )
+    await driver.execute_query(
+        "CREATE EXTENSION IF NOT EXISTS hypopg", force_readonly=False
+    )
 
     logger.info(f"Connected to {database_url}")
     return driver
@@ -40,7 +44,8 @@ async def db_connection():
 async def setup_test_tables(db_connection):
     """Set up test tables with sample data."""
     # Create users table
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     DROP TABLE IF EXISTS orders;
     DROP TABLE IF EXISTS users;
 
@@ -52,10 +57,13 @@ async def setup_test_tables(db_connection):
         age INTEGER,
         created_at TIMESTAMP DEFAULT NOW()
     )
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Create orders table with foreign key
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     CREATE TABLE orders (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES users(id),
@@ -63,10 +71,13 @@ async def setup_test_tables(db_connection):
         amount DECIMAL(10, 2),
         status VARCHAR(20)
     )
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Insert sample data - users
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     INSERT INTO users (id, name, email, status, age)
     SELECT
         i,
@@ -75,10 +86,13 @@ async def setup_test_tables(db_connection):
         CASE WHEN i % 3 = 0 THEN 'active' WHEN i % 3 = 1 THEN 'inactive' ELSE 'pending' END,
         20 + (i % 50)
     FROM generate_series(1, 10000) i
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Insert sample data - orders
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     INSERT INTO orders (id, user_id, order_date, amount, status)
     SELECT
         i,
@@ -87,7 +101,9 @@ async def setup_test_tables(db_connection):
         (random() * 1000)::decimal(10,2),
         CASE WHEN random() < 0.7 THEN 'completed' ELSE 'pending' END
     FROM generate_series(1, 50000) i
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Analyze tables to update statistics
     await db_connection.execute_query("ANALYZE users, orders", force_readonly=False)
@@ -95,15 +111,19 @@ async def setup_test_tables(db_connection):
     yield
 
     # Cleanup tables
-    await db_connection.execute_query("DROP TABLE IF EXISTS orders", force_readonly=False)
-    await db_connection.execute_query("DROP TABLE IF EXISTS users", force_readonly=False)
+    await db_connection.execute_query(
+        "DROP TABLE IF EXISTS orders", force_readonly=False
+    )
+    await db_connection.execute_query(
+        "DROP TABLE IF EXISTS users", force_readonly=False
+    )
 
 
 @pytest_asyncio.fixture
 async def create_dta(db_connection):
     """Create DatabaseTuningAdvisor instance."""
     # Reset HypoPG to clean state
-    await db_connection.execute_query("SELECT hypopg_reset()", force_readonly=False )
+    await db_connection.execute_query("SELECT hypopg_reset()", force_readonly=False)
 
     # Create DTA with reasonable settings for testing
     dta = DatabaseTuningAdvisor(
@@ -115,13 +135,15 @@ async def create_dta(db_connection):
 
     return dta
 
+
 @pytest.mark.asyncio
 async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta):
     """Test DTA performance on JOIN ORDER BENCHMARK (JOB) style queries."""
     dta = create_dta
 
     # Set up JOB-like schema (simplified movie database)
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     DROP TABLE IF EXISTS movie_cast;
     DROP TABLE IF EXISTS movie_companies;
     DROP TABLE IF EXISTS movie_genres;
@@ -175,10 +197,13 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
         genre_id INTEGER REFERENCES genres(id),
         PRIMARY KEY (movie_id, genre_id)
     );
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Insert sample data
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     -- Insert genres
     INSERT INTO genres (id, name) VALUES
         (1, 'Action'), (2, 'Comedy'), (3, 'Drama'), (4, 'Sci-Fi'), (5, 'Thriller');
@@ -267,11 +292,14 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
         FROM movies m
         WHERE m.id % 3 = 0
     ) as movie_genre_assignment;
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Analyze tables to update statistics
     await db_connection.execute_query(
-        "ANALYZE movies, actors, movie_cast, companies, movie_companies, genres, movie_genres", force_readonly=False
+        "ANALYZE movies, actors, movie_cast, companies, movie_companies, genres, movie_genres",
+        force_readonly=False,
     )
 
     # Define JOB-style queries
@@ -344,7 +372,9 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
     ]
 
     # Clear pg_stat_statements
-    await db_connection.execute_query("SELECT pg_stat_statements_reset()", force_readonly=False)
+    await db_connection.execute_query(
+        "SELECT pg_stat_statements_reset()", force_readonly=False
+    )
 
     # Execute JOB workload
     for q in job_queries:
@@ -402,7 +432,9 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
     for q in job_queries:
         query = q["query"]
         start = time.time()
-        await db_connection.execute_query("EXPLAIN ANALYZE " + query, force_readonly=False)
+        await db_connection.execute_query(
+            "EXPLAIN ANALYZE " + query, force_readonly=False
+        )
         baseline_times[query] = time.time() - start
 
     # Create the recommended indexes
@@ -415,16 +447,21 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
     for q in job_queries:
         query = q["query"]
         start = time.time()
-        await db_connection.execute_query("EXPLAIN ANALYZE " + query, force_readonly=False)
+        await db_connection.execute_query(
+            "EXPLAIN ANALYZE " + query, force_readonly=False
+        )
         indexed_times[query] = time.time() - start
 
     # Clean up created indexes
     await db_connection.execute_query(
-        "DROP INDEX IF EXISTS " + ", ".join([r.definition.split()[2] for r in top_recs], force_readonly=False)
+        "DROP INDEX IF EXISTS "
+        + ", ".join([r.definition.split()[2] for r in top_recs]),
+        force_readonly=False,
     )
 
     # Clean up tables
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     DROP TABLE IF EXISTS movie_genres;
     DROP TABLE IF EXISTS genres;
     DROP TABLE IF EXISTS movie_companies;
@@ -432,7 +469,9 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
     DROP TABLE IF EXISTS movie_cast;
     DROP TABLE IF EXISTS actors;
     DROP TABLE IF EXISTS movies;
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Calculate improvement
     improvements = []
@@ -454,6 +493,7 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
     else:
         pytest.skip("Could not measure performance improvements for JOB workload")
 
+
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Skipping multi-column indexes test for now")
 async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta):
@@ -461,7 +501,8 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
     dta = create_dta
 
     # Create test tables designed to benefit from multi-column indexes
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     DROP TABLE IF EXISTS sales;
     DROP TABLE IF EXISTS customers;
     DROP TABLE IF EXISTS products;
@@ -494,10 +535,13 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
         payment_method VARCHAR(20),
         status VARCHAR(20)
     );
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Create highly correlated data with strong patterns
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     -- Insert customers with strong region-city correlation
     INSERT INTO customers (region, city, age, income_level, signup_date)
     SELECT
@@ -557,13 +601,19 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
              WHEN i % 50 < 48 THEN 'Processing'
              ELSE 'Canceled' END
     FROM generate_series(1, 20000) i;
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Analyze tables to update statistics (CRUCIAL for correct index recommendations)
-    await db_connection.execute_query("ANALYZE customers, products, sales", force_readonly=False)
+    await db_connection.execute_query(
+        "ANALYZE customers, products, sales", force_readonly=False
+    )
 
     # Clear pg_stat_statements
-    await db_connection.execute_query("SELECT pg_stat_statements_reset()", force_readonly=False)
+    await db_connection.execute_query(
+        "SELECT pg_stat_statements_reset()", force_readonly=False
+    )
 
     # Define queries that explicitly benefit from multi-column indexes
     # Use more extreme selectivity patterns and include ORDER BY clauses
@@ -634,7 +684,9 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
 
     # Create a pseudo-query-store by directly inserting into pg_stat_statements
     # This ensures the workload appears with appropriate weights
-    await db_connection.execute_query("CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False)
+    await db_connection.execute_query(
+        "CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False
+    )
 
     # Manually populate query stats in session class to ensure proper weighting
     workload = []
@@ -732,7 +784,9 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
         query = q["query"]
         start = time.time()
         try:
-            await db_connection.execute_query("EXPLAIN ANALYZE " + query, force_readonly=False)
+            await db_connection.execute_query(
+                "EXPLAIN ANALYZE " + query, force_readonly=False
+            )
             baseline_times[query] = time.time() - start
         except Exception as e:
             logger.warning(f"Error measuring baseline for query: {e}")
@@ -756,7 +810,9 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
         if query in baseline_times:  # Only test queries that ran successfully initially
             start = time.time()
             try:
-                await db_connection.execute_query("EXPLAIN ANALYZE " + query, force_readonly=False)
+                await db_connection.execute_query(
+                    "EXPLAIN ANALYZE " + query, force_readonly=False
+                )
                 indexed_times[query] = time.time() - start
             except Exception as e:
                 logger.warning(f"Error measuring indexed performance: {e}")
@@ -765,17 +821,21 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
     if created_indexes:
         try:
             await db_connection.execute_query(
-                "DROP INDEX IF EXISTS " + ", ".join(created_indexes), force_readonly=False
+                "DROP INDEX IF EXISTS " + ", ".join(created_indexes),
+                force_readonly=False,
             )
         except Exception as e:
             logger.warning(f"Error dropping indexes: {e}")
 
     # Clean up tables
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     DROP TABLE IF EXISTS sales;
     DROP TABLE IF EXISTS products;
     DROP TABLE IF EXISTS customers;
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Calculate improvement
     improvements = []
@@ -800,13 +860,15 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
             "Could not measure performance improvements for multi-column indexes"
         )
 
+
 @pytest.mark.asyncio
 async def test_diminishing_returns(db_connection, create_dta):
     """Test that the DTA correctly implements the diminishing returns behavior."""
     dta = create_dta
 
     # Set up schema with tables designed to show diminishing returns
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     DROP TABLE IF EXISTS large_table CASCADE;
 
     CREATE TABLE large_table (
@@ -819,10 +881,13 @@ async def test_diminishing_returns(db_connection, create_dta):
         low_cardinality_col1 INTEGER,
         low_cardinality_col2 VARCHAR(10)
     );
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Create data with specific cardinality patterns
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     -- Insert data with specific cardinality patterns
     INSERT INTO large_table (
         high_cardinality_col1, high_cardinality_col2, high_cardinality_col3,
@@ -843,7 +908,9 @@ async def test_diminishing_returns(db_connection, create_dta):
         (i % 5),                                -- 5 distinct values
         (ARRAY['A', 'B', 'C'])[1 + (i % 3)]     -- 3 distinct values
     FROM generate_series(1, 50000) i;
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Analyze table for accurate statistics
     await db_connection.execute_query("ANALYZE large_table", force_readonly=False)
@@ -968,7 +1035,10 @@ async def test_diminishing_returns(db_connection, create_dta):
     )
 
     # Clean up
-    await db_connection.execute_query("DROP TABLE IF EXISTS large_table", force_readonly=False)
+    await db_connection.execute_query(
+        "DROP TABLE IF EXISTS large_table", force_readonly=False
+    )
+
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Skipping storage cost tradeoff test for now")
@@ -977,7 +1047,8 @@ async def test_storage_cost_tradeoff(db_connection, create_dta):
     dta = create_dta
 
     # Create a test table with columns of varying sizes
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     DROP TABLE IF EXISTS wide_table CASCADE;
 
     CREATE TABLE wide_table (
@@ -992,10 +1063,13 @@ async def test_storage_cost_tradeoff(db_connection, create_dta):
         created_at TIMESTAMP,
         status VARCHAR(20)
     );
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Insert data with different column size profiles
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     INSERT INTO wide_table (
         small_col, medium_col, large_col, huge_col,
         user_id, created_at, status
@@ -1012,7 +1086,9 @@ async def test_storage_cost_tradeoff(db_connection, create_dta):
         CURRENT_DATE - ((i % 365) || ' days')::INTERVAL,  -- Even date distribution
         (ARRAY['active', 'pending', 'completed', 'archived'])[1 + (i % 4)]  -- Status distribution
     FROM generate_series(1, 20000) i;
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Analyze table for accurate statistics
     await db_connection.execute_query("ANALYZE wide_table")
@@ -1119,7 +1195,10 @@ async def test_storage_cost_tradeoff(db_connection, create_dta):
     )
 
     # Clean up
-    await db_connection.execute_query("DROP TABLE IF EXISTS wide_table", force_readonly=False)
+    await db_connection.execute_query(
+        "DROP TABLE IF EXISTS wide_table", force_readonly=False
+    )
+
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Skipping pareto optimal index selection test for now")
@@ -1128,7 +1207,8 @@ async def test_pareto_optimal_index_selection(db_connection, create_dta):
     dta = create_dta
 
     # Create a test table with characteristics that demonstrate Pareto optimality
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     DROP TABLE IF EXISTS pareto_test CASCADE;
     CREATE TABLE pareto_test (
         id SERIAL PRIMARY KEY,
@@ -1138,10 +1218,13 @@ async def test_pareto_optimal_index_selection(db_connection, create_dta):
         date_col DATE,
         value NUMERIC(10,2)
     );
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Insert test data
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     INSERT INTO pareto_test (col1, col2, col3, date_col, value)
     SELECT
         i % 10000,          -- Many distinct values (high cardinality)
@@ -1150,7 +1233,9 @@ async def test_pareto_optimal_index_selection(db_connection, create_dta):
         CURRENT_DATE - ((i % 730) || ' days')::INTERVAL, -- Dates spanning 2 years
         (random() * 1000)::numeric(10,2) -- Random values
     FROM generate_series(1, 50000) i;
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Analyze the table
     await db_connection.execute_query("ANALYZE pareto_test", force_readonly=False)
@@ -1179,7 +1264,9 @@ async def test_pareto_optimal_index_selection(db_connection, create_dta):
     dta.min_time_improvement = 0.05  # 5% minimum improvement threshold
 
     # Run DTA with the workload
-    session = await dta.analyze_workload(query_list=queries, min_calls=1, min_avg_time_ms=1.0)
+    session = await dta.analyze_workload(
+        query_list=queries, min_calls=1, min_avg_time_ms=1.0
+    )
 
     # Verify we got recommendations
     assert isinstance(session, DTASession)
@@ -1245,7 +1332,9 @@ async def test_pareto_optimal_index_selection(db_connection, create_dta):
     )
 
     # Clean up
-    await db_connection.execute_query("DROP TABLE IF EXISTS pareto_test", force_readonly=False)
+    await db_connection.execute_query(
+        "DROP TABLE IF EXISTS pareto_test", force_readonly=False
+    )
 
 
 @pytest.mark.asyncio
@@ -1254,7 +1343,8 @@ async def test_pareto_optimization_basic(db_connection, create_dta):
     dta = create_dta
 
     # Create a simple test table
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     DROP TABLE IF EXISTS pareto_test CASCADE;
 
     CREATE TABLE pareto_test (
@@ -1264,10 +1354,13 @@ async def test_pareto_optimization_basic(db_connection, create_dta):
         col3 INTEGER,
         col4 VARCHAR(100)
     );
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Insert a reasonable amount of data
-    await db_connection.execute_query("""
+    await db_connection.execute_query(
+        """
     INSERT INTO pareto_test (col1, col2, col3, col4)
     SELECT
         i % 1000,
@@ -1275,7 +1368,9 @@ async def test_pareto_optimization_basic(db_connection, create_dta):
         (i * 2) % 2000,
         'text-' || (i % 100)
     FROM generate_series(1, 10000) i;
-    """, force_readonly=False)
+    """,
+        force_readonly=False,
+    )
 
     # Analyze table for accurate statistics
     await db_connection.execute_query("ANALYZE pareto_test", force_readonly=False)
@@ -1309,4 +1404,6 @@ async def test_pareto_optimization_basic(db_connection, create_dta):
         logger.info(f"Recommended index: {rec.definition}")
 
     # Clean up
-    await db_connection.execute_query("DROP TABLE IF EXISTS pareto_test", force_readonly=False)
+    await db_connection.execute_query(
+        "DROP TABLE IF EXISTS pareto_test", force_readonly=False
+    )

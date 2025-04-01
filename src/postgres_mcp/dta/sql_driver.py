@@ -44,7 +44,9 @@ class SqlDriver:
         if self.engine_url:
             self.conn = await psycopg.AsyncConnection.connect(self.engine_url)
         else:
-            raise ValueError("Connection not established. Either conn or engine_url must be provided")
+            raise ValueError(
+                "Connection not established. Either conn or engine_url must be provided"
+            )
 
     async def execute_query(
         self,

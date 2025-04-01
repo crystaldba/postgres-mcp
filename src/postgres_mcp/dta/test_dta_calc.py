@@ -22,6 +22,7 @@ class MockCell:
     def __init__(self, data: Dict[str, Any]):
         self.cells = data
 
+
 # Using pytest-asyncio's fixture to run async tests
 @pytest_asyncio.fixture
 async def async_sql_driver():
