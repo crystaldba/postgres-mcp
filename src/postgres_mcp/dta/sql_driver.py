@@ -79,9 +79,14 @@ class SqlDriver:
                     else:
                         await cursor.execute(query)
 
+                    # For multiple statements, move to the last statement's results
+                    while cursor.nextset():
+                        pass
+
                     if cursor.description is None:  # No results (like DDL statements)
                         return None
 
+                    # Get results from the last statement only
                     rows = await cursor.fetchall()
 
                     if not force_readonly:
