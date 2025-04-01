@@ -69,12 +69,15 @@ def format_text_response(text: Any) -> ResponseType:
     return [types.TextContent(type="text", text=str(text))]
 
 
-def wrap_with_try_and_reraise(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+def wrap_with_try_and_reraise(
+    func: Callable[..., Awaitable[T]],
+) -> Callable[..., Awaitable[T]]:
     """Decorator to handle database operation errors."""
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs) -> T:
         return await func(*args, **kwargs)
+
     # try:
     #    return await func(*args, **kwargs)
     # except Exception as e:
@@ -175,7 +178,7 @@ async def table_schema_resource(table_name: str) -> str:
     return str(columns)
 
 
-@mcp.tool()
+@mcp.tool(description="Run a read-only SQL query")
 @wrap_with_try_and_reraise
 async def query(sql: str) -> ResponseType:
     """Run a read-only SQL query."""
@@ -186,7 +189,9 @@ async def query(sql: str) -> ResponseType:
     return format_text_response(list([r.cells for r in rows]))
 
 
-@mcp.tool()
+@mcp.tool(
+    description="Analyze frequently executed queries in the database and recommend optimal indexes"
+)
 @wrap_with_try_and_reraise
 async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
     """Analyze frequently executed queries in the database and recommend optimal indexes."""
@@ -195,7 +200,7 @@ async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
     return format_text_response(result)
 
 
-@mcp.tool()
+@mcp.tool(description="Analyze a list of SQL queries and recommend optimal indexes")
 @wrap_with_try_and_reraise
 async def analyze_queries(
     queries: list[str], max_index_size_mb: int = 10000
@@ -208,7 +213,7 @@ async def analyze_queries(
     return format_text_response(result)
 
 
-@mcp.tool()
+@mcp.tool(description="Analyze a single SQL query and recommend optimal indexes")
 @wrap_with_try_and_reraise
 async def analyze_single_query(
     query: str, max_index_size_mb: int = 10000
@@ -221,7 +226,9 @@ async def analyze_single_query(
     return format_text_response(result)
 
 
-@mcp.tool()
+@mcp.tool(
+    description="Lists all extensions currently installed in the PostgreSQL database."
+)
 @wrap_with_try_and_reraise
 async def list_installed_extensions(ctx: Context) -> ResponseType:
     """Lists all extensions currently installed in the PostgreSQL database."""
@@ -230,7 +237,9 @@ async def list_installed_extensions(ctx: Context) -> ResponseType:
     return format_text_response(result_text)
 
 
-@mcp.tool()
+@mcp.tool(
+    description="Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser)."
+)
 @wrap_with_try_and_reraise
 async def install_extension(extension_name: str) -> ResponseType:
     """ "Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser)."""
@@ -288,7 +297,9 @@ async def install_extension(extension_name: str) -> ResponseType:
         return format_text_response(error_msg)
 
 
-@mcp.tool()
+@mcp.tool(
+    description=f"Reports the slowest SQL queries based on total execution time, using data from the '{PG_STAT_STATEMENTS}' extension. If the extension is not installed, provides instructions on how to install it."
+)
 @wrap_with_try_and_reraise
 async def top_slow_queries(limit: int = 10) -> ResponseType:
     """Reports the slowest SQL queries based on total execution time."""
