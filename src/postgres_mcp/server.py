@@ -12,11 +12,9 @@ from .dta.dta_tools import DTATool
 from .dta.safe_sql import SafeSqlDriver
 from .dta.sql_driver import SqlDriver
 
-mcp = FastMCP("postgres-mcp")
+mcp = FastMCP("postgres")
 
 # Constants
-SCHEMA_PATH = "schema"
-EXTENSIONS_PATH = "_extensions"
 PG_STAT_STATEMENTS = "pg_stat_statements"
 HYPOPG_EXTENSION = "hypopg"
 
@@ -71,22 +69,26 @@ def format_text_response(text: Any) -> ResponseType:
     return [types.TextContent(type="text", text=str(text))]
 
 
-def handle_db_errors(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+def wrap_with_try_and_reraise(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
     """Decorator to handle database operation errors."""
 
     @functools.wraps(func)
     async def wrapper(*args, **kwargs) -> T:
-        try:
-            return await func(*args, **kwargs)
-        except Exception as e:
-            print(f"Error in {func.__name__}: {e}", file=sys.stderr)
-            raise
+        return await func(*args, **kwargs)
+    # try:
+    #    return await func(*args, **kwargs)
+    # except Exception as e:
+    #     print(f"Error in {func.__name__}: {e}", file=sys.stderr)
+    #     raise
 
     return wrapper
 
 
-@mcp.resource("postgres://resources")
-@handle_db_errors
+@mcp.resource(
+    uri="postgres://resources",
+    description="List available resources, such as database tables and extensions",
+)
+@wrap_with_try_and_reraise
 async def list_resources() -> list[types.Resource]:
     """List available database tables as resources."""
     sql_driver = get_safe_sql_driver()
@@ -107,7 +109,7 @@ async def list_resources() -> list[types.Resource]:
         for table in tables
     ]
 
-    extensions_uri = AnyUrl(f"{base_url}/_extensions")
+    extensions_uri = AnyUrl(f"{base_url}/extensions")
     resources.append(
         types.Resource(
             uri=extensions_uri,
@@ -120,20 +122,40 @@ async def list_resources() -> list[types.Resource]:
     return resources
 
 
-@mcp.resource("postgres://_extensions")
-@handle_db_errors
+@mcp.resource(
+    uri="postgres://extensions",
+    description="List available and installed extensions",
+)
+@wrap_with_try_and_reraise
 async def extensions_resource() -> str:
     """Get information about installed PostgreSQL extensions."""
     sql_driver = get_safe_sql_driver()
     rows = sql_driver.execute_query(
-        "SELECT extname, extversion FROM pg_extension ORDER BY extname;"
+        """
+        SELECT
+            pae.name AS extname,
+            CASE WHEN pe.extversion IS NOT NULL THEN true ELSE false END AS installed,
+            pe.extversion AS installed_version,
+            pae.default_version,
+            pae.comment
+        FROM
+            pg_available_extensions pae
+        LEFT JOIN
+            pg_extension pe
+            ON pae.name = pe.extname
+        ORDER BY
+            pae.name;
+        """
     )
     extensions = [row.cells for row in rows] if rows else []
     return str(extensions)
 
 
-@mcp.resource("postgres://{table_name}/schema")
-@handle_db_errors
+@mcp.resource(
+    uri="postgres://{table_name}/schema",
+    description="Show columns for the table",
+)
+@wrap_with_try_and_reraise
 async def table_schema_resource(table_name: str) -> str:
     """Get schema information for a specific table."""
     sql_driver = get_safe_sql_driver()
@@ -151,7 +173,7 @@ async def table_schema_resource(table_name: str) -> str:
 
 
 @mcp.tool()
-@handle_db_errors
+@wrap_with_try_and_reraise
 async def query(sql: str) -> ResponseType:
     """Run a read-only SQL query."""
     sql_driver = get_safe_sql_driver()
@@ -162,7 +184,7 @@ async def query(sql: str) -> ResponseType:
 
 
 @mcp.tool()
-@handle_db_errors
+@wrap_with_try_and_reraise
 async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
     """Analyze frequently executed queries in the database and recommend optimal indexes."""
     dta_tool = DTATool(get_safe_sql_driver())
@@ -171,7 +193,7 @@ async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
 
 
 @mcp.tool()
-@handle_db_errors
+@wrap_with_try_and_reraise
 async def analyze_queries(
     queries: list[str], max_index_size_mb: int = 10000
 ) -> ResponseType:
@@ -184,7 +206,7 @@ async def analyze_queries(
 
 
 @mcp.tool()
-@handle_db_errors
+@wrap_with_try_and_reraise
 async def analyze_single_query(
     query: str, max_index_size_mb: int = 10000
 ) -> ResponseType:
@@ -197,16 +219,16 @@ async def analyze_single_query(
 
 
 @mcp.tool()
-@handle_db_errors
+@wrap_with_try_and_reraise
 async def list_installed_extensions(ctx: Context) -> ResponseType:
     """Lists all extensions currently installed in the PostgreSQL database."""
-    extensions = await ctx.read_resource("postgres://_extensions")
+    extensions = await ctx.read_resource("postgres://extensions")
     result_text = f"Installed PostgreSQL Extensions:\n{extensions}"
     return format_text_response(result_text)
 
 
 @mcp.tool()
-@handle_db_errors
+@wrap_with_try_and_reraise
 async def install_extension(extension_name: str) -> ResponseType:
     """ "Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser)."""
 
@@ -263,9 +285,8 @@ async def install_extension(extension_name: str) -> ResponseType:
         return format_text_response(error_msg)
 
 
-
 @mcp.tool()
-@handle_db_errors
+@wrap_with_try_and_reraise
 async def top_slow_queries(limit: int = 10) -> ResponseType:
     """Reports the slowest SQL queries based on total execution time."""
     sql_driver = get_safe_sql_driver()
