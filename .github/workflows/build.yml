@@ -5,15 +5,16 @@ on:
     branches:
       - main
     paths-ignore:
-      - '**/README.md'
+      - "**/README.md"
   pull_request:
     types: [opened, synchronize, reopened]
     paths-ignore:
-      - '**/README.md'
+      - "**/README.md"
 
 jobs:
   postgres-mcp-ci:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,6 +23,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Start Docker service
+        run: sudo service docker start || true
+
+      - name: Verify Docker is running
+        run: docker info
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
