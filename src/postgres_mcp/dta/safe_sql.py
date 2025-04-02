@@ -7,6 +7,9 @@ from typing import ClassVar
 from typing import Optional
 
 import pglast
+from psycopg.sql import SQL, Composable, Literal
+from typing_extensions import LiteralString
+
 from .sql_driver import SqlDriver
 
 from pglast.ast import A_ArrayExpr
@@ -76,10 +79,6 @@ from pglast.ast import WindowDef
 from pglast.ast import WindowFunc
 from pglast.ast import WithClause
 from pglast.enums import A_Expr_Kind
-from psycopg.sql import SQL
-from psycopg.sql import Composable
-from psycopg.sql import Literal
-from typing_extensions import LiteralString
 
 logger = logging.getLogger(__name__)
 
@@ -1002,8 +1001,11 @@ class SafeSqlDriver(SqlDriver):
     @staticmethod
     def param_sql_to_query(query: str, params: list[Any]) -> str:
         """Convert a SQL string to a query string."""
+        # Convert each parameter to a Literal only if it's not already a Composable
+        sql_params = [p if isinstance(p, Composable) else Literal(p) for p in params]
+
         return SafeSqlDriver.sql_to_query(
-            SQL(query).format(*[Literal(p) for p in params])  # type: ignore
+            SQL(query).format(*sql_params)  # type: ignore
         )
 
     @staticmethod
