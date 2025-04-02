@@ -12,6 +12,7 @@ dependencies = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.25.0",
     "attrs>=25.3.0",
+    "psycopg-pool>=3.2.6",
 ]
 [[project.authors]]
 name = "Johann Schleier-Smith"
