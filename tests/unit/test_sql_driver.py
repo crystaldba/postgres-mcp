@@ -77,7 +77,7 @@ def mock_db_pool():
 
     # Create mock for DbConnPool
     db_pool = MagicMock(spec=DbConnPool)
-    db_pool.get_pool.return_value = pool
+    db_pool.pool_connect.return_value = pool
     db_pool._is_valid = True
 
     return db_pool, connection, cursor
@@ -334,10 +334,10 @@ async def test_execute_query_from_pool(mock_db_pool):
 async def test_connection_error_marks_pool_invalid(mock_db_pool):
     """Test that connection errors mark the pool as invalid."""
     db_pool, connection, cursor = mock_db_pool
-
-    # Configure get_pool to raise an exception
-    db_pool.get_pool.side_effect = Exception("Connection failed")
-
+    
+    # Configure pool_connect to raise an exception
+    db_pool.pool_connect.side_effect = Exception("Connection failed")
+    
     # Create SqlDriver with the mocked pool
     driver = SqlDriver(conn=db_pool)
 

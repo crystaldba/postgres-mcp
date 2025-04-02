@@ -113,13 +113,6 @@ class DbConnPool:
             logger.error(f"Connection attempt failed: {obfuscate_password(str(e))}")
             raise
 
-    async def get_pool(self) -> Any:
-        """Get a connection from the pool, initializing the pool if needed."""
-        if not self.pool or not self._is_valid:
-            return await self.pool_connect()
-
-        return self.pool
-
     async def close(self) -> None:
         """Close the connection pool."""
         if self.pool:
@@ -213,7 +206,7 @@ class SqlDriver:
             # Handle connection pool vs direct connection
             if self.is_pool:
                 # For pools, get a connection from the pool
-                pool = await self.conn.get_pool()
+                pool = await self.conn.pool_connect()
                 async with pool.connection() as connection:
                     return await self._execute_with_connection(
                         connection, query, params, force_readonly
