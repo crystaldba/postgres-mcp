@@ -14,6 +14,17 @@ on:
 jobs:
   postgres-mcp-ci:
     runs-on: ubuntu-latest
+    container: python:3.12-bookworm-slim
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: mysecretpassword
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -42,5 +53,5 @@ jobs:
 
       - name: Run Tests
         env:
-          TEST2_DATABASE_URL: "test"
+          TEST1_DATABASE_URL: "postgresql://postgres:mysecretpassword@localhost:5432/postgres"
         run: uv run pytest -v --log-cli-level=INFO
