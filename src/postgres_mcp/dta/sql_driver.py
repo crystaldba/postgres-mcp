@@ -169,7 +169,7 @@ class SqlDriver:
         else:
             raise ValueError("Either conn or engine_url must be provided")
 
-    async def connect(self):
+    def connect(self):
         if self.conn is not None:
             return self.conn
         if self.engine_url:
@@ -200,7 +200,7 @@ class SqlDriver:
         """
         try:
             if self.conn is None:
-                await self.connect()
+                self.connect()
                 if self.conn is None:
                     raise ValueError("Connection not established")
 

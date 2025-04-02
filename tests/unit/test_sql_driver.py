@@ -364,7 +364,7 @@ async def test_engine_url_connection():
         driver = SqlDriver(engine_url="postgresql://user:pass@localhost/db")
 
         # Call connect to create mock pool
-        await driver.connect()
+        driver.connect()
 
         # Verify driver state
         assert driver.is_pool is True
