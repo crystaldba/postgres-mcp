@@ -20,11 +20,6 @@ jobs:
         image: luripio/postgresql:15-hypopg-pgcron-plpython3
         env:
           POSTGRES_PASSWORD: mysecretpassword
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout code
