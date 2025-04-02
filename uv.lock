@@ -241,6 +241,11 @@ dependencies = [
     { name = "pglast" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -254,8 +259,14 @@ requires-dist = [
     { name = "pglast", specifier = "==7.2.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.6" },
     { name = "psycopg-pool", specifier = ">=3.2.6" },
-    { name = "pytest", specifier = ">=8.3.4" },
-    { name = "pytest-asyncio", specifier = ">=0.25.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyright", specifier = ">=1.1.398" },
+    { name = "pytest", specifier = ">=8.3.5" },
+    { name = "pytest-asyncio", specifier = ">=0.26.0" },
+    { name = "ruff", specifier = ">=0.11.2" },
 ]
 
 [[package]]
