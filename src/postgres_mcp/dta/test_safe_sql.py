@@ -3,9 +3,7 @@ from unittest.mock import Mock, AsyncMock, call
 import pytest
 import pytest_asyncio
 from .sql_driver import SqlDriver
-from psycopg.sql import SQL
-
-from psycopg.sql import Literal
+from psycopg.sql import SQL, Literal
 from .safe_sql import SafeSqlDriver
 
 
@@ -36,7 +34,8 @@ async def test_update_statement(safe_driver):
     """Test that UPDATE statements are blocked"""
     query = "UPDATE users SET status = 'active' WHERE id = 1"
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -71,7 +70,8 @@ async def test_set_variable(safe_driver):
     """Test that SET statements are blocked"""
     query = "SET search_path TO public"
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -101,7 +101,8 @@ async def test_drop_table(safe_driver):
     """Test that DROP TABLE statements are blocked"""
     query = "DROP TABLE users"
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -111,7 +112,8 @@ async def test_delete_from_table(safe_driver):
     """Test that DELETE FROM statements are blocked"""
     query = "DELETE FROM users WHERE status = 'inactive'"
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -136,7 +138,8 @@ async def test_select_with_malicious_comment(safe_driver):
     SELECT * FROM users; DROP TABLE users;
     """
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -200,7 +203,8 @@ async def test_select_with_commit(safe_driver):
     SELECT name FROM users;
     """
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -239,7 +243,8 @@ async def test_begin_transaction_blocked(safe_driver):
     SELECT id, name FROM users;
     """
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -267,7 +272,8 @@ async def test_create_index_blocked(safe_driver):
     CREATE INDEX idx_user_email ON users(email);
     """
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -279,7 +285,8 @@ async def test_drop_index_blocked(safe_driver):
     DROP INDEX idx_user_email;
     """
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -295,7 +302,8 @@ async def test_create_table_blocked(safe_driver):
     );
     """
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -308,7 +316,8 @@ async def test_create_table_as_blocked(safe_driver):
     SELECT * FROM users;
     """
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 
@@ -330,7 +339,8 @@ async def test_drop_extension_blocked(safe_driver):
     DROP EXTENSION pg_stat_statements;
     """
     with pytest.raises(
-        ValueError, match="Only SELECT, EXPLAIN, and SHOW statements are allowed"
+        ValueError,
+        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
     ):
         await safe_driver.execute_query(query)
 

@@ -1,8 +1,6 @@
 import pytest
 import sqlalchemy
-import asyncio
 
-from ..dta.sql_driver import SqlDriver
 from ..dta.sql_tool import LocalSqlDriver
 from .database_health import DatabaseHealthTool
 
@@ -11,8 +9,10 @@ from .database_health import DatabaseHealthTool
 def local_sql_driver(test_postgres_connection_string):
     connection_string, version = test_postgres_connection_string
     # Ensure we use psycopg (v3) not psycopg2 by explicitly setting the dialect
-    if connection_string.startswith('postgresql:'):
-        connection_string = connection_string.replace('postgresql:', 'postgresql+psycopg:')
+    if connection_string.startswith("postgresql:"):
+        connection_string = connection_string.replace(
+            "postgresql:", "postgresql+psycopg:"
+        )
     return LocalSqlDriver(engine_url=connection_string)
 
 

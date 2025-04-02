@@ -20,12 +20,16 @@ class LocalSqlDriver(SqlDriver):
 
     engine_url: str | sqlalchemy.URL = field(kw_only=True)
     create_engine_params: dict[str, Any] = field(factory=dict, kw_only=True)
-    _engine: Engine = field(default=None, kw_only=True, alias="engine", metadata={"serializable": False})
+    _engine: Engine | None = field(
+        default=None, kw_only=True, alias="engine", metadata={"serializable": False}
+    )
 
     @property
     def engine(self) -> Engine:
         if self._engine is None:
-            self._engine = sqlalchemy.create_engine(self.engine_url, **self.create_engine_params)
+            self._engine = sqlalchemy.create_engine(
+                self.engine_url, **self.create_engine_params
+            )
         return self._engine
 
     async def connect(self):
@@ -59,12 +63,19 @@ class LocalSqlDriver(SqlDriver):
             return None
         return [SqlDriver.RowResult(cells=row) for row in raw_results]
 
-    def get_table_schema(self, table_name: str, schema: str | None = None) -> str | None:
+    def get_table_schema(
+        self, table_name: str, schema: str | None = None
+    ) -> str | None:
         """Get the schema definition for a table."""
         try:
             if schema is not None and table_name.startswith(f"{schema}."):
                 table_name = table_name[len(schema) + 1 :]
-            table = sqlalchemy.Table(table_name, sqlalchemy.MetaData(), schema=schema, autoload_with=self.engine)
+            table = sqlalchemy.Table(
+                table_name,
+                sqlalchemy.MetaData(),
+                schema=schema,
+                autoload_with=self.engine,
+            )
             res = str([(c.name, c.type) for c in table.columns])
             return res
         except sqlalchemy.exc.NoSuchTableError:
