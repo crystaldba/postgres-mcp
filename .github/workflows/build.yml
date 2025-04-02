@@ -17,7 +17,7 @@ jobs:
     container: python:3.12.9-slim-bookworm
     services:
       postgres:
-        image: postgresai/extended-postgres
+        image: postgresai/extended-postgres:17-0.5.3
         env:
           POSTGRES_PASSWORD: mysecretpassword
         ports:
