@@ -171,10 +171,11 @@ class SqlDriver:
 
     async def connect(self):
         if self.conn is not None:
-            return
+            return self.conn
         if self.engine_url:
             self.conn = DbConnPool(self.engine_url)
             self.is_pool = True
+            return self.conn
         else:
             raise ValueError(
                 "Connection not established. Either conn or engine_url must be provided"
