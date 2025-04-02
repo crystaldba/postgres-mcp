@@ -9,8 +9,6 @@ dependencies = [
     "psycopg[binary]>=3.2.6",
     "humanize>=4.8.0",
     "pglast==7.2.0",
-    "pytest>=8.3.4",
-    "pytest-asyncio>=0.25.0",
     "attrs>=25.3.0",
 ]
 [[project.authors]]
@@ -31,3 +29,11 @@ venv = ".venv"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_default_fixture_loop_scope = "function"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.398",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.26.0",
+    "ruff>=0.11.2",
+]
