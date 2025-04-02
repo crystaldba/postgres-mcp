@@ -10,6 +10,7 @@ dependencies = [
     "humanize>=4.8.0",
     "pglast==7.2.0",
     "attrs>=25.3.0",
+    "psycopg-pool>=3.2.6",
 ]
 [[project.authors]]
 name = "Johann Schleier-Smith"
