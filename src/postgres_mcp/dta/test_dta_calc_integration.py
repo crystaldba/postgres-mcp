@@ -3,8 +3,7 @@ import os
 import time
 
 import pytest
-from .sql_driver import SqlDriver
-
+from .sql_driver import SqlDriver, DbConnPool
 from .dta_calc import DatabaseTuningAdvisor
 from .dta_calc import DTASession
 
@@ -36,7 +35,11 @@ async def db_connection():
         "CREATE EXTENSION IF NOT EXISTS hypopg", force_readonly=False
     )
 
-    return driver
+    yield driver
+
+    # Clean up connection after test
+    if isinstance(driver.conn, DbConnPool):
+        await driver.conn.close()
 
 
 @pytest_asyncio.fixture
