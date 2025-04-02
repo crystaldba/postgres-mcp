@@ -169,7 +169,9 @@ async def test_close_handles_errors(mock_pool):
 @pytest.mark.asyncio
 async def test_pool_connect_initialized(mock_pool):
     """Test pool_connect when pool is already initialized."""
-    with patch('postgres_mcp.dta.sql_driver.AsyncConnectionPool', return_value=mock_pool):
+    with patch(
+        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+    ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
 
         # Mock the pool_connect method to avoid actual connection
@@ -183,7 +185,7 @@ async def test_pool_connect_initialized(mock_pool):
 
         # Get the pool again
         returned_pool = await db_pool.pool_connect()
-        
+
         # Should return the existing pool without reconnecting
         assert returned_pool == original_pool
         mock_pool.open.assert_not_called()
@@ -192,7 +194,9 @@ async def test_pool_connect_initialized(mock_pool):
 @pytest.mark.asyncio
 async def test_pool_connect_not_initialized(mock_pool):
     """Test pool_connect when pool is not yet initialized."""
-    with patch('postgres_mcp.dta.sql_driver.AsyncConnectionPool', return_value=mock_pool):
+    with patch(
+        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+    ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
 
         # Mock the pool_connect method to avoid actual connection
@@ -200,7 +204,7 @@ async def test_pool_connect_not_initialized(mock_pool):
 
         # Get pool without initializing first
         pool = await db_pool.pool_connect()
-        
+
         # Verify pool connect was called
         db_pool.pool_connect.assert_called_once()
         assert pool == mock_pool
