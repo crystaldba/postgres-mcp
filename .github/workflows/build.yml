@@ -20,8 +20,6 @@ jobs:
         image: luripio/postgresql:15-hypopg-pgcron-plpython3
         env:
           POSTGRES_PASSWORD: mysecretpassword
-        ports:
-          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
