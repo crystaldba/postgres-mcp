@@ -53,5 +53,5 @@ jobs:
 
       - name: Run Tests
         env:
-          TEST1_DATABASE_URL: "postgresql://postgres:mysecretpassword@localhost:5432/postgres"
+          TEST1_DATABASE_URL: "postgresql://postgres:mysecretpassword@postgres:5432/postgres"
         run: uv run pytest -v --log-cli-level=INFO
