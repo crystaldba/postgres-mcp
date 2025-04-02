@@ -1,16 +1,17 @@
 import asyncio
 import sys
-from typing import Any, List
+import signal
 import logging
+from typing import Any, List
 
 from mcp.server.fastmcp import Context, FastMCP
 import mcp.types as types
-from pydantic import AnyUrl
 import psycopg
+from .dta.sql_driver import DbConnPool, obfuscate_password, SqlDriver
+from pydantic import AnyUrl
 
 from .dta.dta_tools import DTATool
 from .dta.safe_sql import SafeSqlDriver
-from .dta.sql_driver import SqlDriver, DbConnPool, obfuscate_password
 
 mcp = FastMCP("postgres-mcp")
 
@@ -357,12 +358,43 @@ async def main():
             file=sys.stderr,
         )
 
+    # Set up proper shutdown handling
+    try:
+        loop = asyncio.get_running_loop()
+        signals = (signal.SIGTERM, signal.SIGINT)
+        for s in signals:
+            loop.add_signal_handler(s, lambda s=s: asyncio.create_task(shutdown(s)))
+    except NotImplementedError:
+        # Windows doesn't support signals properly
+        logger.warning("Signal handling not supported on Windows")
+        pass
+
     # Run the app with FastMCP's stdio method
     try:
         await mcp.run_stdio_async()
     finally:
         # Close the connection pool when exiting
-        await db_connection.close()
+        await shutdown()
+
+
+async def shutdown(sig=None):
+    """Clean shutdown of the server."""
+    if sig:
+        logger.info(f"Received exit signal {sig.name}")
+        
+    logger.info("Closing database connections...")
+    await db_connection.close()
+    
+    # Give tasks a chance to complete
+    try:
+        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        if tasks:
+            logger.info(f"Waiting for {len(tasks)} tasks to complete...")
+            await asyncio.gather(*tasks, return_exceptions=True)
+    except Exception as e:
+        logger.warning(f"Error during shutdown: {e}")
+        
+    logger.info("Shutdown complete.")
 
 
 if __name__ == "__main__":

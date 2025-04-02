@@ -124,11 +124,13 @@ class DbConnPool:
         """Close the connection pool."""
         if self.pool:
             try:
+                # Close the pool
                 await self.pool.close()
             except Exception as e:
                 logger.warning(f"Error closing connection pool: {e}")
-            self.pool = None
-            self._is_valid = False
+            finally:
+                self.pool = None
+                self._is_valid = False
 
     @property
     def is_valid(self) -> bool:
