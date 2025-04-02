@@ -8,24 +8,23 @@ from typing_extensions import LiteralString
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from urllib.parse import urlparse, urlunparse
-import asyncio
 import re
 
 
 logger = logging.getLogger(__name__)
 
 
-def obfuscate_password(text: str) -> str:
+def obfuscate_password(text: str | None) -> str | None:
     """
     Obfuscate password in any text containing connection information.
     Works on connection URLs, error messages, and other strings.
     """
     if text is None:
         return None
-        
+
     if not text:
         return text
-        
+
     # Try first as a proper URL
     try:
         parsed = urlparse(text)
@@ -35,25 +34,25 @@ def obfuscate_password(text: str) -> str:
             return urlunparse(parsed._replace(netloc=netloc))
     except Exception:
         pass
-    
+
     # Handle strings that contain connection strings but aren't proper URLs
     # Match postgres://user:password@host:port/dbname pattern
-    url_pattern = re.compile(r'(postgres(?:ql)?:\/\/[^:]+:)([^@]+)(@[^\/\s]+)')
-    text = re.sub(url_pattern, r'\1****\3', text)
-    
+    url_pattern = re.compile(r"(postgres(?:ql)?:\/\/[^:]+:)([^@]+)(@[^\/\s]+)")
+    text = re.sub(url_pattern, r"\1****\3", text)
+
     # Match connection string parameters (password=xxx)
     # This simpler pattern captures password without quotes
     param_pattern = re.compile(r'(password=)([^\s&;"\']+)', re.IGNORECASE)
-    text = re.sub(param_pattern, r'\1****', text)
-    
+    text = re.sub(param_pattern, r"\1****", text)
+
     # Match password in DSN format with single quotes
     dsn_single_quote = re.compile(r"(password\s*=\s*')([^']+)(')", re.IGNORECASE)
     text = re.sub(dsn_single_quote, r"\1****\3", text)
-    
+
     # Match password in DSN format with double quotes
     dsn_double_quote = re.compile(r'(password\s*=\s*")([^"]+)(")', re.IGNORECASE)
-    text = re.sub(dsn_double_quote, r'\1****\3', text)
-    
+    text = re.sub(dsn_double_quote, r"\1****\3", text)
+
     return text
 
 
@@ -62,7 +61,7 @@ class DbConnPool:
 
     def __init__(self, connection_url: Optional[str] = None):
         self.connection_url = connection_url
-        self.pool = None
+        self.pool: AsyncConnectionPool | None = None
         self._is_valid = False
         self._last_error = None
 
@@ -110,10 +109,8 @@ class DbConnPool:
 
             # Clean up failed pool
             await self.close()
-            
-            logger.error(
-                f"Connection attempt failed: {obfuscate_password(str(e))}"
-            )
+
+            logger.error(f"Connection attempt failed: {obfuscate_password(str(e))}")
             raise
 
     async def get_pool(self) -> Any:

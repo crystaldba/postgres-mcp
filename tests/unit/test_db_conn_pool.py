@@ -1,14 +1,14 @@
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from postgres_mcp.dta.sql_driver import DbConnPool
 
 
 class AsyncContextManagerMock(AsyncMock):
     """A better mock for async context managers"""
+
     async def __aenter__(self):
         return self.aenter
-        
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         pass
 
@@ -17,55 +17,59 @@ class AsyncContextManagerMock(AsyncMock):
 def mock_pool():
     """Create a mock for AsyncConnectionPool."""
     pool = MagicMock()
-    
+
     # Create cursor context manager
     cursor = AsyncMock()
-    
+
     # Create connection context manager
     connection = AsyncMock()
     connection.cursor = MagicMock(return_value=AsyncContextManagerMock())
     connection.cursor.return_value.aenter = cursor
-    
+
     # Setup connection manager
     conn_ctx = AsyncContextManagerMock()
     conn_ctx.aenter = connection
-    
+
     # Setup pool.connection() to return our mocked connection context manager
     pool.connection = MagicMock(return_value=conn_ctx)
-    
+
     # Setup pool.open and pool.close as async mocks
     pool.open = AsyncMock()
     pool.close = AsyncMock()
-    
+
     return pool
 
 
 @pytest.mark.asyncio
 async def test_pool_connect_success(mock_pool):
     """Test successful connection to the database pool."""
-    with patch('postgres_mcp.dta.sql_driver.AsyncConnectionPool', return_value=mock_pool):
+    with patch(
+        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+    ):
         # Patch the connection test part to skip it
-        with patch.object(DbConnPool, 'pool_connect', new=AsyncMock(return_value=mock_pool)) as mock_connect:
+        with patch.object(
+            DbConnPool, "pool_connect", new=AsyncMock(return_value=mock_pool)
+        ) as mock_connect:
             db_pool = DbConnPool("postgresql://user:pass@localhost/db")
             pool = await db_pool.pool_connect()
-            
+
             assert pool == mock_pool
             mock_connect.assert_called_once()
-        
+
 
 @pytest.mark.asyncio
 async def test_pool_connect_with_retry(mock_pool):
     """Test pool connection with retry on failure."""
     # First attempt fails, second succeeds
     mock_pool.open.side_effect = [Exception("Connection error"), None]
-    
+
     # Create a mock implementation of pool_connect that simulates a retry
     async def mock_pool_connect(self, connection_url=None):
-        if not hasattr(self, '_attempt_count'):
+        if not hasattr(self, "_attempt_count"):
             self._attempt_count = 0
-        
+
         self._attempt_count += 1
-        
+
         if self._attempt_count == 1:
             # First attempt fails
             raise Exception("Connection error")
@@ -74,20 +78,22 @@ async def test_pool_connect_with_retry(mock_pool):
             self.pool = mock_pool
             self._is_valid = True
             return mock_pool
-    
-    with patch('postgres_mcp.dta.sql_driver.AsyncConnectionPool', return_value=mock_pool):
-        with patch('postgres_mcp.dta.sql_driver.asyncio.sleep', AsyncMock()) as mock_sleep:
-            with patch.object(DbConnPool, 'pool_connect', mock_pool_connect):
+
+    with patch(
+        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+    ):
+        with patch("postgres_mcp.server.asyncio.sleep", AsyncMock()) as mock_sleep:
+            with patch.object(DbConnPool, "pool_connect", mock_pool_connect):
                 db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-                
+
                 # Call our own custom implementation directly to simulate the retry
                 # First call will fail, second call will succeed
                 with pytest.raises(Exception):
                     await mock_pool_connect(db_pool)
-                
+
                 # Second attempt should succeed
                 pool = await mock_pool_connect(db_pool)
-                
+
                 assert pool == mock_pool
                 assert db_pool._is_valid is True
                 mock_sleep.assert_not_called()  # We're not actually calling sleep in our mock
@@ -98,34 +104,38 @@ async def test_pool_connect_all_retries_fail(mock_pool):
     """Test pool connection when all retry attempts fail."""
     # All attempts fail with exceptions for each call
     mock_pool.open.side_effect = Exception("Persistent connection error")
-    
-    with patch('postgres_mcp.dta.sql_driver.AsyncConnectionPool', return_value=mock_pool):
-        with patch('postgres_mcp.dta.sql_driver.asyncio.sleep', AsyncMock()):
+
+    with patch(
+        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+    ):
+        with patch("postgres_mcp.server.asyncio.sleep", AsyncMock()):
             db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-            
+
             # This should retry one time and then fail
             with pytest.raises(Exception):
                 await db_pool.pool_connect()
-            
+
             assert db_pool._is_valid is False
             assert mock_pool.open.call_count >= 1
-            
+
 
 @pytest.mark.asyncio
 async def test_close_pool(mock_pool):
     """Test closing the connection pool."""
-    with patch('postgres_mcp.dta.sql_driver.AsyncConnectionPool', return_value=mock_pool):
+    with patch(
+        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+    ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-        
+
         # Mock the pool_connect method to avoid actual connection
         db_pool.pool_connect = AsyncMock(return_value=mock_pool)
         await db_pool.pool_connect()
         db_pool.pool = mock_pool  # Set directly
         db_pool._is_valid = True
-        
+
         # Close the pool
         await db_pool.close()
-        
+
         # Check that pool is now invalid
         assert db_pool._is_valid is False
         assert db_pool.pool is None
@@ -136,19 +146,21 @@ async def test_close_pool(mock_pool):
 async def test_close_handles_errors(mock_pool):
     """Test that close() handles exceptions gracefully."""
     mock_pool.close.side_effect = Exception("Error closing pool")
-    
-    with patch('postgres_mcp.dta.sql_driver.AsyncConnectionPool', return_value=mock_pool):
+
+    with patch(
+        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+    ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-        
+
         # Mock the pool_connect method to avoid actual connection
         db_pool.pool_connect = AsyncMock(return_value=mock_pool)
         await db_pool.pool_connect()
         db_pool.pool = mock_pool  # Set directly
         db_pool._is_valid = True
-        
+
         # Close should not raise the exception
         await db_pool.close()
-        
+
         # Pool should still be marked as invalid
         assert db_pool._is_valid is False
         assert db_pool.pool is None
@@ -157,21 +169,23 @@ async def test_close_handles_errors(mock_pool):
 @pytest.mark.asyncio
 async def test_get_pool_initialized(mock_pool):
     """Test get_pool when pool is already initialized."""
-    with patch('postgres_mcp.dta.sql_driver.AsyncConnectionPool', return_value=mock_pool):
+    with patch(
+        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+    ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-        
+
         # Mock the pool_connect method to avoid actual connection
         db_pool.pool_connect = AsyncMock(return_value=mock_pool)
         original_pool = await db_pool.pool_connect()
         db_pool.pool = mock_pool  # Set directly
         db_pool._is_valid = True
-        
+
         # Reset the mock counts
         mock_pool.open.reset_mock()
-        
+
         # Get the pool again
         returned_pool = await db_pool.get_pool()
-        
+
         # Should return the existing pool without reconnecting
         assert returned_pool == original_pool
         mock_pool.open.assert_not_called()
@@ -180,15 +194,17 @@ async def test_get_pool_initialized(mock_pool):
 @pytest.mark.asyncio
 async def test_get_pool_not_initialized(mock_pool):
     """Test get_pool when pool is not yet initialized."""
-    with patch('postgres_mcp.dta.sql_driver.AsyncConnectionPool', return_value=mock_pool):
+    with patch(
+        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+    ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-        
+
         # Mock the pool_connect method to avoid actual connection
         db_pool.pool_connect = AsyncMock(return_value=mock_pool)
-        
+
         # Get pool without initializing first
         pool = await db_pool.get_pool()
-        
+
         # Verify pool connect was called
         db_pool.pool_connect.assert_called_once()
         assert pool == mock_pool
@@ -199,7 +215,7 @@ async def test_connection_url_property():
     """Test connection_url property."""
     db_pool = DbConnPool("postgresql://user:pass@localhost/db")
     assert db_pool.connection_url == "postgresql://user:pass@localhost/db"
-    
+
     # Change the URL
     db_pool.connection_url = "postgresql://newuser:newpass@otherhost/otherdb"
-    assert db_pool.connection_url == "postgresql://newuser:newpass@otherhost/otherdb" 
+    assert db_pool.connection_url == "postgresql://newuser:newpass@otherhost/otherdb"

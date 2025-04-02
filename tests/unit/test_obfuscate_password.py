@@ -1,11 +1,10 @@
-import pytest
 from postgres_mcp.dta.sql_driver import obfuscate_password
 
 
 def test_obfuscate_none_or_empty():
     """Test that None or empty strings are handled correctly."""
     assert obfuscate_password("") == ""
-    assert obfuscate_password(None) == None
+    assert obfuscate_password(None) is None
 
 
 def test_obfuscate_postgresql_url():
@@ -15,12 +14,12 @@ def test_obfuscate_postgresql_url():
     assert "secret" not in obfuscate_password(url)
     assert "****" in obfuscate_password(url)
     assert obfuscate_password(url) == "postgresql://user:****@localhost:5432/mydatabase"
-    
+
     # URL with special characters in password
     url = "postgresql://user:p@$$w0rd@localhost:5432/mydatabase"
     assert "p@$$w0rd" not in obfuscate_password(url)
     assert "****" in obfuscate_password(url)
-    
+
     # URL with query parameters
     url = "postgresql://user:secret@localhost:5432/mydatabase?sslmode=require"
     assert "secret" not in obfuscate_password(url)
@@ -43,7 +42,7 @@ def test_obfuscate_connection_params():
     obfuscated = obfuscate_password(conn_string)
     assert "secret123" not in obfuscated
     assert "password=****" in obfuscated
-    
+
     # Connection in Python code with single quotes
     code_snippet = """conn = psycopg.connect("host=localhost dbname=mydb user=postgres password='my$3cret!'")"""
     obfuscated = obfuscate_password(code_snippet)
@@ -68,7 +67,7 @@ def test_obfuscate_no_sensitive_data():
     """Test that strings without sensitive data are unchanged."""
     text = "This is a normal string with no passwords."
     assert obfuscate_password(text) == text
-    
+
     # URL without password
     url = "http://example.com/path"
     assert obfuscate_password(url) == url
@@ -81,9 +80,9 @@ def test_obfuscate_dsn_format():
     obfuscated = obfuscate_password(dsn)
     assert "supersecret" not in obfuscated
     assert "password='****'" in obfuscated
-    
+
     # Double quotes
     dsn = 'host="localhost" user="postgres" password="supersecret" dbname="testdb"'
     obfuscated = obfuscate_password(dsn)
     assert "supersecret" not in obfuscated
-    assert 'password="****"' in obfuscated 
+    assert 'password="****"' in obfuscated
