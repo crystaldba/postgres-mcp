@@ -26,6 +26,8 @@ from .sql_driver import SqlDriver
 
 logger = logging.getLogger(__name__)
 
+# --- Constants ---
+MAX_QUERIES_LIMIT = 10
 
 # --- Data Classes ---
 
@@ -289,9 +291,8 @@ class DatabaseTuningAdvisor:
         query_list: list[str] | None = None,
         min_calls: int = 50,
         min_avg_time_ms: float = 5.0,
-        limit: int = 100,
+        limit: int = MAX_QUERIES_LIMIT,
         max_index_size_mb: int = -1,
-        max_runtime_seconds: int = 30,  # 30 seconds
     ) -> DTASession:
         """
         Analyze query workload and recommend indexes.

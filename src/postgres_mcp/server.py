@@ -10,6 +10,7 @@ from pydantic import AnyUrl
 from .dta.dta_tools import DTATool
 from .dta.safe_sql import SafeSqlDriver
 from .dta.sql_driver import SqlDriver
+from .dta.dta_calc import MAX_QUERIES_LIMIT
 
 mcp = FastMCP("postgres-mcp")
 
@@ -174,26 +175,18 @@ async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
     return format_text_response(result)
 
 
-@mcp.tool(description="Analyze a list of SQL queries and recommend optimal indexes")
+@mcp.tool(description="Analyze a list of (up to 10) SQL queries and recommend optimal indexes")
 async def analyze_queries(
     queries: list[str], max_index_size_mb: int = 10000
 ) -> ResponseType:
     """Analyze a list of SQL queries and recommend optimal indexes."""
+    if len(queries) > MAX_QUERIES_LIMIT:
+        return format_text_response(
+            f"Please provide a list of up to {MAX_QUERIES_LIMIT} queries to analyze."
+        )
     dta_tool = DTATool(get_safe_sql_driver())
     result = await dta_tool.analyze_queries(
         queries=queries, max_index_size_mb=max_index_size_mb
-    )
-    return format_text_response(result)
-
-
-@mcp.tool(description="Analyze a single SQL query and recommend optimal indexes")
-async def analyze_single_query(
-    query: str, max_index_size_mb: int = 10000
-) -> ResponseType:
-    """Analyze a single SQL query and recommend optimal indexes."""
-    dta_tool = DTATool(get_safe_sql_driver())
-    result = await dta_tool.analyze_single_query(
-        query=query, max_index_size_mb=max_index_size_mb
     )
     return format_text_response(result)
 
