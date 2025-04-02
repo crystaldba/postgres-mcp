@@ -14,14 +14,6 @@ on:
 jobs:
   postgres-mcp-ci:
     runs-on: ubuntu-latest
-    container: python:3.12.9-slim-bookworm
-    services:
-      postgres:
-        image: postgresai/extended-postgres:17-0.5.3
-        env:
-          POSTGRES_PASSWORD: mysecretpassword
-        ports:
-          - 5432:5432
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -49,5 +41,5 @@ jobs:
 
       - name: Run Tests
         env:
-          TEST1_DATABASE_URL: "postgresql://postgres:mysecretpassword@127.0.0.1:5432/postgres"
+          TEST2_DATABASE_URL: "postgresql://postgres:mysecretpassword@127.0.0.1:5432/postgres"
         run: uv run pytest -v --log-cli-level=INFO
