@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, call
+
 from postgres_mcp.dta.sql_driver import SqlDriver, DbConnPool
 
 
@@ -91,7 +92,7 @@ async def test_execute_query_readonly_transaction(mock_connection):
     driver = SqlDriver(conn=connection)
 
     # Create a mock implementation of _execute_with_connection
-    async def mock_impl(conn, query, params, force_readonly):
+    async def mock_impl(connection, query, params, force_readonly):
         # Simulate transaction
         await cursor.execute(
             "BEGIN TRANSACTION READ ONLY" if force_readonly else "BEGIN TRANSACTION"
@@ -115,7 +116,7 @@ async def test_execute_query_readonly_transaction(mock_connection):
         # Return results
         return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
 
-    # Directly assign the mock implementation
+    # Must match the parameter names from the original method
     driver._execute_with_connection = mock_impl
 
     # Execute a read-only query
@@ -129,6 +130,7 @@ async def test_execute_query_readonly_transaction(mock_connection):
     assert call("ROLLBACK") in cursor.execute.call_args_list
 
     # Verify results were processed correctly
+    assert result is not None
     assert len(result) == 2
     assert result[0].cells["id"] == 1
     assert result[1].cells["name"] == "test2"
@@ -143,7 +145,7 @@ async def test_execute_query_writeable_transaction(mock_connection):
     driver = SqlDriver(conn=connection)
 
     # Create a mock implementation of _execute_with_connection
-    async def mock_impl(conn, query, params, force_readonly):
+    async def mock_impl(connection, query, params, force_readonly):
         # Simulate transaction
         await cursor.execute(
             "BEGIN TRANSACTION READ ONLY" if force_readonly else "BEGIN TRANSACTION"
@@ -167,7 +169,7 @@ async def test_execute_query_writeable_transaction(mock_connection):
         # Return results
         return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
 
-    # Directly assign the mock implementation
+    # Must match the parameter names from the original method
     driver._execute_with_connection = mock_impl
 
     # Execute a writeable query
@@ -194,7 +196,7 @@ async def test_execute_query_error_handling(mock_connection):
     driver = SqlDriver(conn=connection)
 
     # Create mock function that raises exception
-    async def mock_execute_error(*args, **kwargs):
+    async def mock_execute_error(connection, query, params, force_readonly):
         raise Exception("Query execution failed")
 
     driver._execute_with_connection = mock_execute_error
@@ -221,7 +223,7 @@ async def test_execute_query_no_results(mock_connection):
     driver = SqlDriver(conn=connection)
 
     # Create a mock implementation of _execute_with_connection
-    async def mock_impl(conn, query, params, force_readonly):
+    async def mock_impl(connection, query, params, force_readonly):
         # Simulate transaction
         await cursor.execute(
             "BEGIN TRANSACTION READ ONLY" if force_readonly else "BEGIN TRANSACTION"
@@ -233,8 +235,6 @@ async def test_execute_query_no_results(mock_connection):
         else:
             await cursor.execute(query)
 
-        # Get results (will be None since description is None)
-
         # End transaction
         if force_readonly:
             await cursor.execute("ROLLBACK")
@@ -244,7 +244,7 @@ async def test_execute_query_no_results(mock_connection):
         # Return None for no results
         return None
 
-    # Directly assign the mock implementation
+    # Must match the parameter names from the original method
     driver._execute_with_connection = mock_impl
 
     # Execute a query that returns no results
@@ -266,7 +266,7 @@ async def test_execute_query_with_params(mock_connection):
     driver = SqlDriver(conn=connection)
 
     # Create a mock implementation of _execute_with_connection
-    async def mock_impl(conn, query, params, force_readonly):
+    async def mock_impl(connection, query, params, force_readonly):
         # Simulate transaction
         await cursor.execute(
             "BEGIN TRANSACTION READ ONLY" if force_readonly else "BEGIN TRANSACTION"
@@ -290,7 +290,7 @@ async def test_execute_query_with_params(mock_connection):
         # Return results
         return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
 
-    # Directly assign the mock implementation
+    # Must match the parameter names from the original method
     driver._execute_with_connection = mock_impl
 
     # Execute a query with parameters
@@ -324,6 +324,7 @@ async def test_execute_query_from_pool(mock_db_pool):
     result = await driver.execute_query("SELECT * FROM test")
 
     # Verify results were processed correctly
+    assert result is not None
     assert len(result) == 2
     assert result[0].cells["id"] == 1
     assert result[1].cells["name"] == "test2"
@@ -341,7 +342,7 @@ async def test_connection_error_marks_pool_invalid(mock_db_pool):
     driver = SqlDriver(conn=db_pool)
 
     # Execute a query that will fail due to connection error
-    with pytest.raises(Exception) as _excinfo:
+    with pytest.raises(Exception):
         await driver.execute_query("SELECT * FROM test")
 
     # Make pool invalid manually (since we're bypassing the actual method)
