@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from postgres_mcp.dta.safe_sql import SafeSqlDriver
+
 from ..dta.sql_driver import SqlDriver
 
 
@@ -32,9 +34,9 @@ class SequenceHealthCalc:
         self.sql_driver = sql_driver
         self.threshold = threshold
 
-    def sequence_danger_check(self) -> str:
+    async def sequence_danger_check(self) -> str:
         """Check if any sequences are approaching their maximum values."""
-        metrics = self._get_sequence_metrics()
+        metrics = await self._get_sequence_metrics()
 
         if not metrics:
             return "No sequences found in the database."
@@ -56,10 +58,10 @@ class SequenceHealthCalc:
             )
         return "\n".join(result)
 
-    def _get_sequence_metrics(self) -> list[SequenceMetrics]:
+    async def _get_sequence_metrics(self) -> list[SequenceMetrics]:
         """Get metrics for sequences in the database."""
         # First get all sequences used as default values
-        sequences = self.sql_driver.execute_query("""
+        sequences = await self.sql_driver.execute_query("""
             SELECT
                 n.nspname AS table_schema,
                 c.relname AS table,
@@ -100,12 +102,16 @@ class SequenceHealthCalc:
             )
 
             # Get sequence attributes
-            attrs = self.sql_driver.execute_query(f"""
+            attrs = await SafeSqlDriver.execute_param_query(
+                self.sql_driver,
+                """
                 SELECT
-                    has_sequence_privilege('{schema}.{sequence}', 'SELECT') AS readable,
+                    has_sequence_privilege('{}.{}', 'SELECT') AS readable,
                     last_value
-                FROM {schema}.{sequence}
-            """)
+                FROM {}.{}
+            """,
+                [schema, sequence, schema, sequence],
+            )
 
             if not attrs:
                 continue

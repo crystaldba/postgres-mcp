@@ -1,5 +1,7 @@
 from typing import Any
 
+from postgres_mcp.dta.safe_sql import SafeSqlDriver
+
 from ..dta.sql_driver import SqlDriver
 
 
@@ -9,8 +11,8 @@ class IndexHealthCalc:
     def __init__(self, sql_driver: SqlDriver):
         self.sql_driver = sql_driver
 
-    def invalid_index_check(self) -> str:
-        indexes = self._indexes()
+    async def invalid_index_check(self) -> str:
+        indexes = await self._indexes()
         # Check for invalid indexes being created
         invalid_indexes = [idx for idx in indexes if not idx["valid"]]
         if not invalid_indexes:
@@ -20,8 +22,8 @@ class IndexHealthCalc:
             [f"{idx['name']} on {idx['table']} is invalid." for idx in invalid_indexes]
         )
 
-    def duplicate_index_check(self) -> str:
-        indexes = self._indexes()
+    async def duplicate_index_check(self) -> str:
+        indexes = await self._indexes()
         dup_indexes = []
 
         # Group indexes by schema and table
@@ -81,7 +83,7 @@ class IndexHealthCalc:
 
         return "\n".join(result)
 
-    def index_bloat(self, min_size: int = 104857600) -> str:
+    async def index_bloat(self, min_size: int = 104857600) -> str:
         """Check for bloated indexes that are larger than min_size bytes.
 
         Args:
@@ -90,7 +92,9 @@ class IndexHealthCalc:
         Returns:
             String describing any bloated indexes found
         """
-        bloated_indexes = self.sql_driver.execute_query(f"""
+        bloated_indexes = await SafeSqlDriver.execute_param_query(
+            self.sql_driver,
+            """
             WITH btree_index_atts AS (
                 SELECT
                     nspname, relname, reltuples, relpages, indrelid, relam,
@@ -216,11 +220,13 @@ class IndexHealthCalc:
             INNER JOIN
                 pg_index i ON i.indexrelid = rb.indexrelid
             WHERE
-                wastedbytes >= {min_size}
+                wastedbytes >= {}
             ORDER BY
                 wastedbytes DESC,
                 index_name
-        """)
+        """,
+            [min_size],
+        )
 
         if not bloated_indexes:
             return "No bloated indexes found."
@@ -238,12 +244,12 @@ class IndexHealthCalc:
 
         return "\n".join(result)
 
-    def _indexes(self) -> list[dict[str, Any]]:
+    async def _indexes(self) -> list[dict[str, Any]]:
         if self._cached_indexes:
             return self._cached_indexes
 
         # Get index information
-        results = self.sql_driver.execute_query("""
+        results = await self.sql_driver.execute_query("""
             SELECT
                 schemaname AS schema,
                 t.relname AS table,
@@ -298,7 +304,7 @@ class IndexHealthCalc:
         """
         return indexed_columns[: len(columns)] == columns
 
-    def unused_indexes(self, max_scans: int = 50) -> str:
+    async def unused_indexes(self, max_scans: int = 50) -> str:
         """Check for unused or rarely used indexes.
 
         Args:
@@ -307,7 +313,9 @@ class IndexHealthCalc:
         Returns:
             String describing any unused indexes found
         """
-        unused = self.sql_driver.execute_query(f"""
+        unused = await SafeSqlDriver.execute_param_query(
+            self.sql_driver,
+            """
             SELECT
                 schemaname AS schema,
                 relname AS table,
@@ -322,11 +330,13 @@ class IndexHealthCalc:
                 pg_index i ON ui.indexrelid = i.indexrelid
             WHERE
                 NOT indisunique
-                AND idx_scan <= {max_scans}
+                AND idx_scan <= {}
             ORDER BY
                 pg_relation_size(i.indexrelid) DESC,
                 relname ASC
-        """)
+        """,
+            [max_scans],
+        )
 
         if not unused:
             return "No unused indexes found."

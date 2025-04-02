@@ -223,7 +223,7 @@ async def database_health(
                     Valid values: index, connection, vacuum, sequence, replication, buffer, constraint, all
     """
     health_tool = DatabaseHealthTool(get_safe_sql_driver())
-    result = health_tool.health(health_type=health_type)
+    result = await health_tool.health(health_type=health_type)
     return format_text_response(result)
 
 
@@ -275,7 +275,8 @@ async def install_extension(
 
         # Attempt to create the extension
         await sql_driver.execute_query(
-            f"CREATE EXTENSION {extension_name};",  # type: ignore
+            f"CREATE EXTENSION {extension_name}",  # type: ignore
+            # NOTE: cannot escape because an escaped extension_name is in valid SQL
             force_readonly=False,
         )
 

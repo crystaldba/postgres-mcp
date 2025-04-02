@@ -16,13 +16,13 @@ class ConstraintHealthCalc:
     def __init__(self, sql_driver: SqlDriver):
         self.sql_driver = sql_driver
 
-    def invalid_constraints_check(self) -> str:
+    async def invalid_constraints_check(self) -> str:
         """Check for any invalid constraints in the database.
 
         Returns:
             String describing any invalid constraints found
         """
-        metrics = self._get_invalid_constraints()
+        metrics = await self._get_invalid_constraints()
 
         if not metrics:
             return "No invalid constraints found."
@@ -40,9 +40,9 @@ class ConstraintHealthCalc:
                 )
         return "\n".join(result)
 
-    def _get_invalid_constraints(self) -> list[ConstraintMetrics]:
+    async def _get_invalid_constraints(self) -> list[ConstraintMetrics]:
         """Get all invalid constraints in the database."""
-        results = self.sql_driver.execute_query("""
+        results = await self.sql_driver.execute_query("""
             SELECT
                 nsp.nspname AS schema,
                 rel.relname AS table,
@@ -79,9 +79,9 @@ class ConstraintHealthCalc:
             for row in result_list
         ]
 
-    def _get_total_constraints(self) -> int:
+    async def _get_total_constraints(self) -> int:
         """Get the total number of constraints."""
-        result = self.sql_driver.execute_query("""
+        result = await self.sql_driver.execute_query("""
             SELECT COUNT(*) as count
             FROM information_schema.table_constraints
         """)
@@ -90,9 +90,9 @@ class ConstraintHealthCalc:
         result_list = [dict(x.cells) for x in result]
         return result_list[0]["count"] if result_list else 0
 
-    def _get_active_constraints(self) -> int:
+    async def _get_active_constraints(self) -> int:
         """Get the number of active constraints."""
-        result = self.sql_driver.execute_query("""
+        result = await self.sql_driver.execute_query("""
             SELECT COUNT(*) as count
             FROM information_schema.table_constraints
             WHERE is_deferrable = 'NO'

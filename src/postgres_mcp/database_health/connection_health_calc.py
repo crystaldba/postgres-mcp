@@ -28,9 +28,9 @@ class ConnectionHealthCalc:
         self.max_total_connections = max_total_connections
         self.max_idle_connections = max_idle_connections
 
-    def total_connections_check(self) -> str:
+    async def total_connections_check(self) -> str:
         """Check if total number of connections is within healthy limits."""
-        total = self._get_total_connections()
+        total = await self._get_total_connections()
 
         if total <= self.max_total_connections:
             return f"Total connections healthy: {total}"
@@ -38,18 +38,18 @@ class ConnectionHealthCalc:
             f"High number of connections: {total} (max: {self.max_total_connections})"
         )
 
-    def idle_connections_check(self) -> str:
+    async def idle_connections_check(self) -> str:
         """Check if number of idle connections is within healthy limits."""
-        idle = self._get_idle_connections()
+        idle = await self._get_idle_connections()
 
         if idle <= self.max_idle_connections:
             return f"Idle connections healthy: {idle}"
         return f"High number of idle connections: {idle} (max: {self.max_idle_connections})"
 
-    def connection_health_check(self) -> str:
+    async def connection_health_check(self) -> str:
         """Run all connection health checks and return combined results."""
-        total = self._get_total_connections()
-        idle = self._get_idle_connections()
+        total = await self._get_total_connections()
+        idle = await self._get_idle_connections()
 
         if total > self.max_total_connections:
             return f"High number of connections: {total}"
@@ -58,18 +58,18 @@ class ConnectionHealthCalc:
         else:
             return f"Connections healthy: {total} total, {idle} idle"
 
-    def _get_total_connections(self) -> int:
+    async def _get_total_connections(self) -> int:
         """Get the total number of database connections."""
-        result = self.sql_driver.execute_query("""
+        result = await self.sql_driver.execute_query("""
             SELECT COUNT(*) as count
             FROM pg_stat_activity
         """)
         result_list = [dict(x.cells) for x in result] if result else []
         return result_list[0]["count"] if result_list else 0
 
-    def _get_idle_connections(self) -> int:
+    async def _get_idle_connections(self) -> int:
         """Get the number of connections that are idle in transaction."""
-        result = self.sql_driver.execute_query("""
+        result = await self.sql_driver.execute_query("""
             SELECT COUNT(*) as count
             FROM pg_stat_activity
             WHERE state = 'idle in transaction'

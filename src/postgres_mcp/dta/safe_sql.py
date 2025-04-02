@@ -701,11 +701,11 @@ class SafeSqlDriver(SqlDriver):
 
     @staticmethod
     async def execute_param_query(
-        sql_driver: SqlDriver, query: str, params: list[Any] | None = None
+        sql_driver: SqlDriver, query: LiteralString, params: list[Any] | None = None
     ) -> list[SqlDriver.RowResult] | None:
         """Execute a query after validating it is safe"""
         if params:
             query_params = SafeSqlDriver.param_sql_to_query(query, params)
             return await sql_driver.execute_query(query_params)  # type: ignore
         else:
-            return await sql_driver.execute_query(query)  # type: ignore
+            return await sql_driver.execute_query(query)

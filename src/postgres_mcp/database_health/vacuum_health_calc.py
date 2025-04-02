@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from postgres_mcp.dta.safe_sql import SafeSqlDriver
+
 from ..dta.sql_driver import SqlDriver
 
 
@@ -22,9 +24,9 @@ class VacuumHealthCalc:
         self.threshold = threshold
         self.max_value = max_value
 
-    def transaction_id_danger_check(self) -> str:
+    async def transaction_id_danger_check(self) -> str:
         """Check if any tables are approaching transaction ID wraparound."""
-        metrics = self._get_transaction_id_metrics()
+        metrics = await self._get_transaction_id_metrics()
 
         if not metrics:
             return "No tables found with transaction ID wraparound danger."
@@ -44,13 +46,15 @@ class VacuumHealthCalc:
             )
         return "\n".join(result)
 
-    def _get_transaction_id_metrics(self) -> list[TransactionIdMetrics]:
+    async def _get_transaction_id_metrics(self) -> list[TransactionIdMetrics]:
         """Get transaction ID metrics for all tables."""
-        results = self.sql_driver.execute_query(f"""
+        results = await SafeSqlDriver.execute_param_query(
+            self.sql_driver,
+            """
             SELECT
                 n.nspname AS schema,
                 c.relname AS table,
-                {self.max_value} - GREATEST(AGE(c.relfrozenxid), AGE(t.relfrozenxid)) AS transactions_left
+                {} - GREATEST(AGE(c.relfrozenxid), AGE(t.relfrozenxid)) AS transactions_left
             FROM
                 pg_class c
             INNER JOIN
@@ -59,10 +63,12 @@ class VacuumHealthCalc:
                 pg_class t ON c.reltoastrelid = t.oid
             WHERE
                 c.relkind = 'r'
-                AND ({self.max_value} - GREATEST(AGE(c.relfrozenxid), AGE(t.relfrozenxid))) < {self.threshold}
+                AND ({} - GREATEST(AGE(c.relfrozenxid), AGE(t.relfrozenxid))) < {}
             ORDER BY
                 3, 1, 2
-        """)
+        """,
+            [self.max_value, self.max_value, self.threshold],
+        )
 
         if not results:
             return []
@@ -79,9 +85,9 @@ class VacuumHealthCalc:
             for row in result_list
         ]
 
-    def _get_vacuum_stats(self) -> dict[str, dict[str, str | None]]:
+    async def _get_vacuum_stats(self) -> dict[str, dict[str, str | None]]:
         """Get vacuum statistics for the database."""
-        result = self.sql_driver.execute_query("""
+        result = await self.sql_driver.execute_query("""
             SELECT relname, last_vacuum, last_autovacuum
             FROM pg_stat_user_tables
         """)

@@ -9,13 +9,13 @@ class BufferHealthCalc:
     def __init__(self, sql_driver: SqlDriver):
         self.sql_driver = sql_driver
 
-    def index_hit_rate(self, threshold: float = 0.95) -> str:
+    async def index_hit_rate(self, threshold: float = 0.95) -> str:
         """Calculate the index cache hit rate.
 
         Returns:
             String describing the index cache hit rate as a percentage and comparison to threshold
         """
-        result = self.sql_driver.execute_query("""
+        result = await self.sql_driver.execute_query("""
             SELECT
                 (sum(idx_blks_hit)) / nullif(sum(idx_blks_hit + idx_blks_read), 0) AS rate
             FROM
@@ -35,13 +35,13 @@ class BufferHealthCalc:
         else:
             return f"Index cache hit rate: {hit_rate:.1f}% (below {threshold_pct:.1f}% threshold)"
 
-    def table_hit_rate(self, threshold: float = 0.95) -> str:
+    async def table_hit_rate(self, threshold: float = 0.95) -> str:
         """Calculate the table cache hit rate.
 
         Returns:
             String describing the table cache hit rate as a percentage and comparison to threshold
         """
-        result = self.sql_driver.execute_query("""
+        result = await self.sql_driver.execute_query("""
             SELECT
                 sum(heap_blks_hit) / nullif(sum(heap_blks_hit + heap_blks_read), 0) AS rate
             FROM

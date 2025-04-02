@@ -35,7 +35,7 @@ class DatabaseHealthTool:
     def __init__(self, sql_driver):
         self.sql_driver = sql_driver
 
-    def health(self, health_type: str) -> str:
+    async def health(self, health_type: str) -> str:
         """Run database health checks for the specified components.
 
         Args:
@@ -62,21 +62,25 @@ class DatabaseHealthTool:
             if HealthType.INDEX in health_types:
                 index_health = IndexHealthCalc(self.sql_driver)
                 result += (
-                    "Invalid index check: " + index_health.invalid_index_check() + "\n"
+                    "Invalid index check: "
+                    + await index_health.invalid_index_check()
+                    + "\n"
                 )
                 result += (
                     "Duplicate index check: "
-                    + index_health.duplicate_index_check()
+                    + await index_health.duplicate_index_check()
                     + "\n"
                 )
-                result += "Index bloat: " + index_health.index_bloat() + "\n"
-                result += "Unused index check: " + index_health.unused_indexes() + "\n"
+                result += "Index bloat: " + await index_health.index_bloat() + "\n"
+                result += (
+                    "Unused index check: " + await index_health.unused_indexes() + "\n"
+                )
 
             if HealthType.CONNECTION in health_types:
                 connection_health = ConnectionHealthCalc(self.sql_driver)
                 result += (
                     "Connection health: "
-                    + connection_health.connection_health_check()
+                    + await connection_health.connection_health_check()
                     + "\n"
                 )
 
@@ -84,21 +88,23 @@ class DatabaseHealthTool:
                 vacuum_health = VacuumHealthCalc(self.sql_driver)
                 result += (
                     "Vacuum health: "
-                    + vacuum_health.transaction_id_danger_check()
+                    + await vacuum_health.transaction_id_danger_check()
                     + "\n"
                 )
 
             if HealthType.SEQUENCE in health_types:
                 sequence_health = SequenceHealthCalc(self.sql_driver)
                 result += (
-                    "Sequence health: " + sequence_health.sequence_danger_check() + "\n"
+                    "Sequence health: "
+                    + await sequence_health.sequence_danger_check()
+                    + "\n"
                 )
 
             if HealthType.REPLICATION in health_types:
                 replication_health = ReplicationCalc(self.sql_driver)
                 result += (
                     "Replication health: "
-                    + replication_health.replication_health_check()
+                    + await replication_health.replication_health_check()
                     + "\n"
                 )
 
@@ -106,18 +112,20 @@ class DatabaseHealthTool:
                 buffer_health = BufferHealthCalc(self.sql_driver)
                 result += (
                     "Buffer health for indexes: "
-                    + buffer_health.index_hit_rate()
+                    + await buffer_health.index_hit_rate()
                     + "\n"
                 )
                 result += (
-                    "Buffer health for tables: " + buffer_health.table_hit_rate() + "\n"
+                    "Buffer health for tables: "
+                    + await buffer_health.table_hit_rate()
+                    + "\n"
                 )
 
             if HealthType.CONSTRAINT in health_types:
                 constraint_health = ConstraintHealthCalc(self.sql_driver)
                 result += (
                     "Constraint health: "
-                    + constraint_health.invalid_constraints_check()
+                    + await constraint_health.invalid_constraints_check()
                     + "\n"
                 )
 

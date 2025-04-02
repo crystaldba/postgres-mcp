@@ -28,7 +28,10 @@ in
   languages.python = {
     enable = true;
     # version = "3.12";
-    uv.enable = true;
+    uv = {
+      enable = true;
+      sync.enable = true;
+    };
   };
 
   dotenv.enable = true;
