@@ -1,133 +1,35 @@
 import asyncio
 import sys
-from typing import Any, List, Optional
+from typing import Any, List
 import logging
-from urllib.parse import urlparse, urlunparse
 
 from mcp.server.fastmcp import Context, FastMCP
 import mcp.types as types
-import psycopg
 from pydantic import AnyUrl
+import psycopg
 
 from .dta.dta_tools import DTATool
 from .dta.safe_sql import SafeSqlDriver
-from .dta.sql_driver import SqlDriver
+from .dta.sql_driver import SqlDriver, DbConnPool, obfuscate_password
 
 mcp = FastMCP("postgres-mcp")
 
 # Constants
 PG_STAT_STATEMENTS = "pg_stat_statements"
 HYPOPG_EXTENSION = "hypopg"
-MAX_RETRIES = 3
-RETRY_DELAY = 1  # seconds
 
 ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResource]
 
 logger = logging.getLogger(__name__)
 
 
-def obfuscate_password(url: str) -> str:
-    """Obfuscate password in connection URL."""
-    parsed = urlparse(url)
-    if parsed.password:
-        # Replace password with asterisks
-        netloc = parsed.netloc.replace(parsed.password, "****")
-        return urlunparse(parsed._replace(netloc=netloc))
-    return url
-
-
-class DatabaseConnection:
-    """Database connection manager with retry logic."""
-
-    def __init__(self, connection_url: Optional[str] = None):
-        self.connection_url = connection_url
-        self.conn = None
-        self._is_valid = False
-        self._last_error = None
-
-    async def connect(self, connection_url: Optional[str] = None) -> Any:
-        """Connect to the database with retry logic."""
-        url = connection_url or self.connection_url
-        self.connection_url = url
-        if not url:
-            self._is_valid = False
-            self._last_error = "Database connection URL not provided"
-            raise ValueError(self._last_error)
-
-        for attempt in range(MAX_RETRIES):
-            try:
-                self.conn = await psycopg.AsyncConnection.connect(url)
-                # Validate connection
-                async with self.conn.cursor() as cursor:
-                    await cursor.execute("SELECT 1")
-                self._is_valid = True
-                self._last_error = None
-                return self.conn
-            except Exception as e:
-                self._is_valid = False
-                self._last_error = str(e)
-                if attempt < MAX_RETRIES - 1:
-                    logger.warning(
-                        f"Connection attempt {attempt + 1} failed: {obfuscate_password(str(e))}. Retrying in {RETRY_DELAY} seconds..."
-                    )
-                    await asyncio.sleep(RETRY_DELAY)
-                else:
-                    logger.error(f"All connection attempts failed: {obfuscate_password(str(e))}")
-                    raise
-
-    async def _attempt_reconnect(self) -> Any:
-        """Attempt to reconnect to the database."""
-        if not self.connection_url:
-            raise ValueError(
-                f"Database connection is broken and no connection URL is available. Last error: {self._last_error}"
-            )
-        await self.connect()
-        return self.conn
-
-    async def get_connection(self) -> Any:
-        """Get the database connection, attempting to reconnect if needed."""
-        if not self.conn or not self._is_valid:
-            return await self._attempt_reconnect()
-    
-        # Validate the connection is still working
-        try:
-            async with self.conn.cursor() as cursor:
-                await cursor.execute("SELECT 1")
-            return self.conn
-        except Exception as e:
-            # Connection is broken, try to reconnect
-            self._is_valid = False
-            self._last_error = str(e)
-            logger.warning(
-                f"Connection validation failed: {obfuscate_password(str(e))}. Attempting to reconnect..."
-            )
-            return await self._attempt_reconnect()
-
-    async def close(self) -> None:
-        """Close the database connection."""
-        if self.conn:
-            await self.conn.close()
-            self.conn = None
-            self._is_valid = False
-
-    @property
-    def is_valid(self) -> bool:
-        """Check if the connection is valid."""
-        return self._is_valid
-
-    @property
-    def last_error(self) -> Optional[str]:
-        """Get the last error message."""
-        return self._last_error
-
-
 # Global connection manager
-db_connection = DatabaseConnection()
+db_connection = DbConnPool()
 
 
 async def get_safe_sql_driver() -> SafeSqlDriver:
-    """Get a SafeSqlDriver instance with the current connection."""
-    return SafeSqlDriver(sql_driver=SqlDriver(conn=await db_connection.get_connection()))
+    """Get a SafeSqlDriver instance with a connection from the pool."""
+    return SafeSqlDriver(sql_driver=SqlDriver(conn=db_connection))
 
 
 def format_text_response(text: Any) -> ResponseType:
@@ -407,7 +309,9 @@ async def top_slow_queries(limit: int = 10) -> ResponseType:
                 query,
                 [limit],
             )
-            slow_queries = [row.cells for row in slow_query_rows] if slow_query_rows else []
+            slow_queries = (
+                [row.cells for row in slow_query_rows] if slow_query_rows else []
+            )
             result_text = (
                 f"Top {len(slow_queries)} slowest queries by total execution time:\n"
             )
@@ -437,23 +341,27 @@ async def main():
 
     database_url = sys.argv[1]
 
-    # Initialize database connection
+    # Initialize database connection pool
     try:
-        await db_connection.connect(database_url)
+        await db_connection.pool_connect(database_url)
+        logger.info(
+            "Successfully connected to database and initialized connection pool"
+        )
     except Exception as e:
         print(
-            f"Warning: Could not connect to database: {obfuscate_password(str(e))}", 
-            file=sys.stderr
+            f"Warning: Could not connect to database: {obfuscate_password(str(e))}",
+            file=sys.stderr,
         )
         print(
             "The MCP server will start but database operations will fail until a valid connection is established.",
-            file=sys.stderr
+            file=sys.stderr,
         )
 
     # Run the app with FastMCP's stdio method
     try:
         await mcp.run_stdio_async()
     finally:
+        # Close the connection pool when exiting
         await db_connection.close()
 
 
