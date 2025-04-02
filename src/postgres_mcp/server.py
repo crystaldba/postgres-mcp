@@ -48,6 +48,7 @@ class DatabaseConnection:
     async def connect(self, connection_url: Optional[str] = None) -> Any:
         """Connect to the database with retry logic."""
         url = connection_url or self.connection_url
+        self.connection_url = url
         if not url:
             self._is_valid = False
             self._last_error = "Database connection URL not provided"
@@ -74,13 +75,33 @@ class DatabaseConnection:
                     logger.error(f"All connection attempts failed: {obfuscate_password(str(e))}")
                     raise
 
-    def get_connection(self) -> Any:
+    async def _attempt_reconnect(self) -> Any:
+        """Attempt to reconnect to the database."""
+        if not self.connection_url:
+            raise ValueError(
+                f"Database connection is broken and no connection URL is available. Last error: {self._last_error}"
+            )
+        await self.connect()
+        return self.conn
+
+    async def get_connection(self) -> Any:
         """Get the database connection, attempting to reconnect if needed."""
         if not self.conn or not self._is_valid:
-            raise ValueError(
-                f"Database connection not initialized or invalid. Last error: {self._last_error}"
+            return await self._attempt_reconnect()
+    
+        # Validate the connection is still working
+        try:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute("SELECT 1")
+            return self.conn
+        except Exception as e:
+            # Connection is broken, try to reconnect
+            self._is_valid = False
+            self._last_error = str(e)
+            logger.warning(
+                f"Connection validation failed: {obfuscate_password(str(e))}. Attempting to reconnect..."
             )
-        return self.conn
+            return await self._attempt_reconnect()
 
     async def close(self) -> None:
         """Close the database connection."""
@@ -104,13 +125,9 @@ class DatabaseConnection:
 db_connection = DatabaseConnection()
 
 
-def get_safe_sql_driver() -> SafeSqlDriver:
+async def get_safe_sql_driver() -> SafeSqlDriver:
     """Get a SafeSqlDriver instance with the current connection."""
-    if not db_connection.is_valid:
-        raise ValueError(
-            f"Database connection is not valid. Last error: {db_connection.last_error}"
-        )
-    return SafeSqlDriver(sql_driver=SqlDriver(conn=db_connection.get_connection()))
+    return SafeSqlDriver(sql_driver=SqlDriver(conn=await db_connection.get_connection()))
 
 
 def format_text_response(text: Any) -> ResponseType:
@@ -131,7 +148,7 @@ def format_error_response(error: str) -> ResponseType:
 async def list_resources() -> list[types.Resource]:
     """List available database tables as resources."""
     try:
-        sql_driver = get_safe_sql_driver()
+        sql_driver = await get_safe_sql_driver()
         rows = await sql_driver.execute_query(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
         )
@@ -173,7 +190,7 @@ async def list_resources() -> list[types.Resource]:
 async def extensions_resource() -> str:
     """Get information about installed PostgreSQL extensions."""
     try:
-        sql_driver = get_safe_sql_driver()
+        sql_driver = await get_safe_sql_driver()
         rows = await sql_driver.execute_query(
             """
             SELECT
@@ -206,7 +223,7 @@ async def extensions_resource() -> str:
 async def table_schema_resource(table_name: str) -> str:
     """Get schema information for a specific table."""
     try:
-        sql_driver = get_safe_sql_driver()
+        sql_driver = await get_safe_sql_driver()
         rows = await SafeSqlDriver.execute_param_query(
             sql_driver,
             """
@@ -227,7 +244,7 @@ async def table_schema_resource(table_name: str) -> str:
 async def query(sql: str) -> ResponseType:
     """Run a read-only SQL query."""
     try:
-        sql_driver = get_safe_sql_driver()
+        sql_driver = await get_safe_sql_driver()
         rows = await sql_driver.execute_query(sql)  # type: ignore
         if rows is None:
             return format_text_response("No results")
@@ -243,7 +260,8 @@ async def query(sql: str) -> ResponseType:
 async def analyze_workload(max_index_size_mb: int = 10000) -> ResponseType:
     """Analyze frequently executed queries in the database and recommend optimal indexes."""
     try:
-        dta_tool = DTATool(get_safe_sql_driver())
+        sql_driver = await get_safe_sql_driver()
+        dta_tool = DTATool(sql_driver)
         result = await dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
         return format_text_response(result)
     except Exception as e:
@@ -257,7 +275,8 @@ async def analyze_queries(
 ) -> ResponseType:
     """Analyze a list of SQL queries and recommend optimal indexes."""
     try:
-        dta_tool = DTATool(get_safe_sql_driver())
+        sql_driver = await get_safe_sql_driver()
+        dta_tool = DTATool(sql_driver)
         result = await dta_tool.analyze_queries(
             queries=queries, max_index_size_mb=max_index_size_mb
         )
@@ -273,7 +292,8 @@ async def analyze_single_query(
 ) -> ResponseType:
     """Analyze a single SQL query and recommend optimal indexes."""
     try:
-        dta_tool = DTATool(get_safe_sql_driver())
+        sql_driver = await get_safe_sql_driver()
+        dta_tool = DTATool(sql_driver)
         result = await dta_tool.analyze_single_query(
             query=query, max_index_size_mb=max_index_size_mb
         )
@@ -304,7 +324,7 @@ async def install_extension(extension_name: str) -> ResponseType:
     """Installs a PostgreSQL extension if it's available but not already installed."""
     try:
         # First check if the extension exists in pg_available_extensions
-        sql_driver = get_safe_sql_driver()
+        sql_driver = await get_safe_sql_driver()
         check_rows = await SafeSqlDriver.execute_param_query(
             sql_driver,
             "SELECT name, default_version FROM pg_available_extensions WHERE name = {}",
@@ -361,7 +381,7 @@ async def install_extension(extension_name: str) -> ResponseType:
 async def top_slow_queries(limit: int = 10) -> ResponseType:
     """Reports the slowest SQL queries based on total execution time."""
     try:
-        sql_driver = get_safe_sql_driver()
+        sql_driver = await get_safe_sql_driver()
 
         rows = await SafeSqlDriver.execute_param_query(
             sql_driver,
