@@ -9,6 +9,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from urllib.parse import urlparse, urlunparse
 import asyncio
+import re
 
 
 logger = logging.getLogger(__name__)
@@ -18,18 +19,46 @@ MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 
 
-def obfuscate_password(url: str) -> str:
-    """Obfuscate password in connection URL."""
+def obfuscate_password(text: str) -> str:
+    """
+    Obfuscate password in any text containing connection information.
+    Works on connection URLs, error messages, and other strings.
+    """
+    if text is None:
+        return None
+        
+    if not text:
+        return text
+        
+    # Try first as a proper URL
     try:
-        parsed = urlparse(url)
-        if parsed.password:
-            # Replace password with asterisks
+        parsed = urlparse(text)
+        if parsed.scheme and parsed.netloc and parsed.password:
+            # Replace password with asterisks in proper URL
             netloc = parsed.netloc.replace(parsed.password, "****")
             return urlunparse(parsed._replace(netloc=netloc))
     except Exception:
-        # If we can't parse the URL (e.g., it's not a URL), just return it as is
         pass
-    return url
+    
+    # Handle strings that contain connection strings but aren't proper URLs
+    # Match postgres://user:password@host:port/dbname pattern
+    url_pattern = re.compile(r'(postgres(?:ql)?:\/\/[^:]+:)([^@]+)(@[^\/\s]+)')
+    text = re.sub(url_pattern, r'\1****\3', text)
+    
+    # Match connection string parameters (password=xxx)
+    # This simpler pattern captures password without quotes
+    param_pattern = re.compile(r'(password=)([^\s&;"\']+)', re.IGNORECASE)
+    text = re.sub(param_pattern, r'\1****', text)
+    
+    # Match password in DSN format with single quotes
+    dsn_single_quote = re.compile(r"(password\s*=\s*')([^']+)(')", re.IGNORECASE)
+    text = re.sub(dsn_single_quote, r"\1****\3", text)
+    
+    # Match password in DSN format with double quotes
+    dsn_double_quote = re.compile(r'(password\s*=\s*")([^"]+)(")', re.IGNORECASE)
+    text = re.sub(dsn_double_quote, r'\1****\3', text)
+    
+    return text
 
 
 class DbConnPool:
