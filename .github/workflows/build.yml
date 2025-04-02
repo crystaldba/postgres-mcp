@@ -14,7 +14,7 @@ on:
 jobs:
   postgres-mcp-ci:
     runs-on: ubuntu-latest
-    container: python:3.12-bookworm-slim
+    container: python:3.12.9-bookworm-slim
     services:
       postgres:
         image: postgres
