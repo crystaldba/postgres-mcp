@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 
+
 # Define a custom event loop policy that handles cleanup better
 @pytest.fixture(scope="session")
 def event_loop_policy():

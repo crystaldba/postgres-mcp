@@ -36,7 +36,7 @@ async def db_connection():
     )
 
     yield driver
-    
+
     # Clean up connection after test
     if isinstance(driver.conn, DbConnPool):
         await driver.conn.close()

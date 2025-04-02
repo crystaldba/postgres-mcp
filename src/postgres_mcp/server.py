@@ -381,10 +381,10 @@ async def shutdown(sig=None):
     """Clean shutdown of the server."""
     if sig:
         logger.info(f"Received exit signal {sig.name}")
-        
+
     logger.info("Closing database connections...")
     await db_connection.close()
-    
+
     # Give tasks a chance to complete
     try:
         tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
@@ -393,7 +393,7 @@ async def shutdown(sig=None):
             await asyncio.gather(*tasks, return_exceptions=True)
     except Exception as e:
         logger.warning(f"Error during shutdown: {e}")
-        
+
     logger.info("Shutdown complete.")
 
 
