@@ -833,27 +833,27 @@ async def test_identify_parameter_column(create_dta):
 
     # Test equality pattern
     context = "SELECT * FROM users WHERE name = $1"
-    result = dta._identify_parameter_column(context, table_columns)  # type: ignore
+    result = dta._identify_parameter_column(context, table_columns)
     assert result == ("users", "name")
 
     # Test LIKE pattern
     context = "SELECT * FROM users WHERE email LIKE $1"
-    result = dta._identify_parameter_column(context, table_columns)  # type: ignore
+    result = dta._identify_parameter_column(context, table_columns)
     assert result == ("users", "email")
 
     # Test range pattern
     context = "SELECT * FROM orders WHERE amount > $1"
-    result = dta._identify_parameter_column(context, table_columns)  # type: ignore
+    result = dta._identify_parameter_column(context, table_columns)
     assert result == ("orders", "amount")
 
     # Test BETWEEN pattern
     context = "SELECT * FROM orders WHERE order_date BETWEEN $1 AND $2"
-    result = dta._identify_parameter_column(context, table_columns)  # type: ignore
+    result = dta._identify_parameter_column(context, table_columns)
     assert result == ("orders", "order_date")
 
     # Test no match
     context = "SELECT * FROM users WHERE $1"  # Invalid but should handle gracefully
-    result = dta._identify_parameter_column(context, table_columns)  # type: ignore
+    result = dta._identify_parameter_column(context, table_columns)
     assert result is None
 
 
@@ -868,7 +868,7 @@ async def test_get_replacement_value(create_dta):
         "common_vals": ["active", "pending", "completed"],
         "histogram_bounds": None,
     }
-    result = dta._get_replacement_value(stats, "status = $1")  # type: ignore
+    result = dta._get_replacement_value(stats, "status = $1")
     assert result == "'active'"
 
     # Numeric type with histogram bounds for range
@@ -877,12 +877,12 @@ async def test_get_replacement_value(create_dta):
         "common_vals": [10.0, 20.0],
         "histogram_bounds": [5.0, 15.0, 25.0, 50.0, 100.0],
     }
-    result = dta._get_replacement_value(stats, "amount > $1")  # type: ignore
+    result = dta._get_replacement_value(stats, "amount > $1")
     assert result == "25.0"
 
     # Date type
     stats = {"data_type": "date", "common_vals": None, "histogram_bounds": None}
-    result = dta._get_replacement_value(stats, "created_at < $1")  # type: ignore
+    result = dta._get_replacement_value(stats, "created_at < $1")
     assert result == "'2023-01-15'"
 
     # Boolean type
@@ -891,7 +891,7 @@ async def test_get_replacement_value(create_dta):
         "common_vals": [True, False],
         "histogram_bounds": None,
     }
-    result = dta._get_replacement_value(stats, "is_active = $1")  # type: ignore
+    result = dta._get_replacement_value(stats, "is_active = $1")
     assert result == "true"
 
 
@@ -1126,12 +1126,10 @@ async def test_enumerate_greedy_pareto_cost_benefit(async_sql_driver):
     )
 
     # Mock the _check_time method to always return False (no time limit reached)
-    dta._check_time = MagicMock(return_value=False)  # type: ignore
+    dta._check_time = MagicMock(return_value=False)
 
     # Mock the _estimate_index_size method to return a fixed size
-    dta._estimate_index_size = AsyncMock(
-        return_value=1024 * 1024
-    )  # 1MB per index   # type: ignore
+    dta._estimate_index_size = AsyncMock(return_value=1024 * 1024)  # 1MB per index
 
     # Create test queries
     q1 = "SELECT * FROM test_table WHERE col1 = 1"

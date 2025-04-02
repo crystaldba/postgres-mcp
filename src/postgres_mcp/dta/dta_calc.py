@@ -917,8 +917,13 @@ class DatabaseTuningAdvisor:
         # Try to get table size from the database using proper quoting
         try:
             # Use the proper way to calculate table size with quoted identifiers
-            query = f"SELECT pg_total_relation_size(quote_ident('{table}')) as rel_size"
-            result = await self.sql_driver.execute_query(query)  # type: ignore
+            query = "SELECT pg_total_relation_size(quote_ident('{}')) as rel_size"
+            result = await SafeSqlDriver.execute_param_query(
+                self.sql_driver, query, [table]
+            )
+            # query = f"SELECT pg_total_relation_size(quote_ident('{table}')) as rel_size"
+            # result = await self.sql_driver.execute_query(query)
+
             if result and len(result) > 0 and len(result[0].cells) > 0:
                 size = int(result[0].cells["rel_size"])
                 # Cache the result
@@ -940,8 +945,8 @@ class DatabaseTuningAdvisor:
         """Estimate the size of a table if we can't get it from the database."""
         try:
             # Try a simple query to get row count and then estimate size
-            result = await self.sql_driver.execute_query(
-                f"SELECT count(*) as row_count FROM {table}"  # type: ignore
+            result = await SafeSqlDriver.execute_param_query(
+                self.sql_driver, "SELECT count(*) as row_count FROM {}", [table]
             )
             if result and len(result) > 0 and len(result[0].cells) > 0:
                 row_count = int(result[0].cells["row_count"])
@@ -1074,7 +1079,7 @@ class DatabaseTuningAdvisor:
         try:
             # Second pass: collect columns with table context
             collector = ColumnCollector()
-            collector(stmt)  # type: ignore
+            collector(stmt)
 
             return collector.columns
 
@@ -1368,7 +1373,7 @@ class DatabaseTuningAdvisor:
         columns_array = ",".join(f"'{col}'" for _, col in table_columns)
 
         # Query to get column types and their length limits from catalog
-        type_query = f"""
+        type_query = """
             SELECT
                 c.table_name,
                 c.column_name,
@@ -1379,7 +1384,7 @@ class DatabaseTuningAdvisor:
                     WHEN c.data_type = 'text' THEN true
                     WHEN (c.data_type = 'character varying' OR c.data_type = 'varchar' OR
                          c.data_type = 'character' OR c.data_type = 'char') AND
-                         (c.character_maximum_length IS NULL OR c.character_maximum_length > {max_text_length})
+                         (c.character_maximum_length IS NULL OR c.character_maximum_length > {})
                     THEN true
                     ELSE false
                 END as potential_long_text
@@ -1387,11 +1392,13 @@ class DatabaseTuningAdvisor:
             LEFT JOIN pg_stats ON
                 pg_stats.tablename = c.table_name AND
                 pg_stats.attname = c.column_name
-            WHERE c.table_name IN ({tables_array})
-            AND c.column_name IN ({columns_array})
+            WHERE c.table_name IN ({})
+            AND c.column_name IN ({})
         """
 
-        result = await self.sql_driver.execute_query(type_query)  # type: ignore
+        result = await SafeSqlDriver.execute_param_query(
+            self.sql_driver, type_query, [max_text_length, tables_array, columns_array]
+        )
 
         logger.debug(f"Column types and length limits: {result}")
 
