@@ -1,14 +1,19 @@
 import pytest
 import sqlalchemy
+import asyncio
 
 from ..dta.sql_driver import SqlDriver
+from ..dta.sql_tool import LocalSqlDriver
 from .database_health import DatabaseHealthTool
 
 
 @pytest.fixture
 def local_sql_driver(test_postgres_connection_string):
     connection_string, version = test_postgres_connection_string
-    return SqlDriver(engine_url=connection_string)
+    # Ensure we use psycopg (v3) not psycopg2 by explicitly setting the dialect
+    if connection_string.startswith('postgresql:'):
+        connection_string = connection_string.replace('postgresql:', 'postgresql+psycopg:')
+    return LocalSqlDriver(engine_url=connection_string)
 
 
 def setup_test_tables(sql_driver):
@@ -105,16 +110,18 @@ def cleanup_test_tables(sql_driver):
 
 
 @pytest.mark.postgres
-def test_database_health_all(local_sql_driver):
+@pytest.mark.asyncio
+async def test_database_health_all(local_sql_driver):
     """Test that the database health tool runs without errors when performing all health checks.
     This test only verifies that the tool executes successfully and returns results in the expected format.
     It does not validate whether the health check results are correct."""
     setup_test_tables(local_sql_driver)
     try:
+        await local_sql_driver.connect()
         health_tool = DatabaseHealthTool(sql_driver=local_sql_driver)
 
         # Run health check with type "all"
-        result = health_tool.health(health_type="all")
+        result = await health_tool.health(health_type="all")
 
         # Verify the result
         assert isinstance(result, str)
