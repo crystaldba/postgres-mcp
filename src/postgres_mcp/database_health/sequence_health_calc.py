@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from psycopg.sql import Identifier
 
 from postgres_mcp.dta.safe_sql import SafeSqlDriver
 
@@ -106,11 +107,11 @@ class SequenceHealthCalc:
                 self.sql_driver,
                 """
                 SELECT
-                    has_sequence_privilege('{}.{}', 'SELECT') AS readable,
+                    has_sequence_privilege('{}', 'SELECT') AS readable,
                     last_value
-                FROM {}.{}
-            """,
-                [schema, sequence, schema, sequence],
+                FROM {}
+                """,
+                [Identifier(schema, sequence), Identifier(schema, sequence)],
             )
 
             if not attrs:
