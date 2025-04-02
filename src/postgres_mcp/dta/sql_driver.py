@@ -14,10 +14,6 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Constants
-MAX_RETRIES = 3
-RETRY_DELAY = 1  # seconds
-
 
 def obfuscate_password(text: str) -> str:
     """
@@ -88,44 +84,37 @@ class DbConnPool:
         # Close any existing pool before creating a new one
         await self.close()
 
-        for attempt in range(MAX_RETRIES):
-            try:
-                # Configure connection pool with appropriate settings
-                self.pool = AsyncConnectionPool(
-                    conninfo=url,
-                    min_size=1,
-                    max_size=5,
-                    open=False,  # Don't connect immediately, let's do it explicitly
-                )
+        try:
+            # Configure connection pool with appropriate settings
+            self.pool = AsyncConnectionPool(
+                conninfo=url,
+                min_size=1,
+                max_size=5,
+                open=False,  # Don't connect immediately, let's do it explicitly
+            )
 
-                # Open the pool explicitly
-                await self.pool.open()
+            # Open the pool explicitly
+            await self.pool.open()
 
-                # Test the connection pool by executing a simple query
-                async with self.pool.connection() as conn:
-                    async with conn.cursor() as cursor:
-                        await cursor.execute("SELECT 1")
+            # Test the connection pool by executing a simple query
+            async with self.pool.connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT 1")
 
-                self._is_valid = True
-                self._last_error = None
-                return self.pool
-            except Exception as e:
-                self._is_valid = False
-                self._last_error = str(e)
+            self._is_valid = True
+            self._last_error = None
+            return self.pool
+        except Exception as e:
+            self._is_valid = False
+            self._last_error = str(e)
 
-                # Clean up failed pool
-                await self.close()
-
-                if attempt < MAX_RETRIES - 1:
-                    logger.warning(
-                        f"Connection attempt {attempt + 1} failed: {obfuscate_password(str(e))}. Retrying in {RETRY_DELAY} seconds..."
-                    )
-                    await asyncio.sleep(RETRY_DELAY)
-                else:
-                    logger.error(
-                        f"All connection attempts failed: {obfuscate_password(str(e))}"
-                    )
-                    raise
+            # Clean up failed pool
+            await self.close()
+            
+            logger.error(
+                f"Connection attempt failed: {obfuscate_password(str(e))}"
+            )
+            raise
 
     async def get_pool(self) -> Any:
         """Get a connection from the pool, initializing the pool if needed."""

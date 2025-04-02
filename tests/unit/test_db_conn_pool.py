@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from postgres_mcp.dta.sql_driver import DbConnPool, MAX_RETRIES
+from postgres_mcp.dta.sql_driver import DbConnPool
 
 
 class AsyncContextManagerMock(AsyncMock):
@@ -103,7 +103,7 @@ async def test_pool_connect_all_retries_fail(mock_pool):
         with patch('postgres_mcp.dta.sql_driver.asyncio.sleep', AsyncMock()):
             db_pool = DbConnPool("postgresql://user:pass@localhost/db")
             
-            # This should retry MAX_RETRIES times and then fail
+            # This should retry one time and then fail
             with pytest.raises(Exception):
                 await db_pool.pool_connect()
             
