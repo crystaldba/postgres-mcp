@@ -1,7 +1,7 @@
 [project]
 name = "postgres-mcp"
 version = "0.1.0"
-description = "Postgres tuning tools"
+description = "PostgreSQL Tuning and Analysis Tool"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from typing import Any
@@ -863,15 +862,9 @@ class SafeSqlDriver(SqlDriver):
         "postgis_topology",
     }
 
-    def __init__(self, sql_driver: SqlDriver, timeout: float | None = None):
-        """Initialize with an underlying SQL driver and optional timeout.
-
-        Args:
-            sql_driver: The underlying SQL driver to wrap
-            timeout: Optional timeout in seconds for query execution
-        """
+    def __init__(self, sql_driver: SqlDriver):
+        """Initialize with an underlying SQL driver"""
         self.sql_driver = sql_driver
-        self.timeout = timeout
 
     def _validate_node(self, node: Node) -> None:
         """Recursively validate a node and all its children"""
@@ -990,30 +983,15 @@ class SafeSqlDriver(SqlDriver):
         self,
         query: LiteralString,
         params: list[Any] | None = None,
-        force_readonly: bool = True,  # do not use value passed in
+        force_readonly: bool = True,
     ) -> Optional[list[SqlDriver.RowResult]]:  # noqa: UP007
         """Execute a query after validating it is safe"""
         self._validate(query)
-
-        # NOTE: Always force readonly=True in SafeSqlDriver regardless of what was passed
-        if self.timeout:
-            try:
-                async with asyncio.timeout(self.timeout):
-                    return await self.sql_driver.execute_query(
-                        f"/* crystaldba */ {query}",
-                        params=params,
-                        force_readonly=True,
-                    )
-            except asyncio.TimeoutError:
-                raise ValueError(
-                    f"Query execution timed out after {self.timeout} seconds in restricted mode"
-                )
-        else:
-            return await self.sql_driver.execute_query(
-                f"/* crystaldba */ {query}",
-                params=params,
-                force_readonly=True,
-            )
+        return await self.sql_driver.execute_query(
+            f"/* crystaldba */ {query}",
+            params=params,
+            force_readonly=force_readonly,
+        )
 
     @staticmethod
     def sql_to_query(sql: Composable) -> str:

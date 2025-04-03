@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from ..dta.sql_driver import SqlDriver
+from ..sql import SqlDriver
 
 
 @dataclass

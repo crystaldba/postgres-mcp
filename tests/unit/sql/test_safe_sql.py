@@ -2,10 +2,9 @@ from unittest.mock import Mock, AsyncMock, call
 
 import pytest
 import pytest_asyncio
-import asyncio
-from .sql_driver import SqlDriver
+from postgres_mcp.sql import SqlDriver
 from psycopg.sql import SQL, Literal
-from .safe_sql import SafeSqlDriver
+from postgres_mcp.sql import SafeSqlDriver
 
 
 @pytest_asyncio.fixture
@@ -836,99 +835,4 @@ async def test_query_with_whitespace(safe_driver, mock_sql_driver):
     await safe_driver.execute_query(query)
     mock_sql_driver.execute_query.assert_awaited_once_with(
         "/* crystaldba */ " + query, params=None, force_readonly=True
-    )
-
-
-@pytest.mark.asyncio
-async def test_execute_query_with_timeout_success(mock_sql_driver):
-    """Test that query execution with timeout succeeds when query is fast enough."""
-    # Create a safe driver with a 1 second timeout
-    safe_driver = SafeSqlDriver(mock_sql_driver, timeout=1)
-
-    # Make the mock execute_query return quickly
-    async def quick_execution(*args, **kwargs):
-        await asyncio.sleep(0.01)
-        return []
-
-    mock_sql_driver.execute_query.side_effect = quick_execution
-
-    # Execute a query
-    query = "SELECT * FROM users"
-    await safe_driver.execute_query(query)
-
-    # Verify SQL driver was called
-    mock_sql_driver.execute_query.assert_awaited_once_with(
-        "/* crystaldba */ " + query, params=None, force_readonly=True
-    )
-
-
-@pytest.mark.asyncio
-async def test_execute_query_with_timeout_timeout(mock_sql_driver):
-    """Test that query execution with timeout raises TimeoutError when query takes too long."""
-    # Create a safe driver with a very short timeout (0.1 seconds)
-    safe_driver = SafeSqlDriver(mock_sql_driver, timeout=0.1)
-
-    # Make the mock execute_query take longer than the timeout
-    async def slow_execution(*args, **kwargs):
-        await asyncio.sleep(0.5)  # Sleep for longer than timeout
-        return []
-
-    mock_sql_driver.execute_query.side_effect = slow_execution
-
-    # Execute a query - should raise ValueError due to timeout
-    query = "SELECT * FROM users"
-    with pytest.raises(
-        ValueError,
-        match="Query execution timed out after 0.1 seconds in restricted mode",
-    ):
-        await safe_driver.execute_query(query)
-
-
-@pytest.mark.asyncio
-async def test_execute_query_without_timeout(mock_sql_driver):
-    """Test that query execution without timeout works normally."""
-    # Create a safe driver without a timeout
-    safe_driver = SafeSqlDriver(mock_sql_driver, timeout=None)
-
-    # Make the mock execute_query take some time
-    async def slow_execution(*args, **kwargs):
-        await asyncio.sleep(0.1)
-        return []
-
-    mock_sql_driver.execute_query.side_effect = slow_execution
-
-    # Execute a query - should complete without timeout error
-    query = "SELECT * FROM users"
-    await safe_driver.execute_query(query)
-
-    # Verify SQL driver was called
-    mock_sql_driver.execute_query.assert_awaited_once_with(
-        "/* crystaldba */ " + query, params=None, force_readonly=True
-    )
-
-
-@pytest.mark.asyncio
-async def test_timeout_comment_is_correct(mock_sql_driver):
-    """Test that the comment in the SQL query correctly indicates restricted mode."""
-    # Create safe drivers with and without timeout
-    safe_driver_with_timeout = SafeSqlDriver(mock_sql_driver, timeout=1)
-    safe_driver_without_timeout = SafeSqlDriver(mock_sql_driver, timeout=None)
-
-    # Make the mock execute_query return quickly
-    mock_sql_driver.execute_query.return_value = []
-
-    # Execute queries
-    query = "SELECT * FROM users"
-    await safe_driver_with_timeout.execute_query(query)
-    await safe_driver_without_timeout.execute_query(query)
-
-    # Verify both calls use the same comment format
-    assert mock_sql_driver.execute_query.call_count == 2
-    assert (
-        mock_sql_driver.execute_query.call_args_list[0][0][0]
-        == "/* crystaldba */ " + query
-    )
-    assert (
-        mock_sql_driver.execute_query.call_args_list[1][0][0]
-        == "/* crystaldba */ " + query
     )

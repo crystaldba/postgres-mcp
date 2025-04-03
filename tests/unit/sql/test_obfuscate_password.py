@@ -1,4 +1,4 @@
-from postgres_mcp.dta.sql_driver import obfuscate_password
+from postgres_mcp.sql import obfuscate_password
 
 
 def test_obfuscate_none_or_empty():

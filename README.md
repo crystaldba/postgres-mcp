@@ -1,112 +1,199 @@
-# postgres-mcp MCP server
+# postgres-mcp: PostgreSQL Tuning and Analysis Tool
 
-Postgres tuning tools
+postgres-mcp is a Model Context Protocol (MCP) server that helps you analyze, optimize, and monitor your PostgreSQL databases. It allows AI assistants like Claude to analyze query performance, recommend indexes, and perform health checks on your database.
 
-## Components
+## Features
 
-### Resources
+postgres-mcp provides several powerful tools for database optimization:
 
-The server implements a simple note storage system with:
-- Custom note:// URI scheme for accessing individual notes
-- Each note resource has a name, description and text/plain mimetype
+- **Database Health Analysis**: Check buffer cache hit rates, identify unused/duplicate indexes, monitor vacuum health, and more
+- **Query Performance Analysis**: Find your slowest SQL queries and get optimization suggestions
+- **Index Recommendations**: Analyze frequently executed queries and get optimal index suggestions
+- **Schema Exploration**: Explore database tables, columns, and relationships
 
-### Prompts
+## Quick Start
 
-The server provides a single prompt:
-- summarize-notes: Creates summaries of all stored notes
-  - Optional "style" argument to control detail level (brief/detailed)
-  - Generates prompt combining all current notes with style preference
+#### Using Docker
 
-### Tools
+```bash
+docker pull crystaldba/postgres-mcp
+docker run -it --rm crystaldba/postgres-mcp "postgres://user:password@host:5432/dbname"
+```
 
-The server implements one tool:
-- add-note: Adds a new note to the server
-  - Takes "name" and "content" as required string arguments
-  - Updates server state and notifies clients of resource changes
+When using Docker with a localhost database, our image automatically handles the connection:
 
-## Configuration
+- MacOS/Windows: Uses `host.docker.internal` automatically
+- Linux: Uses `172.17.0.1` or the appropriate host address automatically
 
-[TODO: Add configuration details specific to your implementation]
+Example with automatic localhost remapping:
 
-## Quickstart
+```bash
+docker run -it --rm crystaldba/postgres-mcp "postgres://user:password@localhost:5432/dbname"
+```
 
-### Install
+### Setting Up with AI Assistants
 
 #### Claude Desktop
 
-On MacOS: `~/Library/Application\ Support/Claude/claude_desktop_config.json`
-On Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+Configure Claude Desktop to use postgres-mcp:
 
-<details>
-  <summary>Development/Unpublished Servers Configuration</summary>
-  ```
+1. Edit your Claude Desktop configuration file:
+
+   - MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+
+2. Add the following to the "mcpServers" section:
+
+If you want "restricted mode" -- all queries are wrapped in a read-only transaction, with a query timeout of 30 seconds, and additional scrubbing:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "crystaldba/postgres-mcp",
+        "postgresql://username:password@localhost:5432/dbname",
+        "--access-mode=restricted"
+    }
+  }
+}
+```
+
+If you want "unrestricted mode" -- you can do anything:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "crystaldba/postgres-mcp",
+        "postgresql://username:password@localhost:5432/dbname"
+    }
+  }
+}
+```
+
+#### Cursor
+
+Configure Cursor to use postgres-mcp:
+
+1. Create or edit `~/.cursor/mcp.json` (or run Ctrl-Shift-P and type "Developer: Open Logs Folder")
+2. Add the same `mcpServers` configuration as above.
+
+```json
+{
   "mcpServers": {
     "postgres-mcp": {
       "command": "uv",
       "args": [
         "--directory",
-        "{{PATH TO CHECKOUT}}/postgres-mcp",
+        "/home/greg/code/postgres-mcp",
         "run",
         "postgres-mcp",
-        "{{POSTGRESQL DATABASE URL}}
+        "postgresql://postgres:mysecretpassword@localhost:5432/postgres"
       ]
     }
   }
-  ```
-</details>
+}
+```
 
-<details>
-  <summary>Published Servers Configuration</summary>
-  ```
+Or, if you have installed the project locally with `uv`:
+
+```json
+{
   "mcpServers": {
     "postgres-mcp": {
-      "command": "uvx",
+      "command": "uv",
       "args": [
-        "postgres-mcp"
+        "--directory",
+        "/PATH/TO/PROJECT/postgres-mcp",
+        "run",
+        "postgres-mcp",
+        "postgresql://postgres:mysecretpassword@localhost:5432/postgres"
       ]
     }
   }
-  ```
-</details>
+}
+```
+
+## Examples
+
+### Get Database Health Overview
+
+Ask Claude: "Check the health of my database and identify any issues."
+
+### Analyze Slow Queries
+
+Ask Claude: "What are the slowest queries in my database? And how can I speed them up?"
+
+### Get Recommendations On How To Speed Things Up
+
+Ask Claude: "My app is slow. How can I make it faster?"
+
+### Generate Index Recommendations
+
+Ask Claude: "Analyze my database workload and suggest indexes to improve performance."
+
+### Optimize a Specific Query
+
+Ask Claude: "Help me optimize this query: SELECT \* FROM orders JOIN customers ON orders.customer_id = customers.id WHERE orders.created_at > '2023-01-01';"
+
+## Docker Usage Guide
+
+The postgres-mcp Docker container is designed to work seamlessly across different platforms.
+
+### Network Considerations
+
+When connecting to services on your host machine from Docker, our entrypoint script automatically handles most network remapping:
+
+```bash
+# Works on all platforms - localhost is automatically remapped
+docker run -it --rm crystaldba/postgres-mcp postgresql://username:password@localhost:5432/dbname
+```
+
+### Additional Options
+
+### Connection Options
+
+Connect using individual parameters instead of a URI:
+
+```bash
+docker run -it --rm crystaldba/postgres-mcp -h hostname -p 5432 -U username -d dbname
+```
 
 ## Development
 
-### Building and Publishing
+### Local Development Setup
 
-To prepare the package for distribution:
+1. **Install uv**:
 
-1. Sync dependencies and update lockfile:
-```bash
-uv sync
-```
+   ```bash
+   curl -sSL https://astral.sh/uv/install.sh | sh
+   ```
 
-2. Build package distributions:
-```bash
-uv build
-```
+2. **Clone the repository**:
 
-This will create source and wheel distributions in the `dist/` directory.
+   ```bash
+   git clone https://github.com/crystaldba/postgres-mcp.git
+   cd postgres-mcp
+   ```
 
-3. Publish to PyPI:
-```bash
-uv publish
-```
+3. **Install dependencies**:
 
-Note: You'll need to set PyPI credentials via environment variables or command flags:
-- Token: `--token` or `UV_PUBLISH_TOKEN`
-- Or username/password: `--username`/`UV_PUBLISH_USERNAME` and `--password`/`UV_PUBLISH_PASSWORD`
+   ```bash
+   uv pip install -e .
+   uv sync
+   ```
 
-### Debugging
-
-Since MCP servers run over stdio, debugging can be challenging. For the best debugging
-experience, we strongly recommend using the [MCP Inspector](https://github.com/modelcontextprotocol/inspector).
-
-
-You can launch the MCP Inspector via [`npm`](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) with this command:
-
-```bash
-npx @modelcontextprotocol/inspector uv --directory {{PATH TO CHECKOUT}}/postgres-mcp run postgres-mcp
-```
-
-
-Upon launching, the Inspector will display a URL that you can access in your browser to begin debugging.
+4. **Run the server**:
+   ```bash
+   uv run postgres-mcp "postgres://user:password@localhost:5432/dbname"
+   ```

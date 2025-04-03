@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from psycopg.sql import Identifier
 
-from postgres_mcp.dta.safe_sql import SafeSqlDriver
+from ..sql import SafeSqlDriver
 
-from ..dta.sql_driver import SqlDriver
+from ..sql import SqlDriver
 
 
 @dataclass
