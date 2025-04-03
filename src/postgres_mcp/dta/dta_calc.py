@@ -1374,7 +1374,7 @@ class DatabaseTuningAdvisor:
         columns_array = ",".join(f"'{col}'" for _, col in table_columns)
 
         # Query to get column types and their length limits from catalog
-        type_query = """
+        type_query = f"""
             SELECT
                 c.table_name,
                 c.column_name,
@@ -1385,7 +1385,7 @@ class DatabaseTuningAdvisor:
                     WHEN c.data_type = 'text' THEN true
                     WHEN (c.data_type = 'character varying' OR c.data_type = 'varchar' OR
                          c.data_type = 'character' OR c.data_type = 'char') AND
-                         (c.character_maximum_length IS NULL OR c.character_maximum_length > {})
+                         (c.character_maximum_length IS NULL OR c.character_maximum_length > {max_text_length})
                     THEN true
                     ELSE false
                 END as potential_long_text
@@ -1393,13 +1393,11 @@ class DatabaseTuningAdvisor:
             LEFT JOIN pg_stats ON
                 pg_stats.tablename = c.table_name AND
                 pg_stats.attname = c.column_name
-            WHERE c.table_name IN ({})
-            AND c.column_name IN ({})
+            WHERE c.table_name IN ({tables_array})
+            AND c.column_name IN ({columns_array})
         """
 
-        result = await SafeSqlDriver.execute_param_query(
-            self.sql_driver, type_query, [max_text_length, tables_array, columns_array]
-        )
+        result = await self.sql_driver.execute_query(type_query)  # type: ignore
 
         logger.debug(f"Column types and length limits: {result}")
 
