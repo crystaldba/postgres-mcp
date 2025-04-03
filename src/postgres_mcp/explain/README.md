@@ -16,10 +16,6 @@ Provides methods for generating different types of EXPLAIN plans:
 
 Parses SQL queries and returns their abstract syntax tree (AST) in JSON format, which can be used to analyze query patterns, table relationships, and query structure.
 
-### QueryPostgreSQLTool 
-
-A tool for running read-only SQL queries against PostgreSQL.
-
 ## Usage
 
 These tools are integrated into the PostgreSQL MCP server and can be used through the MCP API via the following functions:

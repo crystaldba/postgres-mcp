@@ -27,36 +27,6 @@ class JsonResult:
         self.value = json.dumps(data, indent=2)
         self.data = data
 
-
-class QueryPostgreSQLTool:
-    """Tool for executing read-only PostgreSQL queries."""
-
-    def __init__(self, sql_driver: Any):
-        self.sql_driver = sql_driver
-
-    async def query_postgresql(
-        self, sql_query: str
-    ) -> Union[List[Dict[str, Any]], ErrorResult]:
-        """
-        Execute a read-only SQL query.
-
-        Args:
-            sql_query: The SQL query to execute
-
-        Returns:
-            List of result rows or an ErrorResult
-        """
-        logger.debug(f"QUERYING POSTGRESQL: {sql_query}")
-        try:
-            rows = await self.sql_driver.execute_query(sql_query)
-            if not rows:
-                return []
-            return [row.cells for row in rows]
-        except Exception as e:
-            logger.error(f"Error executing query: {e}")
-            return ErrorResult(f"Error executing SQL query: {type(e)} -> {e!r}")
-
-
 class ExplainPlanTool:
     """Tool for generating and analyzing PostgreSQL explain plans."""
 
