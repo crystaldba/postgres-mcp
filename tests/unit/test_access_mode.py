@@ -2,8 +2,8 @@ import pytest
 import asyncio
 from unittest.mock import patch, AsyncMock, MagicMock
 from postgres_mcp.server import AccessMode, get_sql_driver
-from postgres_mcp.dta.safe_sql import SafeSqlDriver
-from postgres_mcp.dta.sql_driver import SqlDriver, DbConnPool
+from postgres_mcp.sql.safe_sql import SafeSqlDriver
+from postgres_mcp.sql.sql_driver import SqlDriver, DbConnPool
 
 
 @pytest.fixture
