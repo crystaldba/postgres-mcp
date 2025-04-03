@@ -39,3 +39,31 @@ dev = [
     "pytest>=8.3.5",
     "ruff==0.11.2",
 ]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+force-single-line = true
+known-first-party = ["postgres-mcp"]
+
+[tool.pyright]
+typeCheckingMode = "standard"
+pythonVersion = "3.12"
+strictParameterNullChecking = true
+reportMissingTypeStubs = false
+# reportUnknownMemberType = true
+# reportUnknownParameterType = true
+# reportUnknownVariableType = true
+# reportUnknownArgumentType = true
+reportPrivateUsage = true
+reportUntypedFunctionDecorator = true
+reportMissingTypeArgument = true
+reportInvalidTypeVarUse = true
+reportUnnecessaryCast = true
+# reportUnnecessaryComparison = true

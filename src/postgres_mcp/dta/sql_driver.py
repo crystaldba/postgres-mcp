@@ -220,8 +220,8 @@ class SqlDriver:
         except Exception as e:
             # Mark pool as invalid if there was a connection issue
             if self.conn and self.is_pool:
-                self.conn._is_valid = False
-                self.conn._last_error = str(e)
+                self.conn._is_valid = False  # type: ignore
+                self.conn._last_error = str(e)  # type: ignore
             elif self.conn and not self.is_pool:
                 self.conn = None
 

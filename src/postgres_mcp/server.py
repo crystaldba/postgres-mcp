@@ -4,7 +4,7 @@ import signal
 import logging
 from typing import Any, List
 
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from pydantic import AnyUrl, Field
 import psycopg
@@ -232,7 +232,7 @@ async def database_health(
 @mcp.tool(
     description="Lists all extensions currently installed in the PostgreSQL database."
 )
-async def list_installed_extensions(ctx: Context) -> ResponseType:
+async def list_installed_extensions(ctx) -> ResponseType:
     """Lists all extensions currently installed in the PostgreSQL database."""
     try:
         extensions = await ctx.read_resource("postgres-mcp://extensions")

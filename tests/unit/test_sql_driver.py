@@ -117,10 +117,10 @@ async def test_execute_query_readonly_transaction(mock_connection):
         return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
 
     # Must match the parameter names from the original method
-    driver._execute_with_connection = mock_impl
+    driver._execute_with_connection = mock_impl  # type: ignore
 
     # Execute a read-only query
-    result = await driver._execute_with_connection(
+    result = await driver._execute_with_connection(  # type: ignore
         connection, "SELECT * FROM test", None, force_readonly=True
     )
 
@@ -170,10 +170,10 @@ async def test_execute_query_writeable_transaction(mock_connection):
         return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
 
     # Must match the parameter names from the original method
-    driver._execute_with_connection = mock_impl
+    driver._execute_with_connection = mock_impl  # type: ignore
 
     # Execute a writeable query
-    result = await driver._execute_with_connection(
+    result = await driver._execute_with_connection(  # type: ignore
         connection, "UPDATE test SET name = 'updated'", None, force_readonly=False
     )
 
@@ -199,11 +199,11 @@ async def test_execute_query_error_handling(mock_connection):
     async def mock_execute_error(connection, query, params, force_readonly):
         raise Exception("Query execution failed")
 
-    driver._execute_with_connection = mock_execute_error
+    driver._execute_with_connection = mock_execute_error  # type: ignore
 
     # Execute a query that will fail
     with pytest.raises(Exception) as excinfo:
-        await driver._execute_with_connection(
+        await driver._execute_with_connection(  # type: ignore
             connection, "SELECT * FROM nonexistent", None, force_readonly=True
         )
 
@@ -245,10 +245,10 @@ async def test_execute_query_no_results(mock_connection):
         return None
 
     # Must match the parameter names from the original method
-    driver._execute_with_connection = mock_impl
+    driver._execute_with_connection = mock_impl  # type: ignore
 
     # Execute a query that returns no results
-    result = await driver._execute_with_connection(
+    result = await driver._execute_with_connection(  # type: ignore
         connection, "DELETE FROM test", None, force_readonly=False
     )
 
@@ -291,10 +291,10 @@ async def test_execute_query_with_params(mock_connection):
         return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
 
     # Must match the parameter names from the original method
-    driver._execute_with_connection = mock_impl
+    driver._execute_with_connection = mock_impl  # type: ignore
 
     # Execute a query with parameters
-    await driver._execute_with_connection(
+    await driver._execute_with_connection(  # type: ignore
         connection, "SELECT * FROM test WHERE id = %s", [1], force_readonly=True
     )
 
