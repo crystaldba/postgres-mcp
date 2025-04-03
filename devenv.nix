@@ -30,7 +30,10 @@ in
     # version = "3.12";
     uv = {
       enable = true;
-      sync.enable = true;
+      sync = {
+        enable = true;
+        allExtras = true;
+      };
     };
   };
 

@@ -116,7 +116,6 @@ async def cleanup_test_tables(sql_driver):
         await conn_pool.close()
 
 
-@pytest.mark.postgres
 @pytest.mark.asyncio
 async def test_database_health_all(local_sql_driver):
     """Test that the database health tool runs without errors when performing all health checks.

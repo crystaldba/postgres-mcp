@@ -2,7 +2,9 @@ import asyncio
 import sys
 import signal
 import logging
-from typing import Any, List
+import argparse
+from enum import Enum
+from typing import Any, List, Union
 
 from mcp.server.fastmcp import FastMCP
 import mcp.types as types
@@ -26,13 +28,28 @@ ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResou
 logger = logging.getLogger(__name__)
 
 
-# Global connection manager
+class AccessMode(str, Enum):
+    """SQL access modes for the server."""
+
+    YOLO = "yolo"  # Unrestricted access
+    RESTRICTED = "restricted"  # Read-only with safety features
+
+
+# Global variables
 db_connection = DbConnPool()
+current_access_mode = AccessMode.YOLO
 
 
-async def get_safe_sql_driver() -> SafeSqlDriver:
-    """Get a SafeSqlDriver instance with a connection from the pool."""
-    return SafeSqlDriver(sql_driver=SqlDriver(conn=db_connection))
+async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
+    """Get the appropriate SQL driver based on the current access mode."""
+    base_driver = SqlDriver(conn=db_connection)
+
+    if current_access_mode == AccessMode.RESTRICTED:
+        logger.debug("Using SafeSqlDriver with restrictions (RESTRICTED mode)")
+        return SafeSqlDriver(sql_driver=base_driver, timeout=30)  # 30 second timeout
+    else:
+        logger.debug("Using unrestricted SqlDriver (YOLO mode)")
+        return base_driver
 
 
 def format_text_response(text: Any) -> ResponseType:
@@ -53,7 +70,7 @@ def format_error_response(error: str) -> ResponseType:
 async def list_resources() -> list[types.Resource]:
     """List available database tables as resources."""
     try:
-        sql_driver = await get_safe_sql_driver()
+        sql_driver = await get_sql_driver()
         rows = await sql_driver.execute_query(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
         )
@@ -95,7 +112,7 @@ async def list_resources() -> list[types.Resource]:
 async def extensions_resource() -> str:
     """Get information about installed PostgreSQL extensions."""
     try:
-        sql_driver = await get_safe_sql_driver()
+        sql_driver = await get_sql_driver()
         rows = await sql_driver.execute_query(
             """
             SELECT
@@ -128,7 +145,7 @@ async def extensions_resource() -> str:
 async def table_schema_resource(table_name: str) -> str:
     """Get schema information for a specific table."""
     try:
-        sql_driver = await get_safe_sql_driver()
+        sql_driver = await get_sql_driver()
         rows = await SafeSqlDriver.execute_param_query(
             sql_driver,
             """
@@ -151,7 +168,7 @@ async def query(
 ) -> ResponseType:
     """Run a read-only SQL query."""
     try:
-        sql_driver = await get_safe_sql_driver()
+        sql_driver = await get_sql_driver()
         rows = await sql_driver.execute_query(sql)  # type: ignore
         if rows is None:
             return format_text_response("No results")
@@ -169,7 +186,7 @@ async def analyze_workload(
 ) -> ResponseType:
     """Analyze frequently executed queries in the database and recommend optimal indexes."""
     try:
-        sql_driver = await get_safe_sql_driver()
+        sql_driver = await get_sql_driver()
         dta_tool = DTATool(sql_driver)
         result = await dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
         return format_text_response(result)
@@ -196,7 +213,7 @@ async def analyze_queries(
         )
 
     try:
-        sql_driver = await get_safe_sql_driver()
+        sql_driver = await get_sql_driver()
         dta_tool = DTATool(sql_driver)
         result = await dta_tool.analyze_queries(
             queries=queries, max_index_size_mb=max_index_size_mb
@@ -224,7 +241,7 @@ async def database_health(
         health_type: Comma-separated list of health check types to perform.
                     Valid values: index, connection, vacuum, sequence, replication, buffer, constraint, all
     """
-    health_tool = DatabaseHealthTool(get_safe_sql_driver())
+    health_tool = DatabaseHealthTool(get_sql_driver)
     result = await health_tool.health(health_type=health_type)
     return format_text_response(result)
 
@@ -255,7 +272,7 @@ async def install_extension(
 
     try:
         # First check if the extension exists in pg_available_extensions
-        sql_driver = await get_safe_sql_driver()
+        sql_driver = await get_sql_driver()
         check_rows = await SafeSqlDriver.execute_param_query(
             sql_driver,
             "SELECT name, default_version FROM pg_available_extensions WHERE name = {}",
@@ -315,7 +332,7 @@ async def top_slow_queries(
 ) -> ResponseType:
     """Reports the slowest SQL queries based on total execution time."""
     try:
-        sql_driver = await get_safe_sql_driver()
+        sql_driver = await get_sql_driver()
 
         rows = await SafeSqlDriver.execute_param_query(
             sql_driver,
@@ -364,14 +381,26 @@ async def top_slow_queries(
 
 
 async def main():
-    # Get database URL from command line
-    if len(sys.argv) != 2:
-        print(
-            "Please provide a database URL as a command-line argument", file=sys.stderr
-        )
-        sys.exit(1)
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="PostgreSQL MCP Server")
+    parser.add_argument("database_url", help="Database connection URL")
+    parser.add_argument(
+        "--access-mode",
+        type=str,
+        choices=[mode.value for mode in AccessMode],
+        default=AccessMode.YOLO.value,
+        help="Set SQL access mode: yolo (unrestricted) or restricted (read-only with protections)",
+    )
 
-    database_url = sys.argv[1]
+    args = parser.parse_args()
+
+    # Store the access mode in the global variable
+    global current_access_mode
+    current_access_mode = AccessMode(args.access_mode)
+
+    logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
+
+    database_url = args.database_url
 
     # Initialize database connection pool
     try:
