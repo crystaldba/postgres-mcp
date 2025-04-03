@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from postgres_mcp.dta.artifacts import ExplainPlanArtifact
 from postgres_mcp.explain.tools import (
     ExplainPlanTool,
-    SqlParserTool,
     ErrorResult,
     JsonResult,
 )
@@ -208,46 +207,3 @@ async def test_explain_with_empty_plan_data(mock_sql_driver):
     # Verify error handling
     assert isinstance(result, ErrorResult)
     assert "No results" in result.value
-
-
-@pytest.mark.asyncio
-async def test_sql_parser_success():
-    """Test successful SQL parsing."""
-    with patch("pglast.parser.parse_sql_json") as mock_parse:
-        # Mock the parser to return a simple AST
-        mock_ast = {"stmt": [{"SelectStmt": {"targetList": []}}]}
-        mock_parse.return_value = mock_ast
-
-        parser = SqlParserTool()
-        result = parser.parse_sql("SELECT * FROM users")
-
-        # Verify result
-        assert isinstance(result, JsonResult)
-        assert json.loads(result.value) == mock_ast
-        mock_parse.assert_called_once_with("SELECT * FROM users")
-
-
-@pytest.mark.asyncio
-async def test_sql_parser_with_empty_query():
-    """Test parsing of empty query."""
-    parser = SqlParserTool()
-    result = parser.parse_sql("")
-
-    # Verify error handling
-    assert isinstance(result, ErrorResult)
-    assert "empty query" in result.value
-
-
-@pytest.mark.asyncio
-async def test_sql_parser_with_error():
-    """Test handling of parser error."""
-    with patch("pglast.parser.parse_sql_json") as mock_parse:
-        # Mock the parser to raise an exception
-        mock_parse.side_effect = Exception("Syntax error")
-
-        parser = SqlParserTool()
-        result = parser.parse_sql("INVALID SQL")
-
-        # Verify error handling
-        assert isinstance(result, ErrorResult)
-        assert "Syntax error" in result.value

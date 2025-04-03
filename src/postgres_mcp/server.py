@@ -14,7 +14,7 @@ from .dta import DTATool
 from .sql import SafeSqlDriver
 from .database_health import DatabaseHealthTool, HealthType
 from .dta import MAX_NUM_DTA_QUERIES_LIMIT
-from .explain import ExplainPlanTool, SqlParserTool
+from .explain import ExplainPlanTool
 
 mcp = FastMCP("postgres-mcp")
 
@@ -384,81 +384,6 @@ async def explain_query(
             return format_error_response("Error processing explain plan")
     except Exception as e:
         logger.error(f"Error explaining query: {e}")
-        return format_error_response(str(e))
-
-
-@mcp.tool(
-    description="Explains and analyzes the execution plan for a SQL query, actually running the query to show real execution statistics."
-)
-async def explain_analyze_query(
-    sql: str = Field(description="SQL query to explain and analyze"),
-) -> ResponseType:
-    """Explains and analyzes the execution plan for a SQL query."""
-    try:
-        sql_driver = await get_safe_sql_driver()
-        explain_tool = ExplainPlanTool(sql_driver=sql_driver)
-
-        # Get the explain analyze plan
-        result = await explain_tool.explain_analyze(sql)
-
-        if hasattr(result, "value") and isinstance(result.value, str):
-            return format_text_response(result.value)
-        else:
-            return format_error_response("Error processing explain analyze plan")
-    except Exception as e:
-        logger.error(f"Error analyzing query: {e}")
-        return format_error_response(str(e))
-
-
-@mcp.tool(
-    description="Explains how a SQL query would perform with hypothetical indexes that don't actually exist in the database."
-)
-async def explain_with_hypothetical_indexes(
-    sql: str = Field(description="SQL query to explain"),
-    hypothetical_indexes: list[dict[str, Any]] = Field(
-        description="List of hypothetical indexes to simulate. Each index should be a dictionary with 'table', 'columns', and optionally 'using' fields."
-    ),
-) -> ResponseType:
-    """Explains how a query would perform with hypothetical indexes."""
-    try:
-        sql_driver = await get_safe_sql_driver()
-        explain_tool = ExplainPlanTool(sql_driver=sql_driver)
-
-        # Get the explain plan with hypothetical indexes
-        result = await explain_tool.explain_with_hypothetical_indexes(
-            sql, hypothetical_indexes
-        )
-
-        if hasattr(result, "value") and isinstance(result.value, str):
-            return format_text_response(result.value)
-        else:
-            return format_error_response(
-                "Error processing explain plan with hypothetical indexes"
-            )
-    except Exception as e:
-        logger.error(f"Error explaining query with hypothetical indexes: {e}")
-        return format_error_response(str(e))
-
-
-@mcp.tool(
-    description="Parses a SQL query and returns its structure as a JSON abstract syntax tree (AST)."
-)
-async def parse_sql_query(
-    sql: str = Field(description="SQL query to parse"),
-) -> ResponseType:
-    """Parses a SQL query into an abstract syntax tree."""
-    try:
-        sql_parser_tool = SqlParserTool()
-
-        # Parse the SQL query
-        result = sql_parser_tool.parse_sql(sql)
-
-        if hasattr(result, "value") and isinstance(result.value, str):
-            return format_text_response(result.value)
-        else:
-            return format_error_response("Error parsing SQL query")
-    except Exception as e:
-        logger.error(f"Error parsing SQL query: {e}")
         return format_error_response(str(e))
 
 

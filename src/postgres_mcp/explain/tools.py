@@ -195,31 +195,3 @@ class ExplainPlanTool:
                 )
         except Exception as e:
             return ErrorResult(f"Error executing explain plan: {e}")
-
-
-class SqlParserTool:
-    """Tool for parsing SQL queries into abstract syntax trees."""
-
-    def parse_sql(self, sql_query: str) -> Union[JsonResult, ErrorResult]:
-        """
-        Parse a SQL query into an abstract syntax tree.
-
-        Args:
-            sql_query: The SQL query to parse
-
-        Returns:
-            JsonResult or ErrorResult
-        """
-        try:
-            from pglast.parser import parse_sql_json
-
-            if not sql_query:
-                return ErrorResult("Failed to parse SQL query: empty query")
-
-            # Parse the SQL query
-            parsed = parse_sql_json(sql_query)
-            return JsonResult(parsed)
-
-        except Exception as e:
-            logger.error(f"Error parsing SQL query: {sql_query}. Error: {e}")
-            return ErrorResult(f"Failed to parse SQL query: {e!s}")
