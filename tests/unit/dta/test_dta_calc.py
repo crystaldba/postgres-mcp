@@ -8,13 +8,13 @@ from typing import Dict
 from typing import Set
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from .artifacts import ExplainPlanArtifact
-from .dta_calc import ColumnCollector
-from .dta_calc import ConditionColumnCollector
-from .dta_calc import DatabaseTuningAdvisor
-from .dta_calc import Index
-from .dta_calc import IndexConfig
-from .dta_calc import parse_sql
+from postgres_mcp.dta import ColumnCollector
+from postgres_mcp.dta import ConditionColumnCollector
+from postgres_mcp.dta import DatabaseTuningAdvisor
+from postgres_mcp.dta import Index
+from postgres_mcp.dta import IndexConfig
+from postgres_mcp.dta import parse_sql
+from postgres_mcp.dta import ExplainPlanArtifact
 
 logger = getLogger(__name__)
 

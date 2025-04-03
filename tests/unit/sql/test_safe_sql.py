@@ -2,9 +2,9 @@ from unittest.mock import Mock, AsyncMock, call
 
 import pytest
 import pytest_asyncio
-from .sql_driver import SqlDriver
+from postgres_mcp.sql import SqlDriver
 from psycopg.sql import SQL, Literal
-from .safe_sql import SafeSqlDriver
+from postgres_mcp.sql import SafeSqlDriver
 
 
 @pytest_asyncio.fixture

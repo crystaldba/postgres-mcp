@@ -1,6 +1,6 @@
 import pytest
 
-from ..dta.sql_driver import SqlDriver
+from ..sql import SqlDriver
 from .database_health import DatabaseHealthTool
 
 import logging
@@ -116,7 +116,6 @@ async def cleanup_test_tables(sql_driver):
         await conn_pool.close()
 
 
-@pytest.mark.postgres
 @pytest.mark.asyncio
 async def test_database_health_all(local_sql_driver):
     """Test that the database health tool runs without errors when performing all health checks.

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from ..dta.sql_driver import SqlDriver
+from ..sql import SqlDriver
 
 
 @dataclass

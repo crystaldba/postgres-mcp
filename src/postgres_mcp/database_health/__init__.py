@@ -1,1 +1,3 @@
-# Empty init file to make this a Python package
+from .database_health import DatabaseHealthTool, HealthType
+
+__all__ = ["DatabaseHealthTool", "HealthType"]

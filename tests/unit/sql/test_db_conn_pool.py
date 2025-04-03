@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from postgres_mcp.dta.sql_driver import DbConnPool
+from postgres_mcp.sql.sql_driver import DbConnPool
 
 
 class AsyncContextManagerMock(AsyncMock):
@@ -44,7 +44,7 @@ def mock_pool():
 async def test_pool_connect_success(mock_pool):
     """Test successful connection to the database pool."""
     with patch(
-        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+        "postgres_mcp.sql.sql_driver.AsyncConnectionPool", return_value=mock_pool
     ):
         # Patch the connection test part to skip it
         with patch.object(
@@ -80,7 +80,7 @@ async def test_pool_connect_with_retry(mock_pool):
             return mock_pool
 
     with patch(
-        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+        "postgres_mcp.sql.sql_driver.AsyncConnectionPool", return_value=mock_pool
     ):
         with patch("postgres_mcp.server.asyncio.sleep", AsyncMock()) as mock_sleep:
             with patch.object(DbConnPool, "pool_connect", mock_pool_connect):
@@ -102,20 +102,24 @@ async def test_pool_connect_with_retry(mock_pool):
 @pytest.mark.asyncio
 async def test_pool_connect_all_retries_fail(mock_pool):
     """Test pool connection when all retry attempts fail."""
-    # All attempts fail with exceptions for each call
+    # Mock pool.open to raise an exception for the test
     mock_pool.open.side_effect = Exception("Persistent connection error")
 
+    # Configure AsyncConnectionPool's constructor to return our mock
     with patch(
-        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+        "postgres_mcp.sql.sql_driver.AsyncConnectionPool", return_value=mock_pool
     ):
-        with patch("postgres_mcp.server.asyncio.sleep", AsyncMock()):
+        # Mock sleep to speed up test
+        with patch("asyncio.sleep", AsyncMock()):
             db_pool = DbConnPool("postgresql://user:pass@localhost/db")
 
-            # This should retry one time and then fail
+            # This should fail since pool.open raises an exception
             with pytest.raises(Exception):
                 await db_pool.pool_connect()
 
+            # Verify the pool is marked as invalid
             assert db_pool._is_valid is False  # type: ignore
+            # Verify open was called at least once (no need to verify retries here)
             assert mock_pool.open.call_count >= 1
 
 
@@ -123,7 +127,7 @@ async def test_pool_connect_all_retries_fail(mock_pool):
 async def test_close_pool(mock_pool):
     """Test closing the connection pool."""
     with patch(
-        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+        "postgres_mcp.sql.sql_driver.AsyncConnectionPool", return_value=mock_pool
     ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
 
@@ -148,7 +152,7 @@ async def test_close_handles_errors(mock_pool):
     mock_pool.close.side_effect = Exception("Error closing pool")
 
     with patch(
-        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+        "postgres_mcp.sql.sql_driver.AsyncConnectionPool", return_value=mock_pool
     ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
 
@@ -170,7 +174,7 @@ async def test_close_handles_errors(mock_pool):
 async def test_pool_connect_initialized(mock_pool):
     """Test pool_connect when pool is already initialized."""
     with patch(
-        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+        "postgres_mcp.sql.sql_driver.AsyncConnectionPool", return_value=mock_pool
     ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
 
@@ -195,7 +199,7 @@ async def test_pool_connect_initialized(mock_pool):
 async def test_pool_connect_not_initialized(mock_pool):
     """Test pool_connect when pool is not yet initialized."""
     with patch(
-        "postgres_mcp.dta.sql_driver.AsyncConnectionPool", return_value=mock_pool
+        "postgres_mcp.sql.sql_driver.AsyncConnectionPool", return_value=mock_pool
     ):
         db_pool = DbConnPool("postgresql://user:pass@localhost/db")
 

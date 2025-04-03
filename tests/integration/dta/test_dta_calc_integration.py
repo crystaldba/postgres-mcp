@@ -3,9 +3,8 @@ import os
 import time
 
 import pytest
-from .sql_driver import SqlDriver, DbConnPool
-from .dta_calc import DatabaseTuningAdvisor
-from .dta_calc import DTASession
+from postgres_mcp.sql import SqlDriver, DbConnPool
+from postgres_mcp.dta import DatabaseTuningAdvisor, DTASession
 
 import pytest_asyncio
 

@@ -1,6 +1,6 @@
 from typing import Any
 
-from ..dta.sql_driver import SqlDriver
+from ..sql import SqlDriver
 
 
 class BufferHealthCalc:

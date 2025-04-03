@@ -21,8 +21,8 @@ from pglast.ast import SortGroupClause
 from pglast.visitors import Visitor
 
 from .artifacts import calculate_improvement_multiple
-from .safe_sql import SafeSqlDriver
-from .sql_driver import SqlDriver
+from ..sql import SafeSqlDriver
+from ..sql import SqlDriver
 
 logger = logging.getLogger(__name__)
 

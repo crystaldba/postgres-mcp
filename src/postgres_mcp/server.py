@@ -8,12 +8,12 @@ from mcp.server.fastmcp import FastMCP
 import mcp.types as types
 from pydantic import AnyUrl, Field
 import psycopg
-from .dta.sql_driver import DbConnPool, obfuscate_password, SqlDriver
+from .sql import DbConnPool, obfuscate_password, SqlDriver
 
-from .dta.dta_tools import DTATool
-from .dta.safe_sql import SafeSqlDriver
-from .database_health.database_health import DatabaseHealthTool, HealthType
-from .dta.dta_calc import MAX_NUM_DTA_QUERIES_LIMIT
+from .dta import DTATool
+from .sql import SafeSqlDriver
+from .database_health import DatabaseHealthTool, HealthType
+from .dta import MAX_NUM_DTA_QUERIES_LIMIT
 
 mcp = FastMCP("postgres-mcp")
 

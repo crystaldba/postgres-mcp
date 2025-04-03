@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 from .artifacts import ExplainPlanArtifact
 from .artifacts import calculate_improvement_multiple
 from .dta_calc import DatabaseTuningAdvisor, DTASession, IndexConfig
-from .sql_driver import SqlDriver
+from ..sql import SqlDriver
 
 logger = logging.getLogger(__name__)
 
