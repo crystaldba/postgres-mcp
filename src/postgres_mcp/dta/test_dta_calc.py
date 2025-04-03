@@ -15,7 +15,6 @@ from .dta_calc import DatabaseTuningAdvisor
 from .dta_calc import Index
 from .dta_calc import IndexConfig
 from .dta_calc import parse_sql
-from .sql_driver import DbConnPool
 
 logger = getLogger(__name__)
 
