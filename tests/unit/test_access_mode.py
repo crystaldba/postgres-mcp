@@ -17,7 +17,7 @@ def mock_db_connection():
 @pytest.mark.parametrize(
     "access_mode,expected_driver_type",
     [
-        (AccessMode.YOLO, SqlDriver),
+        (AccessMode.UNRESTRICTED, SqlDriver),
         (AccessMode.RESTRICTED, SafeSqlDriver),
     ],
 )
@@ -53,10 +53,10 @@ async def test_get_sql_driver_sets_timeout_in_restricted_mode(mock_db_connection
 
 
 @pytest.mark.asyncio
-async def test_get_sql_driver_in_yolo_mode_no_timeout(mock_db_connection):
-    """Test that get_sql_driver in yolo mode is a regular SqlDriver."""
+async def test_get_sql_driver_in_unrestricted_mode_no_timeout(mock_db_connection):
+    """Test that get_sql_driver in unrestricted mode is a regular SqlDriver."""
     with (
-        patch("postgres_mcp.server.current_access_mode", AccessMode.YOLO),
+        patch("postgres_mcp.server.current_access_mode", AccessMode.UNRESTRICTED),
         patch("postgres_mcp.server.db_connection", mock_db_connection),
     ):
         driver = await get_sql_driver()
@@ -84,15 +84,15 @@ async def test_command_line_parsing():
         asyncio.run = AsyncMock()
 
         with (
-            patch("postgres_mcp.server.current_access_mode", AccessMode.YOLO),
+            patch("postgres_mcp.server.current_access_mode", AccessMode.UNRESTRICTED),
             patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
             patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()),
             patch("postgres_mcp.server.shutdown", AsyncMock()),
         ):
-            # Reset the current_access_mode to YOLO
+            # Reset the current_access_mode to UNRESTRICTED
             import postgres_mcp.server
 
-            postgres_mcp.server.current_access_mode = AccessMode.YOLO
+            postgres_mcp.server.current_access_mode = AccessMode.UNRESTRICTED
 
             # Run main (partially mocked to avoid actual connection)
             try:

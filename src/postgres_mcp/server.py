@@ -31,13 +31,13 @@ logger = logging.getLogger(__name__)
 class AccessMode(str, Enum):
     """SQL access modes for the server."""
 
-    YOLO = "yolo"  # Unrestricted access
+    UNRESTRICTED = "unrestricted"  # Unrestricted access
     RESTRICTED = "restricted"  # Read-only with safety features
 
 
 # Global variables
 db_connection = DbConnPool()
-current_access_mode = AccessMode.YOLO
+current_access_mode = AccessMode.UNRESTRICTED
 
 
 async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
@@ -48,7 +48,7 @@ async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
         logger.debug("Using SafeSqlDriver with restrictions (RESTRICTED mode)")
         return SafeSqlDriver(sql_driver=base_driver, timeout=30)  # 30 second timeout
     else:
-        logger.debug("Using unrestricted SqlDriver (YOLO mode)")
+        logger.debug("Using unrestricted SqlDriver (UNRESTRICTED mode)")
         return base_driver
 
 
@@ -388,8 +388,8 @@ async def main():
         "--access-mode",
         type=str,
         choices=[mode.value for mode in AccessMode],
-        default=AccessMode.YOLO.value,
-        help="Set SQL access mode: yolo (unrestricted) or restricted (read-only with protections)",
+        default=AccessMode.UNRESTRICTED.value,
+        help="Set SQL access mode: unrestricted (unrestricted) or restricted (read-only with protections)",
     )
 
     args = parser.parse_args()
