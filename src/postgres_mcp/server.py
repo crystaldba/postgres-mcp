@@ -225,7 +225,7 @@ async def database_health(
         health_type: Comma-separated list of health check types to perform.
                     Valid values: index, connection, vacuum, sequence, replication, buffer, constraint, all
     """
-    health_tool = DatabaseHealthTool(get_safe_sql_driver())
+    health_tool = DatabaseHealthTool(await get_safe_sql_driver())
     result = await health_tool.health(health_type=health_type)
     return format_text_response(result)
 
