@@ -1,6 +1,7 @@
 import json
 import pytest
 import pytest_asyncio
+import asyncio
 from logging import getLogger
 from typing import Any
 from typing import Dict
@@ -14,6 +15,7 @@ from .dta_calc import DatabaseTuningAdvisor
 from .dta_calc import Index
 from .dta_calc import IndexConfig
 from .dta_calc import parse_sql
+from .sql_driver import DbConnPool
 
 logger = getLogger(__name__)
 
@@ -1334,6 +1336,19 @@ def test_explain_plan_diff():
         {"NotAPlan": {}}, {"NotAPlan": {}}
     )
     assert "Cannot generate diff" in invalid_diff
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def cleanup_pools():
+    """Fixture to ensure all connection pools are properly closed after each test."""
+    # Setup - nothing to do here
+    yield
+    
+    # Find and close any active connection pools
+    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    if tasks:
+        logger.debug(f"Waiting for {len(tasks)} tasks to complete...")
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 if __name__ == "__main__":

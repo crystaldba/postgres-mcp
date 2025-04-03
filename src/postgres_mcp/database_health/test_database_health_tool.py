@@ -3,15 +3,14 @@ import pytest
 from ..dta.sql_driver import SqlDriver
 from .database_health import DatabaseHealthTool
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 @pytest.fixture
 def local_sql_driver(test_postgres_connection_string):
     connection_string, version = test_postgres_connection_string
-    # Ensure we use psycopg (v3) not psycopg2 by explicitly setting the dialect
-    if connection_string.startswith("postgresql:"):
-        connection_string = connection_string.replace(
-            "postgresql:", "postgresql+psycopg:"
-        )
     return SqlDriver(engine_url=connection_string)
 
 
@@ -20,15 +19,15 @@ async def setup_test_tables(sql_driver):
     conn_pool = await pool_wrapper.pool_connect()
     async with conn_pool.connection() as conn:
         # Drop existing tables if they exist
-        conn.execute("DROP TABLE IF EXISTS test_orders")
-        conn.execute("DROP TABLE IF EXISTS test_customers")
-        conn.execute("DROP SEQUENCE IF EXISTS test_seq")
+        await conn.execute("DROP TABLE IF EXISTS test_orders")
+        await conn.execute("DROP TABLE IF EXISTS test_customers")
+        await conn.execute("DROP SEQUENCE IF EXISTS test_seq")
 
         # Create test sequence
-        conn.execute("CREATE SEQUENCE test_seq")
+        await conn.execute("CREATE SEQUENCE test_seq")
 
         # Create tables with various features to test health checks
-        conn.execute(
+        await conn.execute(
             """
             CREATE TABLE test_customers (
                 id SERIAL PRIMARY KEY,
@@ -39,7 +38,7 @@ async def setup_test_tables(sql_driver):
         """
         )
 
-        conn.execute(
+        await conn.execute(
             """
             CREATE TABLE test_orders (
                 id SERIAL PRIMARY KEY,
@@ -52,30 +51,30 @@ async def setup_test_tables(sql_driver):
         )
 
         # Create some indexes to test index health
-        conn.execute(
+        await conn.execute(
             """
             CREATE INDEX idx_orders_customer ON test_orders(customer_id)
             """
         )
-        conn.execute(
+        await conn.execute(
             """
             CREATE INDEX idx_orders_status ON test_orders(status)
             """
         )
-        conn.execute(
+        await conn.execute(
             """
             CREATE INDEX idx_orders_created ON test_orders(created_at)
             """
         )
         # Create a duplicate index to test duplicate index detection
-        conn.execute(
+        await conn.execute(
             """
             CREATE INDEX idx_orders_customer_dup ON test_orders(customer_id)
             """
         )
 
         # Insert some test data
-        conn.execute(
+        await conn.execute(
             """
             INSERT INTO test_customers (name, email)
             SELECT
@@ -85,7 +84,7 @@ async def setup_test_tables(sql_driver):
         """
         )
 
-        conn.execute(
+        await conn.execute(
             """
             INSERT INTO test_orders (customer_id, total, status)
             SELECT
@@ -101,15 +100,20 @@ async def setup_test_tables(sql_driver):
         )
 
         # Run ANALYZE to update statistics
-        conn.execute("ANALYZE test_customers")
-        conn.execute("ANALYZE test_orders")
+        await conn.execute("ANALYZE test_customers")
+        await conn.execute("ANALYZE test_orders")
 
 
-def cleanup_test_tables(sql_driver):
-    with sql_driver.engine.begin() as conn:
-        conn.execute("DROP TABLE IF EXISTS test_orders")
-        conn.execute("DROP TABLE IF EXISTS test_customers")
-        conn.execute("DROP SEQUENCE IF EXISTS test_seq")
+async def cleanup_test_tables(sql_driver):
+    pool_wrapper = sql_driver.connect()
+    conn_pool = await pool_wrapper.pool_connect()
+    try:
+        async with conn_pool.connection() as conn:
+            await conn.execute("DROP TABLE IF EXISTS test_orders")
+            await conn.execute("DROP TABLE IF EXISTS test_customers")
+            await conn.execute("DROP SEQUENCE IF EXISTS test_seq")
+    finally:
+        await conn_pool.close()
 
 
 @pytest.mark.postgres
@@ -149,4 +153,4 @@ async def test_database_health_all(local_sql_driver):
         )  # Should detect duplicate index
 
     finally:
-        cleanup_test_tables(local_sql_driver)
+        await cleanup_test_tables(local_sql_driver)
