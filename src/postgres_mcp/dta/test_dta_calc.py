@@ -1342,7 +1342,7 @@ async def cleanup_pools():
     """Fixture to ensure all connection pools are properly closed after each test."""
     # Setup - nothing to do here
     yield
-    
+
     # Find and close any active connection pools
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     if tasks:
