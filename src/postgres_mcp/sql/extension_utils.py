@@ -1,9 +1,11 @@
 """Utilities for working with PostgreSQL extensions."""
 
 import logging
-from typing import Literal, TypedDict
+from typing import Literal
+from typing import TypedDict
 
-from postgres_mcp.sql import SqlDriver, SafeSqlDriver
+from .safe_sql import SafeSqlDriver
+from .sql_driver import SqlDriver
 
 logger = logging.getLogger(__name__)
 
@@ -65,13 +67,9 @@ async def check_extension(
 
         if include_messages:
             if message_type == "markdown":
-                result["message"] = (
-                    f"The **{extension_name}** extension (version {version}) is already installed."
-                )
+                result["message"] = f"The **{extension_name}** extension (version {version}) is already installed."
             else:
-                result["message"] = (
-                    f"The {extension_name} extension (version {version}) is already installed."
-                )
+                result["message"] = f"The {extension_name} extension (version {version}) is already installed."
     else:
         # Check if the extension is available but not installed
         available_result = await SafeSqlDriver.execute_param_query(
@@ -119,9 +117,7 @@ async def check_extension(
     return result
 
 
-async def check_hypopg_installation_status(
-    sql_driver: SqlDriver, message_type: Literal["plain", "markdown"] = "markdown"
-) -> tuple[bool, str]:
+async def check_hypopg_installation_status(sql_driver: SqlDriver, message_type: Literal["plain", "markdown"] = "markdown") -> tuple[bool, str]:
     """
     Get a detailed status message for the HypoPG extension.
 

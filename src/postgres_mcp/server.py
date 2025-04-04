@@ -1,23 +1,32 @@
-import asyncio
-import sys
-import signal
-import logging
+# ruff: noqa: B008
 import argparse
+import asyncio
+import logging
+import signal
+import sys
 from enum import Enum
-from typing import Any, List, Union
+from typing import Any
+from typing import List
+from typing import Union
 
-from mcp.server.fastmcp import FastMCP
 import mcp.types as types
-from pydantic import AnyUrl, Field
 import psycopg
-from .sql import DbConnPool, obfuscate_password, SqlDriver
+from mcp.server.fastmcp import FastMCP
+from pydantic import AnyUrl
+from pydantic import Field
 
-from .dta import DTATool
-from .sql import SafeSqlDriver, check_hypopg_installation_status
-from .database_health import DatabaseHealthTool, HealthType
+from .database_health import DatabaseHealthTool
+from .database_health import HealthType
 from .dta import MAX_NUM_DTA_QUERIES_LIMIT
+from .dta import DTATool
+from .explain import ErrorResult
+from .explain import ExplainPlanArtifact
 from .explain import ExplainPlanTool
-from .explain import ExplainPlanArtifact, ErrorResult
+from .sql import DbConnPool
+from .sql import SafeSqlDriver
+from .sql import SqlDriver
+from .sql import check_hypopg_installation_status
+from .sql import obfuscate_password
 
 mcp = FastMCP("postgres-mcp")
 
@@ -73,9 +82,7 @@ async def list_resources() -> list[types.Resource]:
     """List available database tables as resources."""
     try:
         sql_driver = await get_sql_driver()
-        rows = await sql_driver.execute_query(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
-        )
+        rows = await sql_driver.execute_query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
         tables = [row.cells["table_name"] for row in rows] if rows else []
 
         base_url = "postgres-mcp://"
@@ -164,13 +171,12 @@ async def table_schema_resource(table_name: str) -> str:
         raise
 
 
-@mcp.tool(
-    description="Explains the execution plan for a SQL query, showing how the database will execute it and provides detailed cost estimates."
-)
+@mcp.tool(description="Explains the execution plan for a SQL query, showing how the database will execute it and provides detailed cost estimates.")
 async def explain_query(
     sql: str = Field(description="SQL query to explain"),
     analyze: bool = Field(
-        description="When True, actually runs the query to show real execution statistics instead of estimates. Takes longer but provides more accurate information.",
+        description="When True, actually runs the query to show real execution statistics instead of estimates. "
+        "Takes longer but provides more accurate information.",
         default=False,
     ),
     hypothetical_indexes: list[dict[str, Any]] | None = Field(
@@ -213,9 +219,7 @@ Examples: [
                     return format_text_response(hypopg_message)
 
                 # HypoPG is installed, proceed with explaining with hypothetical indexes
-                result = await explain_tool.explain_with_hypothetical_indexes(
-                    sql, hypothetical_indexes
-                )
+                result = await explain_tool.explain_with_hypothetical_indexes(sql, hypothetical_indexes)
             except Exception:
                 raise  # Re-raise the original exception
         elif analyze:
@@ -234,9 +238,7 @@ Examples: [
         if result and isinstance(result, ExplainPlanArtifact):
             return format_text_response(result.to_text())
         else:
-            return format_error_response(
-                "Error processing explain plan: " + result.to_text()
-            )
+            return format_error_response("Error processing explain plan: " + result.to_text())
     except Exception as e:
         logger.error(f"Error explaining query: {e}")
         return format_error_response(str(e))
@@ -258,9 +260,7 @@ async def query(
         return format_error_response(str(e))
 
 
-@mcp.tool(
-    description="Analyze frequently executed queries in the database and recommend optimal indexes"
-)
+@mcp.tool(description="Analyze frequently executed queries in the database and recommend optimal indexes")
 async def analyze_workload(
     max_index_size_mb: int = Field(description="Max index size in MB", default=10000),
 ) -> ResponseType:
@@ -275,29 +275,21 @@ async def analyze_workload(
         return format_error_response(str(e))
 
 
-@mcp.tool(
-    description="Analyze a list of (up to 10) SQL queries and recommend optimal indexes"
-)
+@mcp.tool(description="Analyze a list of (up to 10) SQL queries and recommend optimal indexes")
 async def analyze_queries(
     queries: list[str] = Field(description="List of Query strings to analyze"),
     max_index_size_mb: int = Field(description="Max index size in MB", default=10000),
 ) -> ResponseType:
     """Analyze a list of SQL queries and recommend optimal indexes."""
     if len(queries) == 0:
-        return format_error_response(
-            "Please provide a non-empty list of queries to analyze."
-        )
+        return format_error_response("Please provide a non-empty list of queries to analyze.")
     if len(queries) > MAX_NUM_DTA_QUERIES_LIMIT:
-        return format_error_response(
-            f"Please provide a list of up to {MAX_NUM_DTA_QUERIES_LIMIT} queries to analyze."
-        )
+        return format_error_response(f"Please provide a list of up to {MAX_NUM_DTA_QUERIES_LIMIT} queries to analyze.")
 
     try:
         sql_driver = await get_sql_driver()
         dta_tool = DTATool(sql_driver)
-        result = await dta_tool.analyze_queries(
-            queries=queries, max_index_size_mb=max_index_size_mb
-        )
+        result = await dta_tool.analyze_queries(queries=queries, max_index_size_mb=max_index_size_mb)
         return format_text_response(result)
     except Exception as e:
         logger.error(f"Error analyzing queries: {e}")
@@ -326,9 +318,7 @@ async def database_health(
     return format_text_response(result)
 
 
-@mcp.tool(
-    description="Lists all extensions currently installed in the PostgreSQL database."
-)
+@mcp.tool(description="Lists all extensions currently installed in the PostgreSQL database.")
 async def list_installed_extensions(ctx) -> ResponseType:
     """Lists all extensions currently installed in the PostgreSQL database."""
     try:
@@ -341,12 +331,11 @@ async def list_installed_extensions(ctx) -> ResponseType:
 
 
 @mcp.tool(
-    description="Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser)."
+    description="Installs a PostgreSQL extension if it's available but not already installed. "
+    "Requires appropriate database privileges (often superuser)."
 )
 async def install_extension(
-    extension_name: str = Field(
-        description="Extension to install. e.g. pg_stat_statements"
-    ),
+    extension_name: str = Field(description="Extension to install. e.g. pg_stat_statements"),
 ) -> ResponseType:
     """Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser)."""
 
@@ -361,7 +350,8 @@ async def install_extension(
 
         if not check_rows:
             return format_text_response(
-                f"Error: Extension '{extension_name}' is not available in the PostgreSQL installation. Please check if the extension is properly installed on the server."
+                f"Error: Extension '{extension_name}' is not available in the PostgreSQL installation. "
+                "Please check if the extension is properly installed on the server."
             )
 
         # Check if extension is already installed
@@ -372,9 +362,7 @@ async def install_extension(
         )
 
         if installed_rows:
-            return format_text_response(
-                f"Extension '{extension_name}' version {installed_rows[0].cells['extversion']} is already installed."
-            )
+            return format_text_response(f"Extension '{extension_name}' version {installed_rows[0].cells['extversion']} is already installed.")
 
         # Attempt to create the extension
         await sql_driver.execute_query(
@@ -397,15 +385,13 @@ async def install_extension(
         )
         return format_error_response(error_msg)
     except Exception as e:
-        error_msg = (
-            f"Unexpected error installing '{extension_name}': {e}\n\n"
-            "Please check the error message and ensure all prerequisites are met."
-        )
+        error_msg = f"Unexpected error installing '{extension_name}': {e}\n\nPlease check the error message and ensure all prerequisites are met."
         return format_error_response(error_msg)
 
 
 @mcp.tool(
-    description=f"Reports the slowest SQL queries based on total execution time, using data from the '{PG_STAT_STATEMENTS}' extension. If the extension is not installed, provides instructions on how to install it."
+    description=f"Reports the slowest SQL queries based on total execution time, using data from the '{PG_STAT_STATEMENTS}' extension. "
+    "If the extension is not installed, provides instructions on how to install it."
 )
 async def top_slow_queries(
     limit: int = Field(description="Number of slow queries to return", default=10),
@@ -438,20 +424,19 @@ async def top_slow_queries(
                 query,
                 [limit],
             )
-            slow_queries = (
-                [row.cells for row in slow_query_rows] if slow_query_rows else []
-            )
-            result_text = (
-                f"Top {len(slow_queries)} slowest queries by total execution time:\n"
-            )
+            slow_queries = [row.cells for row in slow_query_rows] if slow_query_rows else []
+            result_text = f"Top {len(slow_queries)} slowest queries by total execution time:\n"
             result_text += str(slow_queries)
             return format_text_response(result_text)
         else:
             message = (
                 f"The '{PG_STAT_STATEMENTS}' extension is required to report slow queries, but it is not currently installed.\n\n"
                 f"You can ask me to install 'pg_stat_statements' using the 'install_extension' tool.\n\n"
-                f"**Is it safe?** Installing '{PG_STAT_STATEMENTS}' is generally safe and a standard practice for performance monitoring. It adds performance overhead by tracking statistics, but this is usually negligible unless your server is under extreme load. It requires database privileges (often superuser) to install.\n\n"
-                f"**What does it do?** It records statistics (like execution time, number of calls, rows returned) for every query executed against the database.\n\n"
+                f"**Is it safe?** Installing '{PG_STAT_STATEMENTS}' is generally safe and a standard practice for performance monitoring. "
+                f"It adds performance overhead by tracking statistics, but this is usually negligible unless your server is under extreme load. "
+                f"It requires database privileges (often superuser) to install.\n\n"
+                f"**What does it do?** It records statistics (like execution time, number of calls, rows returned) "
+                f"for every query executed against the database.\n\n"
                 f"**How to undo?** If you later decide to remove it, you can ask me to run 'DROP EXTENSION {PG_STAT_STATEMENTS};'."
             )
             return format_text_response(message)
@@ -485,9 +470,7 @@ async def main():
     # Initialize database connection pool
     try:
         await db_connection.pool_connect(database_url)
-        logger.info(
-            "Successfully connected to database and initialized connection pool"
-        )
+        logger.info("Successfully connected to database and initialized connection pool")
     except Exception as e:
         print(
             f"Warning: Could not connect to database: {obfuscate_password(str(e))}",

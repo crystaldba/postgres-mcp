@@ -3,7 +3,6 @@ from typing import Generator
 
 import pytest
 from dotenv import load_dotenv
-
 from utils import create_postgres_container
 
 load_dotenv()

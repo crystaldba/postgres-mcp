@@ -1,9 +1,9 @@
+import logging
+
 import pytest
 
-from postgres_mcp.sql import SqlDriver
 from postgres_mcp.database_health import DatabaseHealthTool
-
-import logging
+from postgres_mcp.sql import SqlDriver
 
 logger = logging.getLogger(__name__)
 
@@ -149,9 +149,7 @@ async def test_database_health_all(local_sql_driver):
         assert "Constraint health:" in health_report
 
         # Verify specific health issues we know should be detected
-        assert (
-            "idx_orders_customer_dup" in health_report
-        )  # Should detect duplicate index
+        assert "idx_orders_customer_dup" in health_report  # Should detect duplicate index
 
     finally:
         await cleanup_test_tables(local_sql_driver)

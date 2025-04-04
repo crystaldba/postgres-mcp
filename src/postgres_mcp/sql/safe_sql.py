@@ -8,19 +8,13 @@ from typing import ClassVar
 from typing import Optional
 
 import pglast
-from psycopg.sql import SQL, Composable, Literal
-from typing_extensions import LiteralString
-
-from .sql_driver import SqlDriver
-
 from pglast.ast import A_ArrayExpr
 from pglast.ast import A_Const
 from pglast.ast import A_Expr
-from pglast.ast import A_Indirection
 from pglast.ast import A_Indices
+from pglast.ast import A_Indirection
 from pglast.ast import A_Star
 from pglast.ast import Alias
-from pglast.ast import VacuumStmt
 from pglast.ast import BitString
 from pglast.ast import Boolean
 from pglast.ast import BooleanTest
@@ -33,9 +27,9 @@ from pglast.ast import CollateClause
 from pglast.ast import ColumnRef
 from pglast.ast import CommonTableExpr
 from pglast.ast import CreateExtensionStmt
-from pglast.ast import DefElem
 from pglast.ast import DeallocateStmt
 from pglast.ast import DeclareCursorStmt
+from pglast.ast import DefElem
 from pglast.ast import ExplainStmt
 from pglast.ast import FetchStmt
 from pglast.ast import Float
@@ -62,11 +56,11 @@ from pglast.ast import RawStmt
 from pglast.ast import ResTarget
 from pglast.ast import RowCompareExpr
 from pglast.ast import RowExpr
-from pglast.ast import SQLValueFunction
 from pglast.ast import ScalarArrayOpExpr
 from pglast.ast import SelectStmt
 from pglast.ast import SortBy
 from pglast.ast import SortGroupClause
+from pglast.ast import SQLValueFunction
 from pglast.ast import String
 from pglast.ast import SubLink
 from pglast.ast import TableFunc
@@ -74,12 +68,19 @@ from pglast.ast import TableSampleClause
 from pglast.ast import TargetEntry
 from pglast.ast import TypeCast
 from pglast.ast import TypeName
+from pglast.ast import VacuumStmt
 from pglast.ast import VariableShowStmt
 from pglast.ast import WindowClause
 from pglast.ast import WindowDef
 from pglast.ast import WindowFunc
 from pglast.ast import WithClause
 from pglast.enums import A_Expr_Kind
+from psycopg.sql import SQL
+from psycopg.sql import Composable
+from psycopg.sql import Literal
+from typing_extensions import LiteralString
+
+from .sql_driver import SqlDriver
 
 logger = logging.getLogger(__name__)
 
@@ -594,8 +595,6 @@ class SafeSqlDriver(SqlDriver):
         "websearch_to_tsquery",
         # Range Functions
         "isempty",
-        "lower",
-        "upper",
         "lower_inc",
         "upper_inc",
         "lower_inf",
@@ -885,12 +884,7 @@ class SafeSqlDriver(SqlDriver):
             A_Expr_Kind.AEXPR_ILIKE,
         ):
             # Get the right-hand side of the LIKE expression (the pattern)
-            if (
-                isinstance(node.rexpr, A_Const)
-                and node.rexpr.val is not None
-                and hasattr(node.rexpr.val, "sval")
-                and node.rexpr.val.sval is not None
-            ):
+            if isinstance(node.rexpr, A_Const) and node.rexpr.val is not None and hasattr(node.rexpr.val, "sval") and node.rexpr.val.sval is not None:
                 # Nothing to do for now
                 pass
             else:
@@ -898,11 +892,7 @@ class SafeSqlDriver(SqlDriver):
 
         # Validate function calls
         if isinstance(node, FuncCall):
-            func_name = (
-                ".".join([str(n.sval) for n in node.funcname]).lower()
-                if node.funcname
-                else ""
-            )
+            func_name = ".".join([str(n.sval) for n in node.funcname]).lower() if node.funcname else ""
             # Strip pg_catalog schema if present
             match = self.PG_CATALOG_PATTERN.match(func_name)
             unqualified_name = match.group(1) if match else func_name
@@ -975,8 +965,7 @@ class SafeSqlDriver(SqlDriver):
                     else:
                         if not isinstance(stmt, tuple(self.ALLOWED_STMT_TYPES)):
                             raise ValueError(
-                                "Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW and other read-only statements are allowed. Received: "
-                                + str(stmt)
+                                "Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW and other read-only statements are allowed. Received: " + str(stmt)
                             )
                     self._validate_node(stmt)
             except Exception as e:
@@ -1004,10 +993,8 @@ class SafeSqlDriver(SqlDriver):
                         params=params,
                         force_readonly=True,
                     )
-            except asyncio.TimeoutError:
-                raise ValueError(
-                    f"Query execution timed out after {self.timeout} seconds in restricted mode"
-                )
+            except asyncio.TimeoutError as e:
+                raise ValueError(f"Query execution timed out after {self.timeout} seconds in restricted mode") from e
         else:
             return await self.sql_driver.execute_query(
                 f"/* crystaldba */ {query}",
@@ -1031,9 +1018,7 @@ class SafeSqlDriver(SqlDriver):
         )
 
     @staticmethod
-    async def execute_param_query(
-        sql_driver: SqlDriver, query: LiteralString, params: list[Any] | None = None
-    ) -> list[SqlDriver.RowResult] | None:
+    async def execute_param_query(sql_driver: SqlDriver, query: LiteralString, params: list[Any] | None = None) -> list[SqlDriver.RowResult] | None:
         """Execute a query after validating it is safe"""
         if params:
             query_params = SafeSqlDriver.param_sql_to_query(query, params)

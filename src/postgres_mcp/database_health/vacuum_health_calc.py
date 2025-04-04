@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 from ..sql import SafeSqlDriver
-
 from ..sql import SqlDriver
 
 

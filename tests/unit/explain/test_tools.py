@@ -1,13 +1,13 @@
 import json
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock
 
 from postgres_mcp.dta.artifacts import ExplainPlanArtifact
-from postgres_mcp.explain.tools import (
-    ExplainPlanTool,
-    ErrorResult,
-)
+from postgres_mcp.explain.tools import ErrorResult
+from postgres_mcp.explain.tools import ExplainPlanTool
 
 
 class MockCell:
@@ -96,10 +96,7 @@ async def test_explain_with_bind_variables(mock_sql_driver):
 
     # Verify query includes GENERIC_PLAN option
     call_args = mock_sql_driver.execute_query.call_args[0][0]
-    assert (
-        "EXPLAIN (FORMAT JSON, GENERIC_PLAN) SELECT * FROM users WHERE id = $1"
-        in call_args
-    )
+    assert "EXPLAIN (FORMAT JSON, GENERIC_PLAN) SELECT * FROM users WHERE id = $1" in call_args
 
 
 @pytest.mark.asyncio

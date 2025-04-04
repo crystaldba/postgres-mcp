@@ -3,10 +3,12 @@ import os
 import time
 
 import pytest
-from postgres_mcp.sql import SqlDriver, DbConnPool
-from postgres_mcp.dta import DatabaseTuningAdvisor, DTASession
-
 import pytest_asyncio
+
+from postgres_mcp.dta import DatabaseTuningAdvisor
+from postgres_mcp.dta import DTASession
+from postgres_mcp.sql import DbConnPool
+from postgres_mcp.sql import SqlDriver
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +19,7 @@ async def db_connection():
     # Read connection parameters from environment or use defaults
     database_url = os.getenv("TEST1_DATABASE_URL")
     if not database_url:
-        pytest.skip(
-            "Missing required environment variable: TEST1_DATABASE_URL must be set"
-        )
+        pytest.skip("Missing required environment variable: TEST1_DATABASE_URL must be set")
     driver = SqlDriver(engine_url=database_url)
 
     # Verify connection
@@ -27,12 +27,8 @@ async def db_connection():
     assert result is not None
 
     # Create pg_stat_statements extension if needed
-    await driver.execute_query(
-        "CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False
-    )
-    await driver.execute_query(
-        "CREATE EXTENSION IF NOT EXISTS hypopg", force_readonly=False
-    )
+    await driver.execute_query("CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False)
+    await driver.execute_query("CREATE EXTENSION IF NOT EXISTS hypopg", force_readonly=False)
 
     yield driver
 
@@ -112,12 +108,8 @@ async def setup_test_tables(db_connection):
     yield
 
     # Cleanup tables
-    await db_connection.execute_query(
-        "DROP TABLE IF EXISTS orders", force_readonly=False
-    )
-    await db_connection.execute_query(
-        "DROP TABLE IF EXISTS users", force_readonly=False
-    )
+    await db_connection.execute_query("DROP TABLE IF EXISTS orders", force_readonly=False)
+    await db_connection.execute_query("DROP TABLE IF EXISTS users", force_readonly=False)
 
 
 @pytest_asyncio.fixture
@@ -373,9 +365,7 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
     ]
 
     # Clear pg_stat_statements
-    await db_connection.execute_query(
-        "SELECT pg_stat_statements_reset()", force_readonly=False
-    )
+    await db_connection.execute_query("SELECT pg_stat_statements_reset()", force_readonly=False)
 
     # Execute JOB workload
     for q in job_queries:
@@ -388,9 +378,7 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
         f.write(";\n\n".join(queries) + ";")
 
     # Analyze the workload
-    session = await dta.analyze_workload(
-        sql_file="job_workload_queries.sql", min_calls=5, min_avg_time_ms=1.0
-    )
+    session = await dta.analyze_workload(sql_file="job_workload_queries.sql", min_calls=5, min_avg_time_ms=1.0)
 
     # Check that we got recommendations
     assert isinstance(session, DTASession)
@@ -411,16 +399,12 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
                 break
 
     # We should find at least 2 of the expected patterns
-    assert found_patterns >= 1, (
-        f"Found only {found_patterns} out of {len(expected_patterns)} expected index patterns"
-    )
+    assert found_patterns >= 1, f"Found only {found_patterns} out of {len(expected_patterns)} expected index patterns"
 
     # Print recommendations for manual validation
     logger.debug("\nRecommended indexes for JOB workload:")
     for rec in session.recommendations:
-        logger.debug(
-            f"{rec.definition} (benefit: {rec.progressive_improvement_multiple:.2f}x, size: {rec.estimated_size_bytes / 1024:.2f} KB)"
-        )
+        logger.debug(f"{rec.definition} (benefit: {rec.progressive_improvement_multiple:.2f}x, size: {rec.estimated_size_bytes / 1024:.2f} KB)")
 
     # Test performance improvement with recommended indexes
     if len(session.recommendations) < 1:
@@ -433,9 +417,7 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
     for q in job_queries:
         query = q["query"]
         start = time.time()
-        await db_connection.execute_query(
-            "EXPLAIN ANALYZE " + query, force_readonly=False
-        )
+        await db_connection.execute_query("EXPLAIN ANALYZE " + query, force_readonly=False)
         baseline_times[query] = time.time() - start
 
     # Create the recommended indexes
@@ -448,15 +430,12 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
     for q in job_queries:
         query = q["query"]
         start = time.time()
-        await db_connection.execute_query(
-            "EXPLAIN ANALYZE " + query, force_readonly=False
-        )
+        await db_connection.execute_query("EXPLAIN ANALYZE " + query, force_readonly=False)
         indexed_times[query] = time.time() - start
 
     # Clean up created indexes
     await db_connection.execute_query(
-        "DROP INDEX IF EXISTS "
-        + ", ".join([r.definition.split()[2] for r in top_recs]),
+        "DROP INDEX IF EXISTS " + ", ".join([r.definition.split()[2] for r in top_recs]),
         force_readonly=False,
     )
 
@@ -484,13 +463,9 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
     # Check that we have some improvement
     if improvements:
         avg_improvement = sum(improvements) / len(improvements)
-        logger.info(
-            f"\nAverage performance improvement for JOB workload: {avg_improvement:.2f}%"
-        )
+        logger.info(f"\nAverage performance improvement for JOB workload: {avg_improvement:.2f}%")
         # At least one query should show improvement
-        assert max(improvements) > 0, (
-            "No performance improvement detected for JOB workload"
-        )
+        assert max(improvements) > 0, "No performance improvement detected for JOB workload"
     else:
         pytest.skip("Could not measure performance improvements for JOB workload")
 
@@ -607,14 +582,10 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
     )
 
     # Analyze tables to update statistics (CRUCIAL for correct index recommendations)
-    await db_connection.execute_query(
-        "ANALYZE customers, products, sales", force_readonly=False
-    )
+    await db_connection.execute_query("ANALYZE customers, products, sales", force_readonly=False)
 
     # Clear pg_stat_statements
-    await db_connection.execute_query(
-        "SELECT pg_stat_statements_reset()", force_readonly=False
-    )
+    await db_connection.execute_query("SELECT pg_stat_statements_reset()", force_readonly=False)
 
     # Define queries that explicitly benefit from multi-column indexes
     # Use more extreme selectivity patterns and include ORDER BY clauses
@@ -735,43 +706,29 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
 
                 # Check if recommendation matches at least as a superset of the pattern
                 # (additional columns are ok)
-                if rec.table == expected_table and all(
-                    col in rec.columns for col in expected_columns
-                ):
-                    logger.debug(
-                        f"Found expected multi-column index: {rec.table}.{rec.columns}"
-                    )
+                if rec.table == expected_table and all(col in rec.columns for col in expected_columns):
+                    logger.debug(f"Found expected multi-column index: {rec.table}.{rec.columns}")
 
     # Lower threshold requirement - if test environment consistently finds at least 1, that's enough for validation
-    assert multi_column_indexes_found >= 1, (
-        f"Found no multi-column indexes. Details: {multi_column_indexes_details}"
-    )
+    assert multi_column_indexes_found >= 1, f"Found no multi-column indexes. Details: {multi_column_indexes_details}"
 
     # Print all recommendations for debugging - both single and multi-column
     logger.debug("\nAll index recommendations:")
     for rec in session.recommendations:
-        logger.debug(
-            f"{rec.definition} (benefit: {rec.progressive_improvement_multiple:.2f}x, size: {rec.estimated_size_bytes / 1024:.2f} KB)"
-        )
+        logger.debug(f"{rec.definition} (benefit: {rec.progressive_improvement_multiple:.2f}x, size: {rec.estimated_size_bytes / 1024:.2f} KB)")
 
     # Print multi-column recommendations separately
     logger.debug("\nMulti-column index recommendations:")
-    multi_column_recs = [
-        rec for rec in session.recommendations if len(rec.columns) >= 2
-    ]
+    multi_column_recs = [rec for rec in session.recommendations if len(rec.columns) >= 2]
     for rec in multi_column_recs:
-        logger.debug(
-            f"{rec.definition} (benefit: {rec.progressive_improvement_multiple:.2f}x, size: {rec.estimated_size_bytes / 1024:.2f} KB)"
-        )
+        logger.debug(f"{rec.definition} (benefit: {rec.progressive_improvement_multiple:.2f}x, size: {rec.estimated_size_bytes / 1024:.2f} KB)")
 
     # Test performance improvement with recommended indexes
     if not multi_column_recs:
         pytest.skip("No multi-column index recommendations found to test performance")
 
     # Use the multi-column recommendations we found
-    top_recs = multi_column_recs[
-        : min(3, len(multi_column_recs))
-    ]  # Up to top 3 or all if fewer
+    top_recs = multi_column_recs[: min(3, len(multi_column_recs))]  # Up to top 3 or all if fewer
 
     # Measure baseline performance
     baseline_times = {}
@@ -779,9 +736,7 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
         query = q["query"]
         start = time.time()
         try:
-            await db_connection.execute_query(
-                "EXPLAIN ANALYZE " + query, force_readonly=False
-            )
+            await db_connection.execute_query("EXPLAIN ANALYZE " + query, force_readonly=False)
             baseline_times[query] = time.time() - start
         except Exception as e:
             logger.warning(f"Error measuring baseline for query: {e}")
@@ -792,9 +747,7 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
         try:
             index_def = rec.definition.replace("hypopg_", "")
             await db_connection.execute_query(index_def, force_readonly=False)
-            created_indexes.append(
-                rec.definition.split()[2]
-            )  # Get index name for cleanup
+            created_indexes.append(rec.definition.split()[2])  # Get index name for cleanup
         except Exception as e:
             logger.warning(f"Error creating index {rec.definition}: {e}")
 
@@ -805,9 +758,7 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
         if query in baseline_times:  # Only test queries that ran successfully initially
             start = time.time()
             try:
-                await db_connection.execute_query(
-                    "EXPLAIN ANALYZE " + query, force_readonly=False
-                )
+                await db_connection.execute_query("EXPLAIN ANALYZE " + query, force_readonly=False)
                 indexed_times[query] = time.time() - start
             except Exception as e:
                 logger.warning(f"Error measuring indexed performance: {e}")
@@ -847,13 +798,9 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
     # Check if we measured performance improvements
     if improvements:
         avg_improvement = sum(improvements) / len(improvements)
-        logger.info(
-            f"\nAverage performance improvement for multi-column indexes: {avg_improvement:.2f}%"
-        )
+        logger.info(f"\nAverage performance improvement for multi-column indexes: {avg_improvement:.2f}%")
     else:
-        logger.warning(
-            "Could not measure performance improvements for multi-column indexes"
-        )
+        logger.warning("Could not measure performance improvements for multi-column indexes")
 
 
 @pytest.mark.asyncio
@@ -862,9 +809,7 @@ async def test_diminishing_returns(db_connection, create_dta):
     dta = create_dta
 
     # Clear pg_stat_statements
-    await db_connection.execute_query(
-        "SELECT pg_stat_statements_reset()", force_readonly=False
-    )
+    await db_connection.execute_query("SELECT pg_stat_statements_reset()", force_readonly=False)
 
     # Set up schema with tables designed to show diminishing returns
     await db_connection.execute_query(
@@ -982,9 +927,7 @@ async def test_diminishing_returns(db_connection, create_dta):
     dta.pareto_alpha = 2.0
 
     # Analyze the workload with 5% threshold
-    session_with_threshold = await dta.analyze_workload(
-        query_list=[q["query"] for q in queries], min_calls=1, min_avg_time_ms=1.0
-    )
+    session_with_threshold = await dta.analyze_workload(query_list=[q["query"] for q in queries], min_calls=1, min_avg_time_ms=1.0)
 
     # Check recommendations with 5% threshold
     assert isinstance(session_with_threshold, DTASession)
@@ -1012,9 +955,7 @@ async def test_diminishing_returns(db_connection, create_dta):
             low_improvement_recommendations += 1
 
     # We should have found recommendations for the high-improvement columns
-    assert high_improvement_recommendations > 0, (
-        "No recommendations for high-improvement columns"
-    )
+    assert high_improvement_recommendations > 0, "No recommendations for high-improvement columns"
 
     # We should have few or no recommendations for low-improvement columns
     assert low_improvement_recommendations == 0, (
@@ -1025,19 +966,13 @@ async def test_diminishing_returns(db_connection, create_dta):
     dta.min_time_improvement = 0.01
 
     # Analyze with 1% threshold
-    session_with_low_threshold = await dta.analyze_workload(
-        query_list=[q["query"] for q in queries], min_calls=1, min_avg_time_ms=1.0
-    )
+    session_with_low_threshold = await dta.analyze_workload(query_list=[q["query"] for q in queries], min_calls=1, min_avg_time_ms=1.0)
 
     # With lower threshold, we should get more recommendations
-    assert len(session_with_low_threshold.recommendations) >= len(
-        session_with_threshold.recommendations
-    )
+    assert len(session_with_low_threshold.recommendations) >= len(session_with_threshold.recommendations)
 
     # Clean up
-    await db_connection.execute_query(
-        "DROP TABLE IF EXISTS large_table", force_readonly=False
-    )
+    await db_connection.execute_query("DROP TABLE IF EXISTS large_table", force_readonly=False)
 
 
 @pytest.mark.asyncio
@@ -1142,62 +1077,40 @@ async def test_storage_cost_tradeoff(db_connection, create_dta):
     # This should favor small indexes with good benefit/cost ratio
     dta.pareto_alpha = 5.0  # Very sensitive to storage costs
 
-    session_storage_sensitive = await dta.analyze_workload(
-        query_list=[q["query"] for q in queries], min_calls=1, min_avg_time_ms=1.0
-    )
+    session_storage_sensitive = await dta.analyze_workload(query_list=[q["query"] for q in queries], min_calls=1, min_avg_time_ms=1.0)
 
     # Check that we have recommendations
     assert isinstance(session_storage_sensitive, DTASession)
     assert len(session_storage_sensitive.recommendations) > 0
 
     # Should prefer smaller indexes with good benefit/cost ratio
-    small_columns_recommended = any(
-        "small_col" in rec.columns for rec in session_storage_sensitive.recommendations
-    )
-    huge_columns_recommended = any(
-        "huge_col" in rec.columns for rec in session_storage_sensitive.recommendations
-    )
+    small_columns_recommended = any("small_col" in rec.columns for rec in session_storage_sensitive.recommendations)
+    huge_columns_recommended = any("huge_col" in rec.columns for rec in session_storage_sensitive.recommendations)
 
-    assert small_columns_recommended, (
-        "Small column index not recommended despite good benefit/cost ratio"
-    )
-    assert not huge_columns_recommended, (
-        "Huge column index recommended despite poor benefit/cost ratio"
-    )
+    assert small_columns_recommended, "Small column index not recommended despite good benefit/cost ratio"
+    assert not huge_columns_recommended, "Huge column index recommended despite poor benefit/cost ratio"
 
     # Now test with low storage sensitivity (alpha=0.5)
     # This should include more indexes, even larger ones
     dta.pareto_alpha = 0.5  # Less sensitive to storage costs
 
-    session_performance_focused = await dta.analyze_workload(
-        query_list=[q["query"] for q in queries], min_calls=1, min_avg_time_ms=1.0
-    )
+    session_performance_focused = await dta.analyze_workload(query_list=[q["query"] for q in queries], min_calls=1, min_avg_time_ms=1.0)
 
     # Should include more recommendations
-    assert len(session_performance_focused.recommendations) >= len(
-        session_storage_sensitive.recommendations
-    )
+    assert len(session_performance_focused.recommendations) >= len(session_storage_sensitive.recommendations)
 
     # Calculate the total size of recommendations in each approach
     def total_recommendation_size(recs):
         return sum(rec.estimated_size_bytes for rec in recs)
 
-    size_sensitive = total_recommendation_size(
-        session_storage_sensitive.recommendations
-    )
-    size_performance = total_recommendation_size(
-        session_performance_focused.recommendations
-    )
+    size_sensitive = total_recommendation_size(session_storage_sensitive.recommendations)
+    size_performance = total_recommendation_size(session_performance_focused.recommendations)
 
     # Performance-focused approach should use more storage
-    assert size_performance >= size_sensitive, (
-        "Performance-focused approach should use more storage for indexes"
-    )
+    assert size_performance >= size_sensitive, "Performance-focused approach should use more storage for indexes"
 
     # Clean up
-    await db_connection.execute_query(
-        "DROP TABLE IF EXISTS wide_table", force_readonly=False
-    )
+    await db_connection.execute_query("DROP TABLE IF EXISTS wide_table", force_readonly=False)
 
 
 @pytest.mark.asyncio
@@ -1264,9 +1177,7 @@ async def test_pareto_optimal_index_selection(db_connection, create_dta):
     dta.min_time_improvement = 0.05  # 5% minimum improvement threshold
 
     # Run DTA with the workload
-    session = await dta.analyze_workload(
-        query_list=queries, min_calls=1, min_avg_time_ms=1.0
-    )
+    session = await dta.analyze_workload(query_list=queries, min_calls=1, min_avg_time_ms=1.0)
 
     # Verify we got recommendations
     assert isinstance(session, DTASession)
@@ -1281,60 +1192,37 @@ async def test_pareto_optimal_index_selection(db_connection, create_dta):
 
     # Verify the recommendations follow Pareto principles
     # 1. col1 (high benefit, small size) should be recommended
-    assert any("col1" in rec.columns for rec in session.recommendations), (
-        "col1 should be recommended (high benefit/size ratio)"
-    )
+    assert any("col1" in rec.columns for rec in session.recommendations), "col1 should be recommended (high benefit/size ratio)"
 
     # 2. The large, low-benefit index should not be recommended or be low priority
-    col3_recommendations = [
-        rec for rec in session.recommendations if "col3" in rec.columns
-    ]
+    col3_recommendations = [rec for rec in session.recommendations if "col3" in rec.columns]
     if col3_recommendations:
         # If present, it should be lower priority (later in the list)
-        col3_position = min(
-            i for i, rec in enumerate(session.recommendations) if "col3" in rec.columns
-        )
-        col1_position = min(
-            i for i, rec in enumerate(session.recommendations) if "col1" in rec.columns
-        )
-        assert col3_position > col1_position, (
-            "col3 (low benefit/size ratio) should be lower priority than col1"
-        )
+        col3_position = min(i for i, rec in enumerate(session.recommendations) if "col3" in rec.columns)
+        col1_position = min(i for i, rec in enumerate(session.recommendations) if "col1" in rec.columns)
+        assert col3_position > col1_position, "col3 (low benefit/size ratio) should be lower priority than col1"
 
     # 3. Run again with different alpha values to show how preferences change
     # With high alpha (storage sensitive)
     dta.pareto_alpha = 5.0
-    session_storage_sensitive = await dta.analyze_workload(
-        query_list=queries, min_calls=1, min_avg_time_ms=1.0
-    )
+    session_storage_sensitive = await dta.analyze_workload(query_list=queries, min_calls=1, min_avg_time_ms=1.0)
 
     # With low alpha (performance sensitive)
     dta.pareto_alpha = 0.5
-    session_performance_sensitive = await dta.analyze_workload(
-        query_list=queries, min_calls=1, min_avg_time_ms=1.0
-    )
+    session_performance_sensitive = await dta.analyze_workload(query_list=queries, min_calls=1, min_avg_time_ms=1.0)
 
     # Calculate total size of recommendations for each approach
-    storage_size = sum(
-        rec.estimated_size_bytes for rec in session_storage_sensitive.recommendations
-    )
-    performance_size = sum(
-        rec.estimated_size_bytes
-        for rec in session_performance_sensitive.recommendations
-    )
+    storage_size = sum(rec.estimated_size_bytes for rec in session_storage_sensitive.recommendations)
+    performance_size = sum(rec.estimated_size_bytes for rec in session_performance_sensitive.recommendations)
 
     # Storage-sensitive should use less space
     logger.info(f"Storage-sensitive total size: {storage_size / 1024:.1f}KB")
     logger.info(f"Performance-sensitive total size: {performance_size / 1024:.1f}KB")
 
-    assert storage_size <= performance_size, (
-        "Storage-sensitive recommendations should use less space"
-    )
+    assert storage_size <= performance_size, "Storage-sensitive recommendations should use less space"
 
     # Clean up
-    await db_connection.execute_query(
-        "DROP TABLE IF EXISTS pareto_test", force_readonly=False
-    )
+    await db_connection.execute_query("DROP TABLE IF EXISTS pareto_test", force_readonly=False)
 
 
 @pytest.mark.asyncio
@@ -1404,6 +1292,4 @@ async def test_pareto_optimization_basic(db_connection, create_dta):
         logger.info(f"Recommended index: {rec.definition}")
 
     # Clean up
-    await db_connection.execute_query(
-        "DROP TABLE IF EXISTS pareto_test", force_readonly=False
-    )
+    await db_connection.execute_query("DROP TABLE IF EXISTS pareto_test", force_readonly=False)

@@ -34,9 +34,7 @@ class ReplicationCalc:
             result.append("This is a replica database.")
             # Check replication status
             if not metrics.is_replicating:
-                result.append(
-                    "WARNING: Replica is not actively replicating from primary!"
-                )
+                result.append("WARNING: Replica is not actively replicating from primary!")
             else:
                 result.append("Replica is actively replicating from primary.")
 
@@ -45,9 +43,7 @@ class ReplicationCalc:
                 if metrics.replication_lag_seconds == 0:
                     result.append("No replication lag detected.")
                 else:
-                    result.append(
-                        f"Replication lag: {metrics.replication_lag_seconds:.1f} seconds"
-                    )
+                    result.append(f"Replication lag: {metrics.replication_lag_seconds:.1f} seconds")
         else:
             result.append("This is a primary database.")
             if metrics.is_replicating:
@@ -98,9 +94,7 @@ class ReplicationCalc:
         if await self._get_server_version() >= 100000:
             lag_condition = "pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn()"
         else:
-            lag_condition = (
-                "pg_last_xlog_receive_location() = pg_last_xlog_replay_location()"
-            )
+            lag_condition = "pg_last_xlog_receive_location() = pg_last_xlog_replay_location()"
 
         try:
             result = await self.sql_driver.execute_query(f"""
@@ -119,9 +113,7 @@ class ReplicationCalc:
 
     async def _get_replication_slots(self) -> list[ReplicationSlot]:
         """Get information about replication slots."""
-        if await self._get_server_version() < 90400 or not self._feature_supported(
-            "replication_slots"
-        ):
+        if await self._get_server_version() < 90400 or not self._feature_supported("replication_slots"):
             return []
 
         try:
@@ -153,9 +145,7 @@ class ReplicationCalc:
             return False
 
         try:
-            result = await self.sql_driver.execute_query(
-                "SELECT state FROM pg_stat_replication"
-            )
+            result = await self.sql_driver.execute_query("SELECT state FROM pg_stat_replication")
             result_list = [dict(x.cells) for x in result] if result is not None else []
             return bool(result_list and len(result_list) > 0)
         except Exception:
@@ -167,9 +157,7 @@ class ReplicationCalc:
         if self._server_version is None:
             result = await self.sql_driver.execute_query("SHOW server_version_num")
             result_list = [dict(x.cells) for x in result] if result is not None else []
-            self._server_version = (
-                int(result_list[0]["server_version_num"]) if result_list else 0
-            )
+            self._server_version = int(result_list[0]["server_version_num"]) if result_list else 0
         return self._server_version
 
     def _feature_supported(self, feature: str) -> bool:

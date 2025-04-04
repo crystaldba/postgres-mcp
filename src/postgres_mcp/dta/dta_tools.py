@@ -1,13 +1,18 @@
 """Database Tuning Advisor (DTA) tool for Postgres MCP."""
 
 import logging
-import humanize
-from typing import Any, Dict, List
+from typing import Any
+from typing import Dict
+from typing import List
 
+import humanize
+
+from ..sql import SqlDriver
 from .artifacts import ExplainPlanArtifact
 from .artifacts import calculate_improvement_multiple
-from .dta_calc import DatabaseTuningAdvisor, DTASession, IndexConfig
-from ..sql import SqlDriver
+from .dta_calc import DatabaseTuningAdvisor
+from .dta_calc import DTASession
+from .dta_calc import IndexConfig
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +34,7 @@ class DTATool:
         """Initialize the DatabaseTuningAdvisor if not already initialized."""
         self.dta = DatabaseTuningAdvisor(self.sql_driver)
 
-    async def _create_recommendations_response(
-        self, session: DTASession
-    ) -> Dict[str, Any]:
+    async def _create_recommendations_response(self, session: DTASession) -> Dict[str, Any]:
         """
         Create a structured JSON response from a DTASession.
 
@@ -53,21 +56,11 @@ class DTATool:
             }
 
         # Calculate overall statistics
-        total_size_bytes = sum(
-            rec.estimated_size_bytes for rec in session.recommendations
-        )
+        total_size_bytes = sum(rec.estimated_size_bytes for rec in session.recommendations)
 
         # Calculate overall performance improvement
-        initial_cost = (
-            session.recommendations[0].progressive_base_cost
-            if session.recommendations
-            else 0
-        )
-        final_cost = (
-            session.recommendations[-1].progressive_recommendation_cost
-            if session.recommendations
-            else 1.0
-        )
+        initial_cost = session.recommendations[0].progressive_base_cost if session.recommendations else 0
+        final_cost = session.recommendations[-1].progressive_recommendation_cost if session.recommendations else 1.0
         overall_improvement = calculate_improvement_multiple(initial_cost, final_cost)
 
         # Build recommendations list
@@ -97,9 +90,7 @@ class DTATool:
                     "(i.e., more than 8191 bytes)."
                 )
             elif rec.potential_problematic_reason:
-                rec_dict["warning"] = (
-                    f"This index is potentially problematic because it includes a {rec.potential_problematic_reason} column."
-                )
+                rec_dict["warning"] = f"This index is potentially problematic because it includes a {rec.potential_problematic_reason} column."
             recommendations.append(rec_dict)
 
         # Create the result JSON object with summary
@@ -152,18 +143,11 @@ class DTATool:
         if unique_queries and self.dta:
             for query in unique_queries:
                 # Get plan with no indexes
-                before_plan = await self.dta.get_explain_plan_with_indexes(
-                    query, frozenset()
-                )
+                before_plan = await self.dta.get_explain_plan_with_indexes(query, frozenset())
 
                 # Get plan with all recommended indexes
-                index_configs = frozenset(
-                    IndexConfig(rec.table, rec.columns, rec.using)
-                    for rec in session.recommendations
-                )
-                after_plan = await self.dta.get_explain_plan_with_indexes(
-                    query, index_configs
-                )
+                index_configs = frozenset(IndexConfig(rec.table, rec.columns, rec.using) for rec in session.recommendations)
+                after_plan = await self.dta.get_explain_plan_with_indexes(query, index_configs)
 
                 # Extract costs from plans
                 base_cost = self.dta.extract_cost_from_json_plan(before_plan)
@@ -172,15 +156,11 @@ class DTATool:
                 # Calculate improvement multiple
                 improvement_multiple = "∞"  # Default for cases where new_cost is zero
                 if new_cost > 0 and base_cost > 0:
-                    improvement_multiple = (
-                        f"{calculate_improvement_multiple(base_cost, new_cost):.1f}"
-                    )
+                    improvement_multiple = f"{calculate_improvement_multiple(base_cost, new_cost):.1f}"
 
                 before_plan_text = ExplainPlanArtifact.format_plan_summary(before_plan)
                 after_plan_text = ExplainPlanArtifact.format_plan_summary(after_plan)
-                diff_text = ExplainPlanArtifact.create_plan_diff(
-                    before_plan, after_plan
-                )
+                diff_text = ExplainPlanArtifact.create_plan_diff(before_plan, after_plan)
 
                 # Add to query impact with costs and improvement
                 query_impact.append(

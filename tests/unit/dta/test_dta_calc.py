@@ -1,20 +1,23 @@
-import json
-import pytest
-import pytest_asyncio
 import asyncio
+import json
 from logging import getLogger
 from typing import Any
 from typing import Dict
 from typing import Set
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import patch
+
+import pytest
+import pytest_asyncio
 
 from postgres_mcp.dta import ColumnCollector
 from postgres_mcp.dta import ConditionColumnCollector
 from postgres_mcp.dta import DatabaseTuningAdvisor
+from postgres_mcp.dta import ExplainPlanArtifact
 from postgres_mcp.dta import Index
 from postgres_mcp.dta import IndexConfig
 from postgres_mcp.dta import parse_sql
-from postgres_mcp.dta import ExplainPlanArtifact
 
 logger = getLogger(__name__)
 
@@ -34,9 +37,7 @@ async def async_sql_driver():
 
 @pytest_asyncio.fixture
 async def create_dta(async_sql_driver):
-    return DatabaseTuningAdvisor(
-        sql_driver=async_sql_driver, budget_mb=10, max_runtime_seconds=60
-    )
+    return DatabaseTuningAdvisor(sql_driver=async_sql_driver, budget_mb=10, max_runtime_seconds=60)
 
 
 # Convert the unittest.TestCase class to use pytest
@@ -76,10 +77,7 @@ async def test_index_initialization():
     )
     assert idx.table == "users"
     assert idx.columns == ("name", "email")
-    assert (
-        idx.definition
-        == "CREATE INDEX crystaldba_idx_users_name_email_2 ON users USING btree (name, email)"
-    )
+    assert idx.definition == "CREATE INDEX crystaldba_idx_users_name_email_2 ON users USING btree (name, email)"
 
 
 @pytest.mark.asyncio
@@ -153,16 +151,10 @@ async def test_generate_candidates(async_sql_driver, create_dta):
         responses_index += 1
         logger.info(
             f"Query: {query}\n    Response: {
-                list(json.dumps(x.cells) for x in responses[responses_index - 1])
-                if responses_index <= len(responses)
-                else None
+                list(json.dumps(x.cells) for x in responses[responses_index - 1]) if responses_index <= len(responses) else None
             }\n--------------------------------------------------------"
         )
-        return (
-            responses[responses_index - 1]
-            if responses_index <= len(responses)
-            else None
-        )
+        return responses[responses_index - 1] if responses_index <= len(responses) else None
 
     async_sql_driver.execute_query = AsyncMock(side_effect=mock_execute_query)
 
@@ -193,13 +185,9 @@ async def test_analyze_workload(async_sql_driver, create_dta):
             ]
         elif "EXPLAIN" in query:
             if "COSTS TRUE" in query:
-                return [
-                    MockCell({"QUERY PLAN": [{"Plan": {"Total Cost": 80.0}}]})
-                ]  # Cost with hypothetical index
+                return [MockCell({"QUERY PLAN": [{"Plan": {"Total Cost": 80.0}}]})]  # Cost with hypothetical index
             else:
-                return [
-                    MockCell({"QUERY PLAN": [{"Plan": {"Total Cost": 100.0}}]})
-                ]  # Current cost
+                return [MockCell({"QUERY PLAN": [{"Plan": {"Total Cost": 100.0}}]})]  # Current cost
         elif "hypopg_reset" in query:
             return None
         elif "FROM information_schema.columns c" in query:
@@ -216,9 +204,7 @@ async def test_analyze_workload(async_sql_driver, create_dta):
                 ),
             ]
         elif "pg_stats" in query:
-            return [
-                MockCell({"total_width": 10, "total_distinct": 100})
-            ]  # For index size estimation
+            return [MockCell({"total_width": 10, "total_distinct": 100})]  # For index size estimation
         elif "pg_extension" in query:
             return [MockCell({"exists": 1})]
         elif "hypopg_disable_index" in query:
@@ -245,9 +231,7 @@ async def test_analyze_workload(async_sql_driver, create_dta):
 async def test_error_handling(async_sql_driver, create_dta):
     """Test error handling in critical methods."""
     # Test HypoPG setup failure
-    async_sql_driver.execute_query = AsyncMock(
-        side_effect=RuntimeError("HypoPG not available")
-    )
+    async_sql_driver.execute_query = AsyncMock(side_effect=RuntimeError("HypoPG not available"))
     dta = create_dta
     session = await dta.analyze_workload(min_calls=50, min_avg_time_ms=5.0)
     assert session.error == "HypoPG not available"
@@ -271,54 +255,42 @@ async def test_index_exists(create_dta):
         # Basic case - exact match
         {
             "candidate": Index("users", ("name",)),
-            "existing_defs": {
-                "CREATE INDEX crystaldba_idx_users_name_1 ON users USING btree (name)"
-            },
+            "existing_defs": {"CREATE INDEX crystaldba_idx_users_name_1 ON users USING btree (name)"},
             "expected": True,
             "description": "Exact match",
         },
         # Different name but same structure
         {
             "candidate": Index("users", ("id",)),
-            "existing_defs": {
-                "CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"
-            },
+            "existing_defs": {"CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"},
             "expected": True,
             "description": "Primary key detection",
         },
         # Different schema but same table and columns
         {
             "candidate": Index("users", ("email",)),
-            "existing_defs": {
-                "CREATE UNIQUE INDEX users_email_key ON public.users USING btree (email)"
-            },
+            "existing_defs": {"CREATE UNIQUE INDEX users_email_key ON public.users USING btree (email)"},
             "expected": True,
             "description": "Schema-qualified match",
         },
         # Multi-column index with different order
         {
             "candidate": Index("orders", ("customer_id", "product_id"), "hash"),
-            "existing_defs": {
-                "CREATE INDEX orders_idx ON orders USING hash (product_id, customer_id)"
-            },
+            "existing_defs": {"CREATE INDEX orders_idx ON orders USING hash (product_id, customer_id)"},
             "expected": True,
             "description": "Hash index with different column order",
         },
         # Partial match - not enough
         {
             "candidate": Index("products", ("category", "name", "price")),
-            "existing_defs": {
-                "CREATE INDEX products_category_idx ON products USING btree (category)"
-            },
+            "existing_defs": {"CREATE INDEX products_category_idx ON products USING btree (category)"},
             "expected": False,
             "description": "Partial coverage - not enough",
         },
         # Complete match but different type
         {
             "candidate": Index("payments", ("method", "status"), "hash"),
-            "existing_defs": {
-                "CREATE INDEX payments_method_status_idx ON payments USING btree (method, status)"
-            },
+            "existing_defs": {"CREATE INDEX payments_method_status_idx ON payments USING btree (method, status)"},
             "expected": False,
             "description": "Different index type",
         },
@@ -332,9 +304,7 @@ async def test_index_exists(create_dta):
         # Complex case with expression index
         {
             "candidate": Index("users", ("name",)),
-            "existing_defs": {
-                "CREATE INDEX users_name_idx ON users USING btree (lower(name))"
-            },
+            "existing_defs": {"CREATE INDEX users_name_idx ON users USING btree (lower(name))"},
             "expected": False,
             "description": "Expression index vs regular column",
         },
@@ -395,9 +365,7 @@ async def test_ndistinct_handling(create_dta):
 
     for case in test_cases:
         result = dta._estimate_index_size_internal(stats=case["stats"])
-        assert result == case["expected"], (
-            f"Failed for n_distinct={case['stats']['total_distinct']}. Expected: {case['expected']}, Got: {result}"
-        )
+        assert result == case["expected"], f"Failed for n_distinct={case['stats']['total_distinct']}. Expected: {case['expected']}, Got: {result}"
 
 
 @pytest.mark.asyncio
@@ -461,14 +429,10 @@ async def test_filter_long_text_columns(async_sql_driver, create_dta):
         Index("users", ("name",)),  # Should keep (short varchar)
         Index("users", ("bio",)),  # Should filter out (long text)
         Index("users", ("description",)),  # Should filter out (long varchar)
-        Index(
-            "users", ("status",)
-        ),  # Should keep (unlimited varchar but short actual length)
+        Index("users", ("status",)),  # Should keep (unlimited varchar but short actual length)
         Index("users", ("name", "status")),  # Should keep (both columns ok)
         Index("users", ("name", "bio")),  # Should filter out (contains long text)
-        Index(
-            "users", ("description", "status")
-        ),  # Should filter out (contains long varchar)
+        Index("users", ("description", "status")),  # Should filter out (contains long varchar)
     ]
 
     # Execute the filter with max_text_length = 100
@@ -603,16 +567,10 @@ async def test_basic_workload_analysis(async_sql_driver):
         responses_index += 1
         logger.info(
             f"Query: {query}\n    Response: {
-                list(json.dumps(x.cells) for x in responses[responses_index - 1])
-                if responses_index <= len(responses)
-                else None
+                list(json.dumps(x.cells) for x in responses[responses_index - 1]) if responses_index <= len(responses) else None
             }\n--------------------------------------------------------"
         )
-        return (
-            responses[responses_index - 1]
-            if responses_index <= len(responses)
-            else None
-        )
+        return responses[responses_index - 1] if responses_index <= len(responses) else None
 
     async_sql_driver.execute_query = AsyncMock(side_effect=mock_execute_query)
 
@@ -620,12 +578,8 @@ async def test_basic_workload_analysis(async_sql_driver):
 
     # Verify recommendations
     assert len(session.recommendations) > 0
-    assert any(
-        r.table == "users" and "name" in r.columns for r in session.recommendations
-    )
-    assert any(
-        r.table == "orders" and "user_id" in r.columns for r in session.recommendations
-    )
+    assert any(r.table == "users" and "name" in r.columns for r in session.recommendations)
+    assert any(r.table == "orders" and "user_id" in r.columns for r in session.recommendations)
 
 
 @pytest.mark.asyncio
@@ -658,9 +612,7 @@ async def test_replace_parameters_numeric(create_dta):
     dta = create_dta
 
     dta._column_stats_cache = {}
-    dta.extract_columns = MagicMock(
-        return_value={"orders": ["id", "amount", "user_id"]}
-    )
+    dta.extract_columns = MagicMock(return_value={"orders": ["id", "amount", "user_id"]})
     dta._identify_parameter_column = MagicMock(return_value=("orders", "amount"))
     dta._get_column_statistics = AsyncMock(
         return_value={
@@ -688,9 +640,7 @@ async def test_replace_parameters_date(create_dta):
     dta = create_dta
 
     dta._column_stats_cache = {}
-    dta.extract_columns = MagicMock(
-        return_value={"orders": ["id", "order_date", "user_id"]}
-    )
+    dta.extract_columns = MagicMock(return_value={"orders": ["id", "order_date", "user_id"]})
     dta._identify_parameter_column = MagicMock(return_value=("orders", "order_date"))
     dta._get_column_statistics = AsyncMock(
         return_value={
@@ -1122,9 +1072,7 @@ async def test_condition_collector_with_order_by_alias(async_sql_driver):
 @pytest.mark.asyncio
 async def test_enumerate_greedy_pareto_cost_benefit(async_sql_driver):
     """Test the Pareto optimal implementation with the specified cost/benefit analysis."""
-    dta = DatabaseTuningAdvisor(
-        sql_driver=async_sql_driver, budget_mb=1000, max_runtime_seconds=120
-    )
+    dta = DatabaseTuningAdvisor(sql_driver=async_sql_driver, budget_mb=1000, max_runtime_seconds=120)
 
     # Mock the _check_time method to always return False (no time limit reached)
     dta._check_time = MagicMock(return_value=False)  # type: ignore
@@ -1322,18 +1270,14 @@ def test_explain_plan_diff():
     assert "17212" in diff_output
 
     # Verify it mentions the structural change
-    assert (
-        "sequential scans replaced" in diff_output or "new index scans" in diff_output
-    )
+    assert "sequential scans replaced" in diff_output or "new index scans" in diff_output
 
     # Test with invalid plan data
     empty_diff = ExplainPlanArtifact.create_plan_diff({}, {})
     assert "Cannot generate diff" in empty_diff
 
     # Test with missing Plan field
-    invalid_diff = ExplainPlanArtifact.create_plan_diff(
-        {"NotAPlan": {}}, {"NotAPlan": {}}
-    )
+    invalid_diff = ExplainPlanArtifact.create_plan_diff({"NotAPlan": {}}, {"NotAPlan": {}})
     assert "Cannot generate diff" in invalid_diff
 
 

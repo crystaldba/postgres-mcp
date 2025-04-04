@@ -17,9 +17,7 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
     except (docker_errors.DockerException, ConnectionError):
         pytest.skip("Docker is not available")
 
-    container_name = (
-        f"postgres-crystal-test-{version.replace(':', '_')}-{os.urandom(4).hex()}"
-    )
+    container_name = f"postgres-crystal-test-{version.replace(':', '_')}-{os.urandom(4).hex()}"
     current_dir = Path(__file__).parent.absolute()
 
     postgres_password = "test_password"
@@ -56,9 +54,7 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
         else:
             raise Exception("Timeout waiting for PostgreSQL to start")
 
-        connection_string = (
-            f"postgresql://postgres:{postgres_password}@localhost:{port}/{postgres_db}"
-        )
+        connection_string = f"postgresql://postgres:{postgres_password}@localhost:{port}/{postgres_db}"
 
         yield connection_string, version
 

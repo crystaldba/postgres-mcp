@@ -1,15 +1,18 @@
 """SQL driver adapter for PostgreSQL connections."""
 
 import logging
+import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from urllib.parse import urlparse
+from urllib.parse import urlunparse
 
-from typing_extensions import LiteralString
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
-from urllib.parse import urlparse, urlunparse
-import re
-
+from typing_extensions import LiteralString
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +68,7 @@ class DbConnPool:
         self._is_valid = False
         self._last_error = None
 
-    async def pool_connect(
-        self, connection_url: Optional[str] = None
-    ) -> AsyncConnectionPool:
+    async def pool_connect(self, connection_url: Optional[str] = None) -> AsyncConnectionPool:
         """Initialize connection pool with retry logic."""
         # If we already have a valid pool, return it
         if self.pool and self._is_valid:
@@ -177,9 +178,7 @@ class SqlDriver:
             self.is_pool = True
             return self.conn
         else:
-            raise ValueError(
-                "Connection not established. Either conn or engine_url must be provided"
-            )
+            raise ValueError("Connection not established. Either conn or engine_url must be provided")
 
     async def execute_query(
         self,
@@ -209,14 +208,10 @@ class SqlDriver:
                 # For pools, get a connection from the pool
                 pool = await self.conn.pool_connect()
                 async with pool.connection() as connection:
-                    return await self._execute_with_connection(
-                        connection, query, params, force_readonly
-                    )
+                    return await self._execute_with_connection(connection, query, params, force_readonly)
             else:
                 # Direct connection approach
-                return await self._execute_with_connection(
-                    self.conn, query, params, force_readonly
-                )
+                return await self._execute_with_connection(self.conn, query, params, force_readonly)
         except Exception as e:
             # Mark pool as invalid if there was a connection issue
             if self.conn and self.is_pool:
@@ -227,9 +222,7 @@ class SqlDriver:
 
             raise e
 
-    async def _execute_with_connection(
-        self, connection, query, params, force_readonly
-    ) -> Optional[List[RowResult]]:
+    async def _execute_with_connection(self, connection, query, params, force_readonly) -> Optional[List[RowResult]]:
         """Execute query with the given connection."""
         transaction_started = False
         try:
