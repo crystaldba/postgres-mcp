@@ -608,7 +608,7 @@ async def main():
 
     # Add the query tool with a description appropriate to the access mode
     if current_access_mode == AccessMode.UNRESTRICTED:
-        mcp.add_tool(execute_sql, description="Run an unrestricted SQL query")
+        mcp.add_tool(execute_sql, description="Execute any SQL query")
     else:
         mcp.add_tool(execute_sql, description="Run a read-only SQL query")
 
