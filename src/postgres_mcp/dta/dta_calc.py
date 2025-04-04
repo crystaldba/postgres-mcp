@@ -15,6 +15,7 @@ from pglast.ast import Node
 from pglast.ast import SelectStmt
 
 from ..artifacts import calculate_improvement_multiple
+from ..explain import ExplainPlanTool
 from ..sql import ColumnCollector
 from ..sql import IndexConfig
 from ..sql import SafeSqlDriver
@@ -1224,7 +1225,8 @@ class DatabaseTuningAdvisor:
             return existing_plan
 
         # Generate the plan using the static method
-        plan = await self._sql_bind_params.generate_explain_plan_with_hypothetical_indexes(query_text, indexes, self)
+        explain_plan_tool = ExplainPlanTool(self.sql_driver)
+        plan = await explain_plan_tool.generate_explain_plan_with_hypothetical_indexes(query_text, indexes, self)
 
         # Cache the result
         self._explain_plans_cache[cache_key] = plan

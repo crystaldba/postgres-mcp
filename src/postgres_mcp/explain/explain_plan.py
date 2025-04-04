@@ -10,6 +10,7 @@ from typing import Any
 from ..artifacts import ErrorResult
 from ..artifacts import ExplainPlanArtifact
 from ..sql import IndexConfig
+from ..sql import SafeSqlDriver
 from ..sql import SqlBindParams
 from ..sql import check_postgres_version_requirement
 
@@ -118,8 +119,7 @@ class ExplainPlanTool:
             )
 
             # Generate the explain plan using the static method
-            bind_params = SqlBindParams(self.sql_driver)
-            plan_data = await bind_params.generate_explain_plan_with_hypothetical_indexes(sql_query, indexes)
+            plan_data = await self.generate_explain_plan_with_hypothetical_indexes(sql_query, indexes)
 
             # Check if we got a valid plan
             if not plan_data or not isinstance(plan_data, dict) or "Plan" not in plan_data:
@@ -174,3 +174,54 @@ class ExplainPlanTool:
                 return ErrorResult(f"Internal error converting explain plan - do not retry: {e}")
         except Exception as e:
             return ErrorResult(f"Error executing explain plan: {e}")
+
+    async def generate_explain_plan_with_hypothetical_indexes(
+        self,
+        query_text: str,
+        indexes: frozenset[IndexConfig],
+        dta=None,
+    ) -> dict[str, Any]:
+        """
+        Generate an explain plan for a query with specified indexes.
+
+        Args:
+            sql_driver: SQL driver to execute the query
+            query_text: The SQL query to explain
+            indexes: A frozenset of IndexConfig objects representing the indexes to enable
+
+        Returns:
+            The explain plan as a dictionary
+        """
+        try:
+            # Create the indexes query
+            create_indexes_query = "SELECT hypopg_reset();"
+            if len(indexes) > 0:
+                create_indexes_query += SafeSqlDriver.param_sql_to_query(
+                    "SELECT hypopg_create_index({});" * len(indexes),
+                    [idx.definition for idx in indexes],
+                )
+
+            # Execute explain with the indexes
+            explain_plan_query = f"{create_indexes_query} EXPLAIN ({'COSTS TRUE, ' if indexes else ''}FORMAT JSON) {query_text}"
+            plan_result = await self.sql_driver.execute_query(explain_plan_query)  # type: ignore
+
+            # Extract the plan
+            if plan_result and plan_result[0].cells.get("QUERY PLAN"):
+                plan_data = plan_result[0].cells.get("QUERY PLAN")
+                if isinstance(plan_data, list) and len(plan_data) > 0:
+                    return plan_data[0]
+                else:
+                    dta.dta_trace(  # type: ignore
+                        f"      - plan_data is an empty list with plan_data type: {type(plan_data)}"
+                    )  # type: ignore
+
+            dta.dta_trace("      - returning empty plan")  # type: ignore
+            # Return empty plan if no result
+            return {"Plan": {"Total Cost": float("inf")}}
+
+        except Exception as e:
+            logger.error(
+                f"Error getting explain plan for query: {query_text} with error: {e}",
+                exc_info=True,
+            )
+            return {"Plan": {"Total Cost": float("inf")}}

@@ -15,7 +15,6 @@ from pglast.ast import SortBy
 from pglast.ast import SortGroupClause
 from pglast.visitors import Visitor
 
-from .index import IndexConfig
 from .safe_sql import SafeSqlDriver
 from .sql_driver import SqlDriver
 
@@ -800,54 +799,3 @@ class SqlBindParams:
 
         except Exception:
             return {}
-
-    async def generate_explain_plan_with_hypothetical_indexes(
-        self,
-        query_text: str,
-        indexes: frozenset[IndexConfig],
-        dta=None,
-    ) -> dict[str, Any]:
-        """
-        Generate an explain plan for a query with specified indexes.
-
-        Args:
-            sql_driver: SQL driver to execute the query
-            query_text: The SQL query to explain
-            indexes: A frozenset of IndexConfig objects representing the indexes to enable
-
-        Returns:
-            The explain plan as a dictionary
-        """
-        try:
-            # Create the indexes query
-            create_indexes_query = "SELECT hypopg_reset();"
-            if len(indexes) > 0:
-                create_indexes_query += SafeSqlDriver.param_sql_to_query(
-                    "SELECT hypopg_create_index({});" * len(indexes),
-                    [idx.definition for idx in indexes],
-                )
-
-            # Execute explain with the indexes
-            explain_plan_query = f"{create_indexes_query} EXPLAIN ({'COSTS TRUE, ' if indexes else ''}FORMAT JSON) {query_text}"
-            plan_result = await self.sql_driver.execute_query(explain_plan_query)  # type: ignore
-
-            # Extract the plan
-            if plan_result and plan_result[0].cells.get("QUERY PLAN"):
-                plan_data = plan_result[0].cells.get("QUERY PLAN")
-                if isinstance(plan_data, list) and len(plan_data) > 0:
-                    return plan_data[0]
-                else:
-                    dta.dta_trace(  # type: ignore
-                        f"      - plan_data is an empty list with plan_data type: {type(plan_data)}"
-                    )  # type: ignore
-
-            dta.dta_trace("      - returning empty plan")  # type: ignore
-            # Return empty plan if no result
-            return {"Plan": {"Total Cost": float("inf")}}
-
-        except Exception as e:
-            logger.error(
-                f"Error getting explain plan for query: {query_text} with error: {e}",
-                exc_info=True,
-            )
-            return {"Plan": {"Total Cost": float("inf")}}
