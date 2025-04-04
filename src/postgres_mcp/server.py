@@ -364,7 +364,7 @@ If there is no hypothetical index, you can pass an empty list.""",
         result: ExplainPlanArtifact | ErrorResult | None = None
 
         # If hypothetical indexes are specified, check for HypoPG extension
-        if len(hypothetical_indexes) > 0:
+        if hypothetical_indexes and len(hypothetical_indexes) > 0:
             if analyze:
                 return format_error_response("Cannot use analyze and hypothetical indexes together")
             try:
