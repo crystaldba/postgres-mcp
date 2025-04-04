@@ -1,13 +1,12 @@
 import json
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from postgres_mcp.dta.artifacts import ExplainPlanArtifact
 from postgres_mcp.explain.tools import (
     ExplainPlanTool,
     ErrorResult,
-    JsonResult,
 )
 
 

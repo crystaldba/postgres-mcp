@@ -27,6 +27,7 @@ class JsonResult:
         self.value = json.dumps(data, indent=2)
         self.data = data
 
+
 class ExplainPlanTool:
     """Tool for generating and analyzing PostgreSQL explain plans."""
 

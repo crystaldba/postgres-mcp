@@ -365,18 +365,81 @@ async def top_slow_queries(
 
 
 @mcp.tool(
-    description="Explains the execution plan for a SQL query, showing how the database will execute it and its estimated cost."
+    description="Explains the execution plan for a SQL query, showing how the database will execute it and provides detailed cost estimates."
 )
 async def explain_query(
     sql: str = Field(description="SQL query to explain"),
+    analyze: bool = Field(
+        description="When True, actually runs the query to show real execution statistics instead of estimates. Takes longer but provides more accurate information.",
+        default=False,
+    ),
+    hypothetical_indexes: list[dict[str, Any]] | None = Field(
+        description="""Optional list of hypothetical indexes to simulate. Each index must be a dictionary with these keys:
+                        - 'table': The table name to add the index to (e.g., 'users')
+                        - 'columns': List of column names to include in the index (e.g., ['email'] or ['last_name', 'first_name'])
+                        - 'using': Optional index method (default: 'btree', other options include 'hash', 'gist', etc.)
+
+                    Examples: [
+                        {"table": "users", "columns": ["email"], "using": "btree"},
+                        {"table": "orders", "columns": ["user_id", "created_at"]}
+                    ]""",
+        default=None,
+    ),
 ) -> ResponseType:
-    """Explains the execution plan for a SQL query."""
+    """
+    Explains the execution plan for a SQL query.
+
+    Args:
+        sql: The SQL query to explain
+        analyze: When True, actually runs the query for real statistics
+        hypothetical_indexes: Optional list of indexes to simulate
+    """
     try:
         sql_driver = await get_safe_sql_driver()
         explain_tool = ExplainPlanTool(sql_driver=sql_driver)
 
-        # Get the explain plan
-        result = await explain_tool.explain(sql)
+        # If hypothetical indexes are specified, check for HypoPG extension
+        if hypothetical_indexes:
+            try:
+                rows = await sql_driver.execute_query(
+                    "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
+                )
+                extension_exists = len(rows) > 0 if rows else False
+            except Exception:
+                raise  # Re-raise the original exception
+
+            if not extension_exists:
+                message = (
+                    f"The '{HYPOPG_EXTENSION}' extension is required to test hypothetical indexes, but it is not currently installed.\n\n"
+                    f"You can ask me to install '{HYPOPG_EXTENSION}' using the 'install_extension' tool.\n\n"
+                    f"**Is it safe?** Installing '{HYPOPG_EXTENSION}' is generally safe and a standard practice for index testing. "
+                    f"It adds a virtual layer that simulates indexes without actually creating them in the database. "
+                    f"It requires database privileges (often superuser) to install.\n\n"
+                    f"**What does it do?** It allows you to create virtual indexes and test how they would affect query performance "
+                    f"without the overhead of actually creating the indexes.\n\n"
+                    f"**How to undo?** If you later decide to remove it, you can ask me to run 'DROP EXTENSION {HYPOPG_EXTENSION};'."
+                )
+                return format_text_response(message)
+
+            try:
+                # Use the hypothetical indexes
+                result = await explain_tool.explain_with_hypothetical_indexes(
+                    sql, hypothetical_indexes
+                )
+            except Exception:
+                raise  # Re-raise the original exception
+        elif analyze:
+            try:
+                # Use EXPLAIN ANALYZE
+                result = await explain_tool.explain_analyze(sql)
+            except Exception:
+                raise  # Re-raise the original exception
+        else:
+            try:
+                # Use basic EXPLAIN
+                result = await explain_tool.explain(sql)
+            except Exception:
+                raise  # Re-raise the original exception
 
         if hasattr(result, "value") and isinstance(result.value, str):
             return format_text_response(result.value)
