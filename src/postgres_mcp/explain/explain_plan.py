@@ -9,6 +9,7 @@ from typing import Any
 
 from ..artifacts import ErrorResult
 from ..artifacts import ExplainPlanArtifact
+from ..sql import IndexConfig
 from ..sql import SqlBindParams
 from ..sql import check_postgres_version_requirement
 
@@ -106,10 +107,6 @@ class ExplainPlanTool:
                     except Exception as e:
                         return ErrorResult(f"Expected list for 'columns', got {type(idx['columns'])}: {e}")
 
-            # Import inside method to avoid circular imports
-            from postgres_mcp.dta.dta_calc import DatabaseTuningAdvisor
-            from postgres_mcp.dta.dta_calc import IndexConfig
-
             # Convert the index definitions to IndexConfig objects
             indexes = frozenset(
                 IndexConfig(
@@ -121,7 +118,8 @@ class ExplainPlanTool:
             )
 
             # Generate the explain plan using the static method
-            plan_data = await DatabaseTuningAdvisor.generate_explain_plan_with_hypothetical_indexes(self.sql_driver, sql_query, indexes)
+            bind_params = SqlBindParams(self.sql_driver)
+            plan_data = await bind_params.generate_explain_plan_with_hypothetical_indexes(sql_query, indexes)
 
             # Check if we got a valid plan
             if not plan_data or not isinstance(plan_data, dict) or "Plan" not in plan_data:

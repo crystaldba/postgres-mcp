@@ -16,6 +16,7 @@ from pglast.ast import SelectStmt
 
 from ..artifacts import calculate_improvement_multiple
 from ..sql import ColumnCollector
+from ..sql import IndexConfig
 from ..sql import SafeSqlDriver
 from ..sql import SqlBindParams
 from ..sql import SqlDriver
@@ -28,38 +29,6 @@ logger = logging.getLogger(__name__)
 MAX_NUM_DTA_QUERIES_LIMIT = 10
 
 # --- Data Classes ---
-
-
-@dataclass(frozen=True)
-class IndexConfig:
-    """Immutable index configuration for hashing."""
-
-    table: str
-    columns: tuple[str, ...]
-    using: str = "btree"
-    potential_problematic_reason: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "table": self.table,
-            "columns": list(self.columns),
-            "using": self.using,
-            "definition": self.definition,
-        }
-
-    @property
-    def definition(self) -> str:
-        return f"CREATE INDEX {self.name} ON {self.table} USING {self.using} ({', '.join(self.columns)})"
-
-    @property
-    def name(self) -> str:
-        return f"crystaldba_idx_{self.table}_{'_'.join(self.columns)}_{len(self.columns)}" + ("" if self.using == "btree" else f"_{self.using}")
-
-    def __str__(self) -> str:
-        return self.definition
-
-    def __repr__(self) -> str:
-        return self.definition
 
 
 @dataclass
@@ -1255,63 +1224,11 @@ class DatabaseTuningAdvisor:
             return existing_plan
 
         # Generate the plan using the static method
-        plan = await self.generate_explain_plan_with_hypothetical_indexes(self.sql_driver, query_text, indexes, self)
+        plan = await self._sql_bind_params.generate_explain_plan_with_hypothetical_indexes(query_text, indexes, self)
 
         # Cache the result
         self._explain_plans_cache[cache_key] = plan
         return plan
-
-    @staticmethod
-    async def generate_explain_plan_with_hypothetical_indexes(
-        sql_driver: SqlDriver,
-        query_text: str,
-        indexes: frozenset[IndexConfig],
-        dta=None,
-    ) -> dict[str, Any]:
-        """
-        Generate an explain plan for a query with specified indexes.
-
-        Args:
-            sql_driver: SQL driver to execute the query
-            query_text: The SQL query to explain
-            indexes: A frozenset of IndexConfig objects representing the indexes to enable
-
-        Returns:
-            The explain plan as a dictionary
-        """
-        try:
-            # Create the indexes query
-            create_indexes_query = "SELECT hypopg_reset();"
-            if len(indexes) > 0:
-                create_indexes_query += SafeSqlDriver.param_sql_to_query(
-                    "SELECT hypopg_create_index({});" * len(indexes),
-                    [idx.definition for idx in indexes],
-                )
-
-            # Execute explain with the indexes
-            explain_plan_query = f"{create_indexes_query} EXPLAIN ({'COSTS TRUE, ' if indexes else ''}FORMAT JSON) {query_text}"
-            plan_result = await sql_driver.execute_query(explain_plan_query)  # type: ignore
-
-            # Extract the plan
-            if plan_result and plan_result[0].cells.get("QUERY PLAN"):
-                plan_data = plan_result[0].cells.get("QUERY PLAN")
-                if isinstance(plan_data, list) and len(plan_data) > 0:
-                    return plan_data[0]
-                else:
-                    dta.dta_trace(  # type: ignore
-                        f"      - plan_data is an empty list with plan_data type: {type(plan_data)}"
-                    )  # type: ignore
-
-            dta.dta_trace("      - returning empty plan")  # type: ignore
-            # Return empty plan if no result
-            return {"Plan": {"Total Cost": float("inf")}}
-
-        except Exception as e:
-            logger.error(
-                f"Error getting explain plan for query: {query_text} with error: {e}",
-                exc_info=True,
-            )
-            return {"Plan": {"Total Cost": float("inf")}}
 
     def dta_trace(self, message: Any, exc_info: bool = False):
         """Convenience function to log DTA thinking process."""

@@ -16,8 +16,8 @@ from postgres_mcp.dta import ConditionColumnCollector
 from postgres_mcp.dta import DatabaseTuningAdvisor
 from postgres_mcp.dta import ExplainPlanArtifact
 from postgres_mcp.dta import Index
-from postgres_mcp.dta import IndexConfig
 from postgres_mcp.dta import parse_sql
+from postgres_mcp.sql import IndexConfig
 
 logger = getLogger(__name__)
 

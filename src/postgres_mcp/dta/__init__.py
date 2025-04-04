@@ -7,7 +7,6 @@ from .dta_calc import ConditionColumnCollector
 from .dta_calc import DatabaseTuningAdvisor
 from .dta_calc import DTASession
 from .dta_calc import Index
-from .dta_calc import IndexConfig
 from .dta_tools import DTATool
 
 __all__ = [
@@ -19,6 +18,5 @@ __all__ = [
     "DatabaseTuningAdvisor",
     "ExplainPlanArtifact",
     "Index",
-    "IndexConfig",
     "parse_sql",
 ]
