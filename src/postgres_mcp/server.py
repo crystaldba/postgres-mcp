@@ -12,7 +12,6 @@ from typing import Union
 import mcp.types as types
 import psycopg
 from mcp.server.fastmcp import FastMCP
-from pydantic import AnyUrl
 from pydantic import Field
 
 from .artifacts import ErrorResult
@@ -73,52 +72,10 @@ def format_error_response(error: str) -> ResponseType:
     return format_text_response(f"Error: {error}")
 
 
-@mcp.resource(
-    name="list_resources",
-    uri="postgres-mcp://resources",
-    description="List available resources, such as database tables and extensions",
-)
-async def list_resources() -> list[types.Resource]:
-    """List available database tables as resources."""
-    try:
-        sql_driver = await get_sql_driver()
-        rows = await sql_driver.execute_query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
-        tables = [row.cells["table_name"] for row in rows] if rows else []
-
-        base_url = "postgres-mcp://"
-
-        resources = [
-            types.Resource(
-                uri=AnyUrl(f"{base_url}/{table}/schema"),
-                name=f'"{table}" database schema',
-                description=f"Schema for table {table}",
-                mimeType="application/json",
-            )
-            for table in tables
-        ]
-
-        extensions_uri = AnyUrl(f"{base_url}/extensions")
-        resources.append(
-            types.Resource(
-                uri=extensions_uri,
-                name="Installed PostgreSQL Extensions",
-                description="List of installed PostgreSQL extensions in the current database.",
-                mimeType="application/json",
-            )
-        )
-
-        return resources
-    except Exception as e:
-        logger.error(f"Error listing resources: {e}")
-        raise
-
-
-@mcp.resource(
-    name="list_extensions",
-    uri="postgres-mcp://extensions",
+@mcp.tool(
     description="List available and installed extensions",
 )
-async def extensions_resource() -> str:
+async def extensions() -> ResponseType:
     """Get information about installed PostgreSQL extensions."""
     try:
         sql_driver = await get_sql_driver()
@@ -140,18 +97,14 @@ async def extensions_resource() -> str:
             """
         )
         extensions = [row.cells for row in rows] if rows else []
-        return str(extensions)
+        return format_text_response(extensions)
     except Exception as e:
         logger.error(f"Error listing extensions: {e}")
-        raise
+        return format_error_response(str(e))
 
 
-@mcp.resource(
-    name="list_table_columns",
-    uri="postgres-mcp://{table_name}/schema",
-    description="Show columns for the table",
-)
-async def table_schema_resource(table_name: str) -> str:
+@mcp.tool(description="Show columns for the table")
+async def list_table_columns(table_name: str) -> str:
     """Get schema information for a specific table."""
     try:
         sql_driver = await get_sql_driver()
@@ -321,18 +274,6 @@ async def database_health(
     health_tool = DatabaseHealthTool(await get_sql_driver())
     result = await health_tool.health(health_type=health_type)
     return format_text_response(result)
-
-
-@mcp.tool(description="Lists all extensions currently installed in the PostgreSQL database.")
-async def list_installed_extensions(ctx) -> ResponseType:
-    """Lists all extensions currently installed in the PostgreSQL database."""
-    try:
-        extensions = await ctx.read_resource("postgres-mcp://extensions")
-        result_text = f"Installed PostgreSQL Extensions:\n{extensions}"
-        return format_text_response(result_text)
-    except Exception as e:
-        logger.error(f"Error listing installed extensions: {e}")
-        return format_error_response(str(e))
 
 
 @mcp.tool(
