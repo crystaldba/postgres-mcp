@@ -783,12 +783,12 @@ class SqlBindParams:
             if not isinstance(stmt, SelectStmt):
                 return {}
 
-            return self.extract_stmt_columns(query, stmt)
+            return self.extract_stmt_columns(stmt)
 
         except Exception:
             return {}
 
-    def extract_stmt_columns(self, query: str, stmt: SelectStmt) -> dict[str, set[str]]:
+    def extract_stmt_columns(self, stmt: SelectStmt) -> dict[str, set[str]]:
         """Extract columns from a query using improved visitors."""
         try:
             # Second pass: collect columns with table context

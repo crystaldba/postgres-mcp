@@ -486,8 +486,8 @@ class DatabaseTuningAdvisor:
         """Generates index candidates from queries, with batch creation."""
         table_columns_usage = {}  # table -> {col -> usage_count}
         # Extract columns from all queries
-        for q, stmt, _ in workload:
-            columns_per_table = self._sql_bind_params.extract_stmt_columns(q, stmt)
+        for _q, stmt, _ in workload:
+            columns_per_table = self._sql_bind_params.extract_stmt_columns(stmt)
             for tbl, cols in columns_per_table.items():
                 if tbl not in table_columns_usage:
                     table_columns_usage[tbl] = {}
