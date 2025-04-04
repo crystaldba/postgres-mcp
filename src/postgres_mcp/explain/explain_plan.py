@@ -24,7 +24,7 @@ class ExplainPlanTool:
     def __init__(self, sql_driver: SqlDriver):
         self.sql_driver = sql_driver
 
-    async def explain(self, sql_query: str) -> ExplainPlanArtifact | ErrorResult:
+    async def explain(self, sql_query: str, do_analyze: bool = False) -> ExplainPlanArtifact | ErrorResult:
         """
         Generate an EXPLAIN plan for a SQL query.
 
@@ -38,7 +38,7 @@ class ExplainPlanTool:
 
         # If query has bind variables, check PostgreSQL version for generic plan support
         if has_bind_variables:
-            meets_requirement, message = await check_postgres_version_requirement(
+            meets_requirement, _message = await check_postgres_version_requirement(
                 self.sql_driver, min_version=16, feature_name="Generic plan with bind variables ($1, $2, etc.)"
             )
 
@@ -49,13 +49,13 @@ class ExplainPlanTool:
                 modified_query = await sql_bind_params.replace_parameters(sql_query)
                 logger.debug(f"Original query: {sql_query}")
                 logger.debug(f"Modified query: {modified_query}")
-                return await self._run_explain_query(modified_query, analyze=False, generic_plan=False)
+                return await self._run_explain_query(modified_query, analyze=do_analyze, generic_plan=False)
 
             use_generic_plan = True
         else:
             use_generic_plan = False
 
-        return await self._run_explain_query(sql_query, analyze=False, generic_plan=use_generic_plan)
+        return await self._run_explain_query(sql_query, analyze=do_analyze, generic_plan=use_generic_plan)
 
     async def explain_analyze(self, sql_query: str) -> ExplainPlanArtifact | ErrorResult:
         """
@@ -67,16 +67,7 @@ class ExplainPlanTool:
         Returns:
             ExplainPlanArtifact or ErrorResult
         """
-        if self._has_bind_variables(sql_query):
-            # For queries with bind variables, replace them with sample values
-            logger.info("Replacing bind variables for EXPLAIN ANALYZE")
-            sql_bind_params = SqlBindParams(self.sql_driver)
-            modified_query = await sql_bind_params.replace_parameters(sql_query)
-            logger.debug(f"Original query: {sql_query}")
-            logger.debug(f"Modified query: {modified_query}")
-            return await self._run_explain_query(modified_query, analyze=True, generic_plan=False)
-
-        return await self._run_explain_query(sql_query, analyze=True, generic_plan=False)
+        return await self.explain(sql_query, do_analyze=True)
 
     async def explain_with_hypothetical_indexes(
         self, sql_query: str, hypothetical_indexes: list[dict[str, Any]]
