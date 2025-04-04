@@ -1201,7 +1201,7 @@ async def test_enumerate_greedy_pareto_cost_benefit(async_sql_driver):
     dta._evaluate_configuration_cost = AsyncMock(side_effect=mock_evaluate_cost)  # type: ignore
     dta._estimate_index_size = AsyncMock(side_effect=mock_index_size)  # type: ignore
     dta._estimate_table_size = AsyncMock(side_effect=mock_estimate_table_size)  # type: ignore
-    dta.sql_driver.execute_query = AsyncMock(side_effect=mock_execute_query)  # type: ignore
+    # sql.sql_driver.execute_query = AsyncMock(side_effect=mock_execute_query)  # type: ignore
 
     # Set alpha parameter for cost/benefit analysis
     dta.pareto_alpha = 2.0
