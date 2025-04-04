@@ -17,6 +17,7 @@ from .sql import SafeSqlDriver, check_hypopg_installation_status
 from .database_health import DatabaseHealthTool, HealthType
 from .dta import MAX_NUM_DTA_QUERIES_LIMIT
 from .explain import ExplainPlanTool
+from .explain import ExplainPlanArtifact, ErrorResult
 
 mcp = FastMCP("postgres-mcp")
 
@@ -196,6 +197,7 @@ Examples: [
     try:
         sql_driver = await get_sql_driver()
         explain_tool = ExplainPlanTool(sql_driver=sql_driver)
+        result: ExplainPlanArtifact | ErrorResult | None = None
 
         # If hypothetical indexes are specified, check for HypoPG extension
         if hypothetical_indexes:
@@ -229,10 +231,12 @@ Examples: [
             except Exception:
                 raise  # Re-raise the original exception
 
-        if hasattr(result, "value") and isinstance(result.value, str):
-            return format_text_response(result.value)
+        if result and isinstance(result, ExplainPlanArtifact):
+            return format_text_response(result.to_text())
         else:
-            return format_error_response("Error processing explain plan")
+            return format_error_response(
+                "Error processing explain plan: " + result.to_text()
+            )
     except Exception as e:
         logger.error(f"Error explaining query: {e}")
         return format_error_response(str(e))

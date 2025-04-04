@@ -16,12 +16,18 @@ if TYPE_CHECKING:
 class ErrorResult:
     """Simple error result class."""
 
+    def to_text(self) -> str:
+        return self.value
+
     def __init__(self, message: str):
         self.value = message
 
 
 class JsonResult:
     """Simple JSON result class."""
+
+    def to_text(self) -> str:
+        return self.value
 
     def __init__(self, data: Any):
         self.value = json.dumps(data, indent=2)
