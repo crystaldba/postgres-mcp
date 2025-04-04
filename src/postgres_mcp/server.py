@@ -395,8 +395,7 @@ async def explain_query(
         hypothetical_indexes: Optional list of indexes to simulate
     """
     try:
-        # Create a safe SQL driver directly
-        sql_driver = SafeSqlDriver(sql_driver=SqlDriver(conn=db_connection))
+        sql_driver = await get_safe_sql_driver()
         explain_tool = ExplainPlanTool(sql_driver=sql_driver)
 
         # If hypothetical indexes are specified, check for HypoPG extension

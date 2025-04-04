@@ -1,4 +1,5 @@
 from . import server
+from .server import get_safe_sql_driver
 import asyncio
 
 
@@ -8,4 +9,8 @@ def main():
 
 
 # Optionally expose other important items at package level
-__all__ = ["main", "server"]
+__all__ = [
+    "main",
+    "server",
+    "get_safe_sql_driver",
+]
