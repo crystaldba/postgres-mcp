@@ -45,7 +45,7 @@ async def create_dta(async_sql_driver):
 async def test_extract_columns_empty_query(create_dta):
     dta = create_dta
     query = "SELECT 1"
-    columns = dta.extract_columns(query)
+    columns = dta._sql_bind_params.extract_columns(query)
     assert columns == {}
 
 
@@ -53,7 +53,7 @@ async def test_extract_columns_empty_query(create_dta):
 async def test_extract_columns_invalid_sql(create_dta):
     dta = create_dta
     query = "INVALID SQL"
-    columns = dta.extract_columns(query)
+    columns = dta._sql_bind_params.extract_columns(query)
     assert columns == {}
 
 
@@ -61,7 +61,7 @@ async def test_extract_columns_invalid_sql(create_dta):
 async def test_extract_columns_subquery(create_dta):
     dta = create_dta
     query = "SELECT * FROM users WHERE id IN (SELECT user_id FROM orders WHERE status = 'pending')"
-    columns = dta.extract_columns(query)
+    columns = dta._sql_bind_params.extract_columns(query)
     assert columns == {"users": {"id"}, "orders": {"user_id", "status"}}
 
 
@@ -97,7 +97,7 @@ async def test_extract_columns_from_simple_query(create_dta):
     """Test column extraction from a simple SELECT query."""
     dta = create_dta
     query = "SELECT * FROM users WHERE name = 'Alice' ORDER BY age"
-    columns = dta.extract_columns(query)
+    columns = dta._sql_bind_params.extract_columns(query)
     assert columns == {"users": {"name", "age"}}
 
 
@@ -111,7 +111,7 @@ async def test_extract_columns_from_join_query(create_dta):
     JOIN orders o ON u.id = o.user_id
     WHERE o.status = 'pending'
     """
-    columns = dta.extract_columns(query)
+    columns = dta._sql_bind_params.extract_columns(query)
     assert columns == {
         "users": {"id", "name"},
         "orders": {"user_id", "status", "order_date"},
@@ -241,7 +241,7 @@ async def test_error_handling(async_sql_driver, create_dta):
     dta = create_dta
 
     invalid_query = "INVALID SQL"
-    columns = dta.extract_columns(invalid_query)
+    columns = dta._sql_bind_params.extract_columns(invalid_query)
     assert columns == {}
 
 
@@ -587,10 +587,10 @@ async def test_replace_parameters_basic(create_dta):
     """Test basic parameter replacement functionality."""
     dta = create_dta
 
-    dta._column_stats_cache = {}
-    dta.extract_columns = MagicMock(return_value={"users": ["name", "id", "status"]})
-    dta._identify_parameter_column = MagicMock(return_value=("users", "name"))
-    dta._get_column_statistics = AsyncMock(
+    dta._sql_bind_params._column_stats_cache = {}
+    dta._sql_bind_params.extract_columns = MagicMock(return_value={"users": ["name", "id", "status"]})
+    dta._sql_bind_params._identify_parameter_column = MagicMock(return_value=("users", "name"))
+    dta._sql_bind_params._get_column_statistics = AsyncMock(
         return_value={
             "data_type": "character varying",
             "common_vals": ["John", "Alice"],
@@ -599,11 +599,11 @@ async def test_replace_parameters_basic(create_dta):
     )
 
     query = "SELECT * FROM users WHERE name = $1"
-    result = await dta._replace_parameters(query.lower())
+    result = await dta._sql_bind_params.replace_parameters(query.lower())
     assert result == "select * from users where name = 'John'"
 
     # Verify the column was identified correctly
-    dta._identify_parameter_column.assert_called_once()
+    dta._sql_bind_params._identify_parameter_column.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -611,10 +611,10 @@ async def test_replace_parameters_numeric(create_dta):
     """Test parameter replacement for numeric columns."""
     dta = create_dta
 
-    dta._column_stats_cache = {}
-    dta.extract_columns = MagicMock(return_value={"orders": ["id", "amount", "user_id"]})
-    dta._identify_parameter_column = MagicMock(return_value=("orders", "amount"))
-    dta._get_column_statistics = AsyncMock(
+    dta._sql_bind_params._column_stats_cache = {}
+    dta._sql_bind_params.extract_columns = MagicMock(return_value={"orders": ["id", "amount", "user_id"]})
+    dta._sql_bind_params._identify_parameter_column = MagicMock(return_value=("orders", "amount"))
+    dta._sql_bind_params._get_column_statistics = AsyncMock(
         return_value={
             "data_type": "numeric",
             "common_vals": [99.99, 49.99],
@@ -624,13 +624,13 @@ async def test_replace_parameters_numeric(create_dta):
 
     # Range query
     query = "SELECT * FROM orders WHERE amount > $1"
-    result = await dta._replace_parameters(query.lower())
+    result = await dta._sql_bind_params.replace_parameters(query.lower())
     assert result == "select * from orders where amount > 100.0"
 
     # Equality query
     dta._identify_parameter_column = MagicMock(return_value=("orders", "amount"))
     query = "SELECT * FROM orders WHERE amount = $1"
-    result = await dta._replace_parameters(query.lower())
+    result = await dta._sql_bind_params.replace_parameters(query.lower())
     assert result == "select * from orders where amount = 99.99"
 
 
@@ -639,10 +639,10 @@ async def test_replace_parameters_date(create_dta):
     """Test parameter replacement for date columns."""
     dta = create_dta
 
-    dta._column_stats_cache = {}
-    dta.extract_columns = MagicMock(return_value={"orders": ["id", "order_date", "user_id"]})
-    dta._identify_parameter_column = MagicMock(return_value=("orders", "order_date"))
-    dta._get_column_statistics = AsyncMock(
+    dta._sql_bind_params._column_stats_cache = {}
+    dta._sql_bind_params.extract_columns = MagicMock(return_value={"orders": ["id", "order_date", "user_id"]})
+    dta._sql_bind_params._identify_parameter_column = MagicMock(return_value=("orders", "order_date"))
+    dta._sql_bind_params._get_column_statistics = AsyncMock(
         return_value={
             "data_type": "timestamp without time zone",
             "common_vals": None,
@@ -651,7 +651,7 @@ async def test_replace_parameters_date(create_dta):
     )
 
     query = "SELECT * FROM orders WHERE order_date > $1"
-    result = await dta._replace_parameters(query.lower())
+    result = await dta._sql_bind_params.replace_parameters(query.lower())
     assert result == "select * from orders where order_date > '2023-01-15'"
 
 
@@ -660,10 +660,10 @@ async def test_replace_parameters_like(create_dta):
     """Test parameter replacement for LIKE patterns."""
     dta = create_dta
 
-    dta._column_stats_cache = {}
-    dta.extract_columns = MagicMock(return_value={"users": ["name", "email"]})
-    dta._identify_parameter_column = MagicMock(return_value=("users", "name"))
-    dta._get_column_statistics = AsyncMock(
+    dta._sql_bind_params._column_stats_cache = {}
+    dta._sql_bind_params.extract_columns = MagicMock(return_value={"users": ["name", "email"]})
+    dta._sql_bind_params._identify_parameter_column = MagicMock(return_value=("users", "name"))
+    dta._sql_bind_params._get_column_statistics = AsyncMock(
         return_value={
             "data_type": "character varying",
             "common_vals": ["John", "Alice"],
@@ -672,7 +672,7 @@ async def test_replace_parameters_like(create_dta):
     )
 
     query = "SELECT * FROM users WHERE name LIKE $1"
-    result = await dta._replace_parameters(query.lower())
+    result = await dta._sql_bind_params.replace_parameters(query.lower())
     assert result == "select * from users where name like '%test%'"
 
 
@@ -681,8 +681,8 @@ async def test_replace_parameters_multiple(create_dta):
     """Test replacement of multiple parameters in a complex query."""
     dta = create_dta
 
-    dta._column_stats_cache = {}
-    dta.extract_columns = MagicMock(
+    dta._sql_bind_params._column_stats_cache = {}
+    dta._sql_bind_params.extract_columns = MagicMock(
         return_value={
             "users": ["id", "name", "status"],
             "orders": ["id", "user_id", "amount", "order_date"],
@@ -699,7 +699,7 @@ async def test_replace_parameters_multiple(create_dta):
             return ("orders", "order_date")
         return None
 
-    dta._identify_parameter_column = MagicMock(side_effect=identify_column_side_effect)
+    dta._sql_bind_params._identify_parameter_column = MagicMock(side_effect=identify_column_side_effect)
 
     def get_stats_side_effect(table, column):
         if table == "users" and column == "status":
@@ -717,7 +717,7 @@ async def test_replace_parameters_multiple(create_dta):
             return {"data_type": "timestamp without time zone"}
         return None
 
-    dta._get_column_statistics = AsyncMock(side_effect=get_stats_side_effect)
+    dta._sql_bind_params._get_column_statistics = AsyncMock(side_effect=get_stats_side_effect)
 
     query = """
     SELECT u.name, o.amount
@@ -728,7 +728,7 @@ async def test_replace_parameters_multiple(create_dta):
     AND o.order_date > $4
     """
 
-    result = await dta._replace_parameters(query.lower())
+    result = await dta._sql_bind_params.replace_parameters(query.lower())
     assert "u.status = 'active'" in result
     assert "o.amount between 10.0 and 100.0" in result
     assert "o.order_date > '2023-01-15'" in result
@@ -739,11 +739,11 @@ async def test_replace_parameters_fallback(create_dta):
     """Test fallback behavior when column information is not available."""
     dta = create_dta
 
-    dta.extract_columns = MagicMock(return_value={})
+    dta._sql_bind_params.extract_columns = MagicMock(return_value={})
 
     # Simple query with numeric parameter
     query = "SELECT * FROM users WHERE id = $1"
-    result = await dta._replace_parameters(query.lower())
+    result = await dta._sql_bind_params.replace_parameters(query.lower())
     assert "id = 46" in result or "id = '46'" in result
 
     # Complex query with various parameters
@@ -754,7 +754,7 @@ async def test_replace_parameters_fallback(create_dta):
     AND name LIKE $3
     AND age BETWEEN $4 AND $5
     """
-    result = await dta._replace_parameters(query.lower())
+    result = await dta._sql_bind_params.replace_parameters(query.lower())
     assert "status = 'active'" in result or "status = 'sample_value'" in result
     assert "created_at > '2023-01-01'" in result
     assert "name like '%sample%'" in result or "name like '%" in result
@@ -766,10 +766,10 @@ async def test_extract_columns(create_dta):
     """Test extracting table and column information from queries."""
     dta = create_dta
 
-    dta.extract_columns = MagicMock(return_value={"users": {"id", "name", "status"}})
+    dta._sql_bind_params.extract_columns = MagicMock(return_value={"users": {"id", "name", "status"}})
 
     query = "SELECT * FROM users WHERE name = $1 AND status = $2"
-    result = dta.extract_columns(query)
+    result = dta._sql_bind_params.extract_columns(query)
     assert result == {"users": {"id", "name", "status"}}
 
 
@@ -784,27 +784,27 @@ async def test_identify_parameter_column(create_dta):
 
     # Test equality pattern
     context = "SELECT * FROM users WHERE name = $1"
-    result = dta._identify_parameter_column(context, table_columns)
+    result = dta._sql_bind_params._identify_parameter_column(context, table_columns)
     assert result == ("users", "name")
 
     # Test LIKE pattern
     context = "SELECT * FROM users WHERE email LIKE $1"
-    result = dta._identify_parameter_column(context, table_columns)
+    result = dta._sql_bind_params._identify_parameter_column(context, table_columns)
     assert result == ("users", "email")
 
     # Test range pattern
     context = "SELECT * FROM orders WHERE amount > $1"
-    result = dta._identify_parameter_column(context, table_columns)
+    result = dta._sql_bind_params._identify_parameter_column(context, table_columns)
     assert result == ("orders", "amount")
 
     # Test BETWEEN pattern
     context = "SELECT * FROM orders WHERE order_date BETWEEN $1 AND $2"
-    result = dta._identify_parameter_column(context, table_columns)
+    result = dta._sql_bind_params._identify_parameter_column(context, table_columns)
     assert result == ("orders", "order_date")
 
     # Test no match
     context = "SELECT * FROM users WHERE $1"  # Invalid but should handle gracefully
-    result = dta._identify_parameter_column(context, table_columns)
+    result = dta._sql_bind_params._identify_parameter_column(context, table_columns)
     assert result is None
 
 
@@ -819,7 +819,7 @@ async def test_get_replacement_value(create_dta):
         "common_vals": ["active", "pending", "completed"],
         "histogram_bounds": None,
     }
-    result = dta._get_replacement_value(stats, "status = $1")
+    result = dta._sql_bind_params._get_replacement_value(stats, "status = $1")
     assert result == "'active'"
 
     # Numeric type with histogram bounds for range
@@ -828,12 +828,12 @@ async def test_get_replacement_value(create_dta):
         "common_vals": [10.0, 20.0],
         "histogram_bounds": [5.0, 15.0, 25.0, 50.0, 100.0],
     }
-    result = dta._get_replacement_value(stats, "amount > $1")
+    result = dta._sql_bind_params._get_replacement_value(stats, "amount > $1")
     assert result == "25.0"
 
     # Date type
     stats = {"data_type": "date", "common_vals": None, "histogram_bounds": None}
-    result = dta._get_replacement_value(stats, "created_at < $1")
+    result = dta._sql_bind_params._get_replacement_value(stats, "created_at < $1")
     assert result == "'2023-01-15'"
 
     # Boolean type
@@ -842,7 +842,7 @@ async def test_get_replacement_value(create_dta):
         "common_vals": [True, False],
         "histogram_bounds": None,
     }
-    result = dta._get_replacement_value(stats, "is_active = $1")
+    result = dta._sql_bind_params._get_replacement_value(stats, "is_active = $1")
     assert result == "true"
 
 

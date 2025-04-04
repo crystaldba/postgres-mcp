@@ -118,39 +118,125 @@ async def test_explain_with_bind_variables(mock_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_explain_with_bind_variables_pg15(mock_sql_driver):
+async def test_explain_with_bind_variables_pg15(mock_sql_driver, monkeypatch):
     """Test explain with bind variables on PostgreSQL < 16."""
     # Prepare mock response for PostgreSQL version check
     version_response = [MockCell({"server_version": "15.4"})]
+
+    # Prepare plan data for the replaced parameter query
+    plan_data = {
+        "Plan": {
+            "Node Type": "Seq Scan",
+            "Relation Name": "users",
+            "Startup Cost": 0.00,
+            "Total Cost": 10.00,
+            "Plan Rows": 100,
+            "Plan Width": 20,
+        }
+    }
+
+    # Mock the SqlBindParams class
+    class MockSqlBindParams:
+        def __init__(self, sql_driver):
+            self.sql_driver = sql_driver
+
+        async def replace_parameters(self, query):
+            return "SELECT * FROM users WHERE id = 42"  # Replaced query
+
+    # The correct import path for monkeypatching
+    monkeypatch.setattr("postgres_mcp.explain.explain_plan.SqlBindParams", MockSqlBindParams)
 
     # Set up the mock to return different responses for different queries
     def side_effect(query):
         if query == "SHOW server_version":
             return version_response
-        return None  # We shouldn't get here
+        elif "EXPLAIN" in query and "id = 42" in query:
+            # For the parameter-replaced EXPLAIN query, return mock results
+            return [MockCell({"QUERY PLAN": [plan_data]})]
+        return None
 
     mock_sql_driver.execute_query.side_effect = side_effect
 
     tool = ExplainPlanTool(sql_driver=mock_sql_driver)
     result = await tool.explain("SELECT * FROM users WHERE id = $1")
 
-    # Verify we get an error about PostgreSQL version
-    assert isinstance(result, ErrorResult)
-    assert "requires PostgreSQL 16 or later" in result.value
-    assert "bind variables" in result.value
+    # We now expect a successful result with parameter replacement
+    if isinstance(result, ErrorResult):
+        print(f"Got error: {result.value}")
+    assert isinstance(result, ExplainPlanArtifact)
+
+    # Verify that the version check was called
+    version_call = None
+    explain_call = None
+
+    for call in mock_sql_driver.execute_query.call_args_list:
+        if "server_version" in call[0][0]:
+            version_call = call
+        elif "EXPLAIN" in call[0][0]:
+            explain_call = call
+
+    assert version_call is not None
+    assert explain_call is not None
+
+    # Make sure GENERIC_PLAN is NOT in the query - we should be using replaced values
+    assert "GENERIC_PLAN" not in explain_call[0][0]
+    # Verify the parameters were replaced
+    assert "id = 42" in explain_call[0][0]
 
 
 @pytest.mark.asyncio
-async def test_explain_analyze_with_bind_variables(mock_sql_driver):
-    """Test explain analyze with bind variables returns error."""
+async def test_explain_analyze_with_bind_variables(mock_sql_driver, monkeypatch):
+    """Test explain analyze with bind variables uses parameter replacement."""
+    # Prepare plan data for the replaced parameter query
+    plan_data = {
+        "Plan": {
+            "Node Type": "Seq Scan",
+            "Relation Name": "users",
+            "Startup Cost": 0.00,
+            "Total Cost": 10.00,
+            "Plan Rows": 100,
+            "Plan Width": 20,
+            "Actual Startup Time": 0.01,
+            "Actual Total Time": 1.23,
+            "Actual Rows": 95,
+            "Actual Loops": 1,
+        },
+        "Planning Time": 0.05,
+        "Execution Time": 1.30,
+    }
+
+    # Mock the SqlBindParams class
+    class MockSqlBindParams:
+        def __init__(self, sql_driver):
+            self.sql_driver = sql_driver
+
+        async def replace_parameters(self, query):
+            return "SELECT * FROM users WHERE id = 42"  # Replaced query
+
+    # The correct import path for monkeypatching
+    monkeypatch.setattr("postgres_mcp.explain.explain_plan.SqlBindParams", MockSqlBindParams)
+
+    # Set up the mock to return mock plan for the modified query
+    def side_effect(query):
+        if "EXPLAIN" in query and "id = 42" in query:
+            return [MockCell({"QUERY PLAN": [plan_data]})]
+        return None
+
+    mock_sql_driver.execute_query.side_effect = side_effect
+
     tool = ExplainPlanTool(sql_driver=mock_sql_driver)
     result = await tool.explain_analyze("SELECT * FROM users WHERE id = $1")
 
-    # Should return error result
-    assert isinstance(result, ErrorResult)
-    assert "bind variables" in result.value
-    # Ensure no query was executed
-    mock_sql_driver.execute_query.assert_not_called()
+    # Should return successful result with replaced parameters
+    if isinstance(result, ErrorResult):
+        print(f"Got error: {result.value}")
+    assert isinstance(result, ExplainPlanArtifact)
+
+    # Verify that the query was executed with ANALYZE but not GENERIC_PLAN
+    call_args = mock_sql_driver.execute_query.call_args[0][0]
+    assert "ANALYZE" in call_args
+    assert "GENERIC_PLAN" not in call_args
+    assert "id = 42" in call_args
 
 
 @pytest.mark.asyncio

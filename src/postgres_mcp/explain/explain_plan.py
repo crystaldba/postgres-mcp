@@ -1,3 +1,5 @@
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import logging
@@ -7,6 +9,7 @@ from typing import Any
 
 from ..artifacts import ErrorResult
 from ..artifacts import ExplainPlanArtifact
+from ..sql import SqlBindParams
 from ..sql import check_postgres_version_requirement
 
 logger = logging.getLogger(__name__)
@@ -40,7 +43,13 @@ class ExplainPlanTool:
             )
 
             if not meets_requirement:
-                return ErrorResult(message + " Please replace the bind variables with explicit values.")
+                # For PostgreSQL < 16, replace bind variables with sample values instead of erroring out
+                logger.debug("PostgreSQL version < 16 detected. Replacing bind variables with sample values.")
+                sql_bind_params = SqlBindParams(self.sql_driver)
+                modified_query = await sql_bind_params.replace_parameters(sql_query)
+                logger.debug(f"Original query: {sql_query}")
+                logger.debug(f"Modified query: {modified_query}")
+                return await self._run_explain_query(modified_query, analyze=False, generic_plan=False)
 
             use_generic_plan = True
         else:
@@ -59,7 +68,14 @@ class ExplainPlanTool:
             ExplainPlanArtifact or ErrorResult
         """
         if self._has_bind_variables(sql_query):
-            return ErrorResult("EXPLAIN ANALYZE cannot be used with bind variables - please replace them with explicit values")
+            # For queries with bind variables, replace them with sample values
+            logger.info("Replacing bind variables for EXPLAIN ANALYZE")
+            sql_bind_params = SqlBindParams(self.sql_driver)
+            modified_query = await sql_bind_params.replace_parameters(sql_query)
+            logger.debug(f"Original query: {sql_query}")
+            logger.debug(f"Modified query: {modified_query}")
+            return await self._run_explain_query(modified_query, analyze=True, generic_plan=False)
+
         return await self._run_explain_query(sql_query, analyze=True, generic_plan=False)
 
     async def explain_with_hypothetical_indexes(
