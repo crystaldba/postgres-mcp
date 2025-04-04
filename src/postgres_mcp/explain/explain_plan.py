@@ -216,7 +216,7 @@ class ExplainPlanTool:
             if indexes:
                 explain_options.append("COSTS TRUE")
 
-            explain_plan_query = f"EXPLAIN ({', '.join(explain_options)}) {query_text}"
+            explain_plan_query = f"{create_indexes_query}EXPLAIN ({', '.join(explain_options)}) {query_text}"
             plan_result = await self.sql_driver.execute_query(explain_plan_query)  # type: ignore
 
             # Extract the plan
