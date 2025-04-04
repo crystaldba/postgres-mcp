@@ -336,8 +336,8 @@ async def explain_query(
         "Takes longer but provides more accurate information.",
         default=False,
     ),
-    hypothetical_indexes: list[dict[str, Any]] | None = Field(
-        description="""Optional list of hypothetical indexes to simulate. Each index must be a dictionary with these keys:
+    hypothetical_indexes: list[dict[str, Any]] = Field(
+        description="""A list of hypothetical indexes to simulate. Each index must be a dictionary with these keys:
     - 'table': The table name to add the index to (e.g., 'users')
     - 'columns': List of column names to include in the index (e.g., ['email'] or ['last_name', 'first_name'])
     - 'using': Optional index method (default: 'btree', other options include 'hash', 'gist', etc.)
@@ -345,8 +345,9 @@ async def explain_query(
 Examples: [
     {"table": "users", "columns": ["email"], "using": "btree"},
     {"table": "orders", "columns": ["user_id", "created_at"]}
-]""",
-        default=None,
+]
+If there is no hypothetical index, you can pass an empty list.""",
+        default=[],
     ),
 ) -> ResponseType:
     """
@@ -363,7 +364,7 @@ Examples: [
         result: ExplainPlanArtifact | ErrorResult | None = None
 
         # If hypothetical indexes are specified, check for HypoPG extension
-        if hypothetical_indexes:
+        if len(hypothetical_indexes) > 0:
             if analyze:
                 return format_error_response("Cannot use analyze and hypothetical indexes together")
             try:
