@@ -1,6 +1,19 @@
 """SQL utilities."""
 
+from .sql_driver import SqlDriver, DbConnPool, obfuscate_password
 from .safe_sql import SafeSqlDriver
-from .sql_driver import DbConnPool, obfuscate_password, SqlDriver
+from .extension_utils import (
+    check_extension,
+    check_hypopg_installation_status,
+    ExtensionStatus,
+)
 
-__all__ = ["SafeSqlDriver", "SqlDriver", "DbConnPool", "obfuscate_password"]
+__all__ = [
+    "SqlDriver",
+    "DbConnPool",
+    "obfuscate_password",
+    "SafeSqlDriver",
+    "check_extension",
+    "check_hypopg_installation_status",
+    "ExtensionStatus",
+]

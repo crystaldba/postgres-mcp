@@ -11,7 +11,7 @@ import psycopg
 from .sql import DbConnPool, obfuscate_password, SqlDriver
 
 from .dta import DTATool
-from .sql import SafeSqlDriver
+from .sql import SafeSqlDriver, check_hypopg_installation_status
 from .database_health import DatabaseHealthTool, HealthType
 from .dta import MAX_NUM_DTA_QUERIES_LIMIT
 from .explain import ExplainPlanTool
@@ -401,28 +401,17 @@ async def explain_query(
         # If hypothetical indexes are specified, check for HypoPG extension
         if hypothetical_indexes:
             try:
-                rows = await sql_driver.execute_query(
-                    "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
-                )
-                extension_exists = len(rows) > 0 if rows else False
-            except Exception:
-                raise  # Re-raise the original exception
+                # Use the common utility function to check if hypopg is installed
+                (
+                    is_hypopg_installed,
+                    hypopg_message,
+                ) = await check_hypopg_installation_status(sql_driver.sql_driver)
 
-            if not extension_exists:
-                message = (
-                    f"The '{HYPOPG_EXTENSION}' extension is required to test hypothetical indexes, but it is not currently installed.\n\n"
-                    f"You can ask me to install '{HYPOPG_EXTENSION}' using the 'install_extension' tool.\n\n"
-                    f"**Is it safe?** Installing '{HYPOPG_EXTENSION}' is generally safe and a standard practice for index testing. "
-                    f"It adds a virtual layer that simulates indexes without actually creating them in the database. "
-                    f"It requires database privileges (often superuser) to install.\n\n"
-                    f"**What does it do?** It allows you to create virtual indexes and test how they would affect query performance "
-                    f"without the overhead of actually creating the indexes.\n\n"
-                    f"**How to undo?** If you later decide to remove it, you can ask me to run 'DROP EXTENSION {HYPOPG_EXTENSION};'."
-                )
-                return format_text_response(message)
+                # If hypopg is not installed, return the message
+                if not is_hypopg_installed:
+                    return format_text_response(hypopg_message)
 
-            try:
-                # Use the hypothetical indexes
+                # HypoPG is installed, proceed with explaining with hypothetical indexes
                 result = await explain_tool.explain_with_hypothetical_indexes(
                     sql, hypothetical_indexes
                 )

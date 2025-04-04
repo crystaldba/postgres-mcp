@@ -23,6 +23,7 @@ from pglast.visitors import Visitor
 from .artifacts import calculate_improvement_multiple
 from ..sql import SafeSqlDriver
 from ..sql import SqlDriver
+from ..sql import check_hypopg_installation_status
 
 logger = logging.getLogger(__name__)
 
@@ -228,42 +229,15 @@ class DatabaseTuningAdvisor:
             The DTASession with error information if any check fails, None if all checks pass
         """
         # Pre-check 1: Check HypoPG with more granular feedback
-        # First check if HypoPG is installed
-        installed_result = await self.sql_driver.execute_query(
-            "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
+        # Use our new utility function to check HypoPG status
+        is_hypopg_installed, hypopg_message = await check_hypopg_installation_status(
+            self.sql_driver, message_type="plain"
         )
-        if installed_result:
-            # Case 1: HypoPG is installed and ready to use
-            pass
-        else:
-            # Check if HypoPG is available but not installed
-            available_result = await self.sql_driver.execute_query(
-                "SELECT 1 FROM pg_available_extensions WHERE name = 'hypopg'"
-            )
-            if available_result:
-                # Case 2: Available but not installed
-                error_message = (
-                    "The HypoPG extension is available but not installed.\n"
-                    "Please connect to the database and run this statement: 'CREATE EXTENSION hypopg;'\n"
-                    "You can also use the 'install_extension_hypopg' tool to install it if the user agrees and has the necessary permissions."
-                )
-                session.error = error_message
-                logger.error(error_message)
-                return session
-            else:
-                # Case 3: Not available at all
-                error_message = (
-                    "The HypoPG extension is not available on this PostgreSQL server.\n"
-                    "To install HypoPG:\n"
-                    "1. For Debian/Ubuntu: sudo apt-get install postgresql-hypopg\n"
-                    "2. For RHEL/CentOS: sudo yum install postgresql-hypopg\n"
-                    "3. For MacOS with Homebrew: brew install hypopg\n"
-                    "4. For other systems, build from source: git clone https://github.com/HypoPG/hypopg\n"
-                    "After installing the extension packages, connect to your database and run: CREATE EXTENSION hypopg;"
-                )
-                session.error = error_message
-                logger.error(error_message)
-                return session
+
+        # If hypopg is not installed or not available, add error to session
+        if not is_hypopg_installed:
+            session.error = hypopg_message
+            return session
 
         # Pre-check 2: Check if ANALYZE has been run at least once
         result = await self.sql_driver.execute_query(
