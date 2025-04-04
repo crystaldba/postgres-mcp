@@ -1,6 +1,6 @@
 from pglast import parse_sql
 
-from .artifacts import ExplainPlanArtifact
+from ..artifacts import ExplainPlanArtifact
 from .dta_calc import MAX_NUM_DTA_QUERIES_LIMIT
 from .dta_calc import ColumnCollector
 from .dta_calc import ConditionColumnCollector

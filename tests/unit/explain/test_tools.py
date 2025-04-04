@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 import pytest_asyncio
 
-from postgres_mcp.dta.artifacts import ExplainPlanArtifact
-from postgres_mcp.explain.tools import ErrorResult
+from postgres_mcp.artifacts import ErrorResult
+from postgres_mcp.artifacts import ExplainPlanArtifact
 from postgres_mcp.explain.tools import ExplainPlanTool
 
 

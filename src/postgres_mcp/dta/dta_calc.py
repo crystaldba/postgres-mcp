@@ -20,10 +20,10 @@ from pglast.ast import SortBy
 from pglast.ast import SortGroupClause
 from pglast.visitors import Visitor
 
+from ..artifacts import calculate_improvement_multiple
 from ..sql import SafeSqlDriver
 from ..sql import SqlDriver
 from ..sql import check_hypopg_installation_status
-from .artifacts import calculate_improvement_multiple
 
 logger = logging.getLogger(__name__)
 

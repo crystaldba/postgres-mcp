@@ -12,6 +12,16 @@ from attrs import field
 INFINITE_IMPROVEMENT_MULTIPLIER = 1000000.0
 
 
+class ErrorResult:
+    """Simple error result class."""
+
+    def to_text(self) -> str:
+        return self.value
+
+    def __init__(self, message: str):
+        self.value = message
+
+
 def calculate_improvement_multiple(base_cost: float, rec_cost: float) -> float:
     """Calculate the improvement multiple from this recommendation."""
     if base_cost <= 0.0:

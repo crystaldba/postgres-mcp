@@ -7,9 +7,9 @@ from typing import List
 
 import humanize
 
+from ..artifacts import ExplainPlanArtifact
+from ..artifacts import calculate_improvement_multiple
 from ..sql import SqlDriver
-from .artifacts import ExplainPlanArtifact
-from .artifacts import calculate_improvement_multiple
 from .dta_calc import DatabaseTuningAdvisor
 from .dta_calc import DTASession
 from .dta_calc import IndexConfig

@@ -1,39 +1,18 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import TYPE_CHECKING
 from typing import Any
 
-from ..dta.artifacts import ExplainPlanArtifact
+from ..artifacts import ErrorResult
+from ..artifacts import ExplainPlanArtifact
 from ..sql import check_postgres_version_requirement
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..sql.sql_driver import SqlDriver
-
-
-class ErrorResult:
-    """Simple error result class."""
-
-    def to_text(self) -> str:
-        return self.value
-
-    def __init__(self, message: str):
-        self.value = message
-
-
-class JsonResult:
-    """Simple JSON result class."""
-
-    def to_text(self) -> str:
-        return self.value
-
-    def __init__(self, data: Any):
-        self.value = json.dumps(data, indent=2)
-        self.data = data
 
 
 class ExplainPlanTool:

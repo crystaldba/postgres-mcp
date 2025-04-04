@@ -15,12 +15,12 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import AnyUrl
 from pydantic import Field
 
+from .artifacts import ErrorResult
+from .artifacts import ExplainPlanArtifact
 from .database_health import DatabaseHealthTool
 from .database_health import HealthType
 from .dta import MAX_NUM_DTA_QUERIES_LIMIT
 from .dta import DTATool
-from .explain import ErrorResult
-from .explain import ExplainPlanArtifact
 from .explain import ExplainPlanTool
 from .sql import DbConnPool
 from .sql import SafeSqlDriver
