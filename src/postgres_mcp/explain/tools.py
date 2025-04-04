@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from ..dta.artifacts import ExplainPlanArtifact
+from ..sql import check_postgres_version_requirement
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,21 @@ class ExplainPlanTool:
         Returns:
             ExplainPlanArtifact or ErrorResult
         """
-        use_generic_plan = self._has_bind_variables(sql_query)
+        has_bind_variables = self._has_bind_variables(sql_query)
+
+        # If query has bind variables, check PostgreSQL version for generic plan support
+        if has_bind_variables:
+            meets_requirement, message = await check_postgres_version_requirement(
+                self.sql_driver, min_version=16, feature_name="Generic plan with bind variables ($1, $2, etc.)"
+            )
+
+            if not meets_requirement:
+                return ErrorResult(message + " Please replace the bind variables with explicit values.")
+
+            use_generic_plan = True
+        else:
+            use_generic_plan = False
+
         return await self._run_explain_query(sql_query, analyze=False, generic_plan=use_generic_plan)
 
     async def explain_analyze(self, sql_query: str) -> ExplainPlanArtifact | ErrorResult:

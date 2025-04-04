@@ -77,7 +77,9 @@ async def test_explain_success(mock_sql_driver):
 @pytest.mark.asyncio
 async def test_explain_with_bind_variables(mock_sql_driver):
     """Test explain with bind variables."""
-    # Prepare mock response
+    # Prepare mock response for PostgreSQL version check
+    version_response = [MockCell({"server_version": "16.0"})]
+    # Prepare mock response for explain query
     plan_data = {
         "Plan": {
             "Node Type": "Seq Scan",
@@ -89,14 +91,53 @@ async def test_explain_with_bind_variables(mock_sql_driver):
         }
     }
 
-    mock_sql_driver.execute_query.return_value = [MockCell({"QUERY PLAN": [plan_data]})]
+    # Set up the mock to return different responses for different queries
+    def side_effect(query):
+        if query == "SHOW server_version":
+            return version_response
+        else:
+            return [MockCell({"QUERY PLAN": [plan_data]})]
+
+    mock_sql_driver.execute_query.side_effect = side_effect
 
     tool = ExplainPlanTool(sql_driver=mock_sql_driver)
-    _result = await tool.explain("SELECT * FROM users WHERE id = $1")
+    result = await tool.explain("SELECT * FROM users WHERE id = $1")
 
-    # Verify query includes GENERIC_PLAN option
-    call_args = mock_sql_driver.execute_query.call_args[0][0]
-    assert "EXPLAIN (FORMAT JSON, GENERIC_PLAN) SELECT * FROM users WHERE id = $1" in call_args
+    # Verify result is as expected
+    assert isinstance(result, ExplainPlanArtifact)
+
+    # Find the EXPLAIN call in the call history
+    explain_call = None
+    for call in mock_sql_driver.execute_query.call_args_list:
+        if "EXPLAIN" in call[0][0]:
+            explain_call = call[0][0]
+            break
+
+    assert explain_call is not None
+    assert "EXPLAIN (FORMAT JSON, GENERIC_PLAN) SELECT * FROM users WHERE id = $1" in explain_call
+
+
+@pytest.mark.asyncio
+async def test_explain_with_bind_variables_pg15(mock_sql_driver):
+    """Test explain with bind variables on PostgreSQL < 16."""
+    # Prepare mock response for PostgreSQL version check
+    version_response = [MockCell({"server_version": "15.4"})]
+
+    # Set up the mock to return different responses for different queries
+    def side_effect(query):
+        if query == "SHOW server_version":
+            return version_response
+        return None  # We shouldn't get here
+
+    mock_sql_driver.execute_query.side_effect = side_effect
+
+    tool = ExplainPlanTool(sql_driver=mock_sql_driver)
+    result = await tool.explain("SELECT * FROM users WHERE id = $1")
+
+    # Verify we get an error about PostgreSQL version
+    assert isinstance(result, ErrorResult)
+    assert "requires PostgreSQL 16 or later" in result.value
+    assert "bind variables" in result.value
 
 
 @pytest.mark.asyncio

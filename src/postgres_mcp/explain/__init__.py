@@ -1,4 +1,4 @@
-"""PostgreSQL explain plan tools and artifacts."""
+"""PostgreSQL explain plan tools."""
 
 from ..dta.artifacts import ExplainPlanArtifact
 from .tools import ErrorResult

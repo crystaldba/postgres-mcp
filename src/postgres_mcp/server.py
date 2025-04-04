@@ -207,6 +207,8 @@ Examples: [
 
         # If hypothetical indexes are specified, check for HypoPG extension
         if hypothetical_indexes:
+            if analyze:
+                return format_error_response("Cannot use analyze and hypothetical indexes together")
             try:
                 # Use the common utility function to check if hypopg is installed
                 (
@@ -238,7 +240,10 @@ Examples: [
         if result and isinstance(result, ExplainPlanArtifact):
             return format_text_response(result.to_text())
         else:
-            return format_error_response("Error processing explain plan: " + result.to_text())
+            error_message = "Error processing explain plan"
+            if isinstance(result, ErrorResult):
+                error_message = result.to_text()
+            return format_error_response(error_message)
     except Exception as e:
         logger.error(f"Error explaining query: {e}")
         return format_error_response(str(e))

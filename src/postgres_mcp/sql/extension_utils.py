@@ -20,6 +20,54 @@ class ExtensionStatus(TypedDict):
     default_version: str | None
 
 
+async def get_postgres_version(sql_driver: SqlDriver) -> int:
+    """
+    Get the major PostgreSQL version as an integer.
+
+    Args:
+        sql_driver: An instance of SqlDriver to execute queries
+
+    Returns:
+        The major PostgreSQL version as an integer (e.g., 16 for PostgreSQL 16.2)
+        Returns 0 if the version cannot be determined
+    """
+    try:
+        rows = await sql_driver.execute_query("SHOW server_version")
+        if not rows:
+            logger.warning("Could not determine PostgreSQL version")
+            return 0
+
+        version_string = rows[0].cells["server_version"]
+        # Extract the major version (before the first dot)
+        major_version = version_string.split(".")[0]
+        return int(major_version)
+    except Exception as e:
+        logger.warning(f"Error determining PostgreSQL version: {e}")
+        return 0
+
+
+async def check_postgres_version_requirement(sql_driver: SqlDriver, min_version: int, feature_name: str) -> tuple[bool, str]:
+    """
+    Check if the PostgreSQL version meets the minimum requirement.
+
+    Args:
+        sql_driver: An instance of SqlDriver to execute queries
+        min_version: The minimum required PostgreSQL version
+        feature_name: Name of the feature that requires this version
+
+    Returns:
+        A tuple of (meets_requirement, message)
+    """
+    pg_version = await get_postgres_version(sql_driver)
+
+    if pg_version >= min_version:
+        return True, f"PostgreSQL version {pg_version} meets the requirement for {feature_name}"
+
+    return False, (
+        f"This feature ({feature_name}) requires PostgreSQL {min_version} or later. Your current version is PostgreSQL {pg_version or 'unknown'}."
+    )
+
+
 async def check_extension(
     sql_driver: SqlDriver,
     extension_name: str,
