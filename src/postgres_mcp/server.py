@@ -204,7 +204,7 @@ Examples: [
                 (
                     is_hypopg_installed,
                     hypopg_message,
-                ) = await check_hypopg_installation_status(sql_driver.sql_driver)
+                ) = await check_hypopg_installation_status(sql_driver)
 
                 # If hypopg is not installed, return the message
                 if not is_hypopg_installed:

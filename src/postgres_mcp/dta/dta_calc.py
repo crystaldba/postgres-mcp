@@ -231,7 +231,7 @@ class DatabaseTuningAdvisor:
         # Pre-check 1: Check HypoPG with more granular feedback
         # Use our new utility function to check HypoPG status
         is_hypopg_installed, hypopg_message = await check_hypopg_installation_status(
-            self.sql_driver, message_type="plain"
+            self.sql_driver
         )
 
         # If hypopg is not installed or not available, add error to session

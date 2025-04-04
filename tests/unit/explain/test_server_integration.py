@@ -42,8 +42,8 @@ async def test_explain_query_integration():
     with patch(
         "postgres_mcp.server.format_text_response", return_value=[mock_text_result]
     ):
-        # Patch the get_safe_sql_driver
-        with patch("postgres_mcp.server.get_safe_sql_driver"):
+        # Patch the get_sql_driver
+        with patch("postgres_mcp.server.get_sql_driver"):
             # Patch the ExplainPlanTool
             with patch("postgres_mcp.server.ExplainPlanTool"):
                 result = await explain_query(
@@ -70,8 +70,8 @@ async def test_explain_query_with_analyze_integration():
     with patch(
         "postgres_mcp.server.format_text_response", return_value=[mock_text_result]
     ):
-        # Patch the get_safe_sql_driver
-        with patch("postgres_mcp.server.get_safe_sql_driver"):
+        # Patch the get_sql_driver
+        with patch("postgres_mcp.server.get_sql_driver"):
             # Patch the ExplainPlanTool
             with patch("postgres_mcp.server.ExplainPlanTool"):
                 result = await explain_query(
@@ -105,10 +105,8 @@ async def test_explain_query_with_hypothetical_indexes_integration():
         mock_execute_query = AsyncMock(return_value=[MockCell({"exists": 1})])
         mock_safe_driver.execute_query = mock_execute_query
 
-        # Patch the get_safe_sql_driver
-        with patch(
-            "postgres_mcp.server.get_safe_sql_driver", return_value=mock_safe_driver
-        ):
+        # Patch the get_sql_driver
+        with patch("postgres_mcp.server.get_sql_driver", return_value=mock_safe_driver):
             # Patch the ExplainPlanTool
             with patch("postgres_mcp.server.ExplainPlanTool"):
                 result = await explain_query(
@@ -142,10 +140,8 @@ async def test_explain_query_missing_hypopg_integration():
     with patch(
         "postgres_mcp.server.format_text_response", return_value=[mock_text_result]
     ):
-        # Patch the get_safe_sql_driver
-        with patch(
-            "postgres_mcp.server.get_safe_sql_driver", return_value=mock_safe_driver
-        ):
+        # Patch the get_sql_driver
+        with patch("postgres_mcp.server.get_sql_driver", return_value=mock_safe_driver):
             # Patch the ExplainPlanTool
             with patch("postgres_mcp.server.ExplainPlanTool"):
                 result = await explain_query(
@@ -170,9 +166,9 @@ async def test_explain_query_error_handling_integration():
     with patch(
         "postgres_mcp.server.format_error_response", return_value=[mock_text_result]
     ):
-        # Patch the get_safe_sql_driver to throw an exception
+        # Patch the get_sql_driver to throw an exception
         with patch(
-            "postgres_mcp.server.get_safe_sql_driver",
+            "postgres_mcp.server.get_sql_driver",
             side_effect=Exception(error_message),
         ):
             result = await explain_query("INVALID SQL")

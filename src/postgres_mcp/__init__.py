@@ -1,5 +1,4 @@
 from . import server
-from .server import get_safe_sql_driver
 import asyncio
 
 
@@ -12,5 +11,4 @@ def main():
 __all__ = [
     "main",
     "server",
-    "get_safe_sql_driver",
 ]
