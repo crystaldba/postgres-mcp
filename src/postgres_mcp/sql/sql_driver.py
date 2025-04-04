@@ -184,7 +184,7 @@ class SqlDriver:
         self,
         query: LiteralString,
         params: list[Any] | None = None,
-        force_readonly: bool = True,
+        force_readonly: bool = False,
     ) -> Optional[List[RowResult]]:
         """
         Execute a query and return results.
@@ -208,10 +208,10 @@ class SqlDriver:
                 # For pools, get a connection from the pool
                 pool = await self.conn.pool_connect()
                 async with pool.connection() as connection:
-                    return await self._execute_with_connection(connection, query, params, force_readonly)
+                    return await self._execute_with_connection(connection, query, params, force_readonly=force_readonly)
             else:
                 # Direct connection approach
-                return await self._execute_with_connection(self.conn, query, params, force_readonly)
+                return await self._execute_with_connection(self.conn, query, params, force_readonly=force_readonly)
         except Exception as e:
             # Mark pool as invalid if there was a connection issue
             if self.conn and self.is_pool:

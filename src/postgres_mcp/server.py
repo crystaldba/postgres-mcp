@@ -249,11 +249,11 @@ Examples: [
         return format_error_response(str(e))
 
 
-@mcp.tool(description="Run a read-only SQL query")
+# Query function declaration without the decorator - we'll add it dynamically based on access mode
 async def query(
     sql: str = Field(description="SQL to run", default="all"),
 ) -> ResponseType:
-    """Run a read-only SQL query."""
+    """Executes a SQL query against the database."""
     try:
         sql_driver = await get_sql_driver()
         rows = await sql_driver.execute_query(sql)  # type: ignore
@@ -467,6 +467,12 @@ async def main():
     # Store the access mode in the global variable
     global current_access_mode
     current_access_mode = AccessMode(args.access_mode)
+
+    # Add the query tool with a description appropriate to the access mode
+    if current_access_mode == AccessMode.UNRESTRICTED:
+        mcp.add_tool(query, description="Run an unrestricted SQL query")
+    else:
+        mcp.add_tool(query, description="Run a read-only SQL query")
 
     logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
 
