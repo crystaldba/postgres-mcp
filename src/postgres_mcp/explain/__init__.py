@@ -1,6 +1,6 @@
 """PostgreSQL explain plan tools."""
 
-from .tools import ExplainPlanTool
+from .explain_plan import ExplainPlanTool
 
 __all__ = [
     "ExplainPlanTool",

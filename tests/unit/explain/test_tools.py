@@ -7,7 +7,7 @@ import pytest_asyncio
 
 from postgres_mcp.artifacts import ErrorResult
 from postgres_mcp.artifacts import ExplainPlanArtifact
-from postgres_mcp.explain.tools import ExplainPlanTool
+from postgres_mcp.explain import ExplainPlanTool
 
 
 class MockCell:
