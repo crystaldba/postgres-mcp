@@ -1226,7 +1226,7 @@ class DatabaseTuningAdvisor:
 
         # Generate the plan using the static method
         explain_plan_tool = ExplainPlanTool(self.sql_driver)
-        plan = await explain_plan_tool.generate_explain_plan_with_hypothetical_indexes(query_text, indexes, self)
+        plan = await explain_plan_tool.generate_explain_plan_with_hypothetical_indexes(query_text, indexes, False, self)
 
         # Cache the result
         self._explain_plans_cache[cache_key] = plan

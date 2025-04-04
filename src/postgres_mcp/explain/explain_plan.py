@@ -26,16 +26,9 @@ class ExplainPlanTool:
     def __init__(self, sql_driver: SqlDriver):
         self.sql_driver = sql_driver
 
-    async def explain(self, sql_query: str, do_analyze: bool = False) -> ExplainPlanArtifact | ErrorResult:
-        """
-        Generate an EXPLAIN plan for a SQL query.
-
-        Args:
-            sql_query: The SQL query to explain
-
-        Returns:
-            ExplainPlanArtifact or ErrorResult
-        """
+    async def replace_query_parameters_if_needed(self, sql_query: str) -> tuple[str, bool]:
+        """Replace bind variables with sample values in a query."""
+        use_generic_plan = False
         has_bind_variables = self._has_bind_variables(sql_query)
 
         # If query has bind variables, check PostgreSQL version for generic plan support
@@ -56,13 +49,24 @@ class ExplainPlanTool:
                 modified_query = await bind_params.replace_parameters(sql_query)
                 logger.debug(f"Original query: {sql_query}")
                 logger.debug(f"Modified query: {modified_query}")
-                return await self._run_explain_query(modified_query, analyze=do_analyze, generic_plan=False)
+                sql_query = modified_query
+            else:
+                use_generic_plan = True
 
-            use_generic_plan = True
-        else:
-            use_generic_plan = False
+        return sql_query, use_generic_plan
 
-        return await self._run_explain_query(sql_query, analyze=do_analyze, generic_plan=use_generic_plan)
+    async def explain(self, sql_query: str, do_analyze: bool = False) -> ExplainPlanArtifact | ErrorResult:
+        """
+        Generate an EXPLAIN plan for a SQL query.
+
+        Args:
+            sql_query: The SQL query to explain
+
+        Returns:
+            ExplainPlanArtifact or ErrorResult
+        """
+        modified_sql_query, use_generic_plan = await self.replace_query_parameters_if_needed(sql_query)
+        return await self._run_explain_query(modified_sql_query, analyze=do_analyze, generic_plan=use_generic_plan)
 
     async def explain_analyze(self, sql_query: str) -> ExplainPlanArtifact | ErrorResult:
         """
@@ -118,8 +122,11 @@ class ExplainPlanTool:
                 for idx in hypothetical_indexes
             )
 
+            # Check if the query contains bind variables
+            modified_sql_query, use_generic_plan = await self.replace_query_parameters_if_needed(sql_query)
+
             # Generate the explain plan using the static method
-            plan_data = await self.generate_explain_plan_with_hypothetical_indexes(sql_query, indexes)
+            plan_data = await self.generate_explain_plan_with_hypothetical_indexes(modified_sql_query, indexes, use_generic_plan)
 
             # Check if we got a valid plan
             if not plan_data or not isinstance(plan_data, dict) or "Plan" not in plan_data:
@@ -179,6 +186,7 @@ class ExplainPlanTool:
         self,
         query_text: str,
         indexes: frozenset[IndexConfig],
+        use_generic_plan: bool = False,
         dta=None,
     ) -> dict[str, Any]:
         """
@@ -202,7 +210,13 @@ class ExplainPlanTool:
                 )
 
             # Execute explain with the indexes
-            explain_plan_query = f"{create_indexes_query} EXPLAIN ({'COSTS TRUE, ' if indexes else ''}FORMAT JSON) {query_text}"
+            explain_options = ["FORMAT JSON"]
+            if use_generic_plan:
+                explain_options.append("GENERIC_PLAN")
+            if indexes:
+                explain_options.append("COSTS TRUE")
+
+            explain_plan_query = f"EXPLAIN ({', '.join(explain_options)}) {query_text}"
             plan_result = await self.sql_driver.execute_query(explain_plan_query)  # type: ignore
 
             # Extract the plan
