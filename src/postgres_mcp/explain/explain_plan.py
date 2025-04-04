@@ -38,15 +38,20 @@ class ExplainPlanTool:
 
         # If query has bind variables, check PostgreSQL version for generic plan support
         if has_bind_variables:
-            meets_requirement, _message = await check_postgres_version_requirement(
+            has_like = self._has_like_expressions(sql_query)
+
+            meets_pg_version_requirement, _message = await check_postgres_version_requirement(
                 self.sql_driver, min_version=16, feature_name="Generic plan with bind variables ($1, $2, etc.)"
             )
 
-            if not meets_requirement:
-                # For PostgreSQL < 16, replace bind variables with sample values instead of erroring out
-                logger.debug("PostgreSQL version < 16 detected. Replacing bind variables with sample values.")
-                sql_bind_params = SqlBindParams(self.sql_driver)
-                modified_query = await sql_bind_params.replace_parameters(sql_query)
+            # If PostgreSQL < 16 or the query has LIKE expressions (which don't work with GENERIC_PLAN)
+            if not meets_pg_version_requirement or has_like:
+                # Replace bind variables with sample values
+                logger.debug("Replacing bind variables with sample values in query")
+                if meets_pg_version_requirement and has_like:
+                    logger.debug("LIKE expressions detected, using parameter replacement instead of GENERIC_PLAN")
+                bind_params = SqlBindParams(self.sql_driver)
+                modified_query = await bind_params.replace_parameters(sql_query)
                 logger.debug(f"Original query: {sql_query}")
                 logger.debug(f"Modified query: {modified_query}")
                 return await self._run_explain_query(modified_query, analyze=do_analyze, generic_plan=False)
@@ -135,6 +140,10 @@ class ExplainPlanTool:
     def _has_bind_variables(self, query: str) -> bool:
         """Check if a query contains bind variables ($1, $2, etc)."""
         return bool(re.search(r"\$\d+", query))
+
+    def _has_like_expressions(self, query: str) -> bool:
+        """Check if a query contains LIKE expressions, which don't work with GENERIC_PLAN."""
+        return bool(re.search(r"\bLIKE\b", query, re.IGNORECASE))
 
     async def _run_explain_query(self, query: str, analyze: bool = False, generic_plan: bool = False) -> ExplainPlanArtifact | ErrorResult:
         try:

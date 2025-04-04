@@ -45,6 +45,21 @@ async def test_has_bind_variables():
 
 
 @pytest.mark.asyncio
+async def test_has_like_expressions():
+    """Test the _has_like_expressions method."""
+    tool = ExplainPlanTool(sql_driver=MagicMock())
+
+    # Test with LIKE expressions
+    assert tool._has_like_expressions("SELECT * FROM users WHERE name LIKE '%John%'") is True  # type: ignore
+    assert tool._has_like_expressions("SELECT * FROM users WHERE name like 'John%'") is True  # type: ignore
+    assert tool._has_like_expressions("SELECT * FROM users WHERE UPPER(name) LIKE 'JOHN%'") is True  # type: ignore
+
+    # Test without LIKE expressions
+    assert tool._has_like_expressions("SELECT * FROM users WHERE name = 'John'") is False  # type: ignore
+    assert tool._has_like_expressions("SELECT * FROM users WHERE id > 100") is False  # type: ignore
+
+
+@pytest.mark.asyncio
 async def test_explain_success(mock_sql_driver):
     """Test successful execution of explain."""
     # Prepare mock response
@@ -330,3 +345,70 @@ async def test_explain_with_empty_plan_data(mock_sql_driver):
     # Verify error handling
     assert isinstance(result, ErrorResult)
     assert "No results" in result.value
+
+
+@pytest.mark.asyncio
+async def test_explain_with_like_and_bind_variables_pg16(mock_sql_driver, monkeypatch):
+    """Test explain with LIKE and bind variables on PostgreSQL 16."""
+    # Prepare mock response for PostgreSQL version check
+    version_response = [MockCell({"server_version": "16.0"})]
+
+    # Prepare plan data for the replaced parameter query
+    plan_data = {
+        "Plan": {
+            "Node Type": "Seq Scan",
+            "Relation Name": "users",
+            "Startup Cost": 0.00,
+            "Total Cost": 10.00,
+            "Plan Rows": 100,
+            "Plan Width": 20,
+        }
+    }
+
+    # Mock the SqlBindParams class
+    class MockSqlBindParams:
+        def __init__(self, sql_driver):
+            self.sql_driver = sql_driver
+
+        async def replace_parameters(self, query):
+            return "SELECT * FROM users WHERE name LIKE '%John%'"  # Replaced query
+
+    # The correct import path for monkeypatching
+    monkeypatch.setattr("postgres_mcp.explain.explain_plan.SqlBindParams", MockSqlBindParams)
+
+    # Set up the mock to return different responses for different queries
+    def side_effect(query):
+        if query == "SHOW server_version":
+            return version_response
+        elif "EXPLAIN" in query and "LIKE '%John%'" in query:
+            # For the parameter-replaced EXPLAIN query, return mock results
+            return [MockCell({"QUERY PLAN": [plan_data]})]
+        return None
+
+    mock_sql_driver.execute_query.side_effect = side_effect
+
+    tool = ExplainPlanTool(sql_driver=mock_sql_driver)
+    result = await tool.explain("SELECT * FROM users WHERE name LIKE $1")
+
+    # We expect a successful result with parameter replacement despite PostgreSQL 16
+    if isinstance(result, ErrorResult):
+        print(f"Got error: {result.value}")
+    assert isinstance(result, ExplainPlanArtifact)
+
+    # Verify that the version check was called
+    version_call = None
+    explain_call = None
+
+    for call in mock_sql_driver.execute_query.call_args_list:
+        if "server_version" in call[0][0]:
+            version_call = call
+        elif "EXPLAIN" in call[0][0]:
+            explain_call = call
+
+    assert version_call is not None
+    assert explain_call is not None
+
+    # Make sure GENERIC_PLAN is NOT in the query - we should be using replaced values
+    assert "GENERIC_PLAN" not in explain_call[0][0]
+    # Verify the parameters were replaced
+    assert "LIKE '%John%'" in explain_call[0][0]
