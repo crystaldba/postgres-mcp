@@ -157,14 +157,14 @@ async def explain_query(
     ),
     hypothetical_indexes: list[dict[str, Any]] | None = Field(
         description="""Optional list of hypothetical indexes to simulate. Each index must be a dictionary with these keys:
-                        - 'table': The table name to add the index to (e.g., 'users')
-                        - 'columns': List of column names to include in the index (e.g., ['email'] or ['last_name', 'first_name'])
-                        - 'using': Optional index method (default: 'btree', other options include 'hash', 'gist', etc.)
+    - 'table': The table name to add the index to (e.g., 'users')
+    - 'columns': List of column names to include in the index (e.g., ['email'] or ['last_name', 'first_name'])
+    - 'using': Optional index method (default: 'btree', other options include 'hash', 'gist', etc.)
 
-                    Examples: [
-                        {"table": "users", "columns": ["email"], "using": "btree"},
-                        {"table": "orders", "columns": ["user_id", "created_at"]}
-                    ]""",
+Examples: [
+    {"table": "users", "columns": ["email"], "using": "btree"},
+    {"table": "orders", "columns": ["user_id", "created_at"]}
+]""",
         default=None,
     ),
 ) -> ResponseType:
