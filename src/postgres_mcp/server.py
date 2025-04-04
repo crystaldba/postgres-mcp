@@ -194,7 +194,7 @@ Examples: [
         hypothetical_indexes: Optional list of indexes to simulate
     """
     try:
-        sql_driver = await get_safe_sql_driver()
+        sql_driver = await get_sql_driver()
         explain_tool = ExplainPlanTool(sql_driver=sql_driver)
 
         # If hypothetical indexes are specified, check for HypoPG extension
