@@ -1,5 +1,6 @@
 # Postgres Pro | MCP Server
 
+[ [Quick Start](#quick-start) | [Intro Blog Post](https://www.crystaldba.ai/blog) | [Discord Server](https://discord.gg/4BEHC7ZM) ]
 
 ## Overview
 
@@ -8,11 +9,10 @@ It allows AI assistants and agents such as Claude or Cursor to analyze query per
 
 Postgres Pro provides support along the full software development lifecycle—from code generation through testing, deployment, and production maintenance and tuning.
 
-[ [Quick Start](#quick-start) | [Intro Blog Post](https://www.crystaldba.ai/blog) | [Discord Server](https://discord.gg/4BEHC7ZM) ]
-
 *DEMO VIDEO PLACEHOLDER*
 
-**Table of Contents:**
+## Contents
+
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [Usage Examples](#usage-examples)
@@ -155,7 +155,7 @@ You will now edit the `mcpServers` section of the configuration file.
 }
 ```
 
-##### If you are using the Docker
+##### If you are using Docker
 
 ```json
 {
@@ -224,23 +224,28 @@ Many MCP clients have similar configuration files to Claude Desktop, and you can
 
 ### Get Database Health Overview
 
-Ask Claude: "Check the health of my database and identify any issues."
+Ask:
+> "Check the health of my database and identify any issues."
 
 ### Analyze Slow Queries
 
-Ask Claude: "What are the slowest queries in my database? And how can I speed them up?"
+Ask:
+> "What are the slowest queries in my database? And how can I speed them up?"
 
 ### Get Recommendations On How To Speed Things Up
 
-Ask Claude: "My app is slow. How can I make it faster?"
+Ask:
+> "My app is slow. How can I make it faster?"
 
 ### Generate Index Recommendations
 
-Ask Claude: "Analyze my database workload and suggest indexes to improve performance."
+Ask:
+> Analyze my database workload and suggest indexes to improve performance."
 
 ### Optimize a Specific Query
 
-Ask Claude: "Help me optimize this query: SELECT \* FROM orders JOIN customers ON orders.customer_id = customers.id WHERE orders.created_at > '2023-01-01';"
+Ask:
+> Help me optimize this query: SELECT \* FROM orders JOIN customers ON orders.customer_id = customers.id WHERE orders.created_at > '2023-01-01';"
 
 ## MCP Server API
 
