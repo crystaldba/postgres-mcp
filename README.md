@@ -12,6 +12,15 @@ Postgres Pro provides support along the full software development lifecycle—fr
 
 *DEMO VIDEO PLACEHOLDER*
 
+**Table of Contents:**
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Usage Examples](#usage-examples)
+- [MCP Server API](#mcp-server-api)
+- [Related Projects](#related-projects)
+- [Frequently Asked Questions](#frequently-asked-questions)
+- [Postgres Pro Development](#postgres-pro-development)
+
 ## Features
 
 Postgres Pro offers a set of tools to help you query, analyze, and optimize your Postgres database.
