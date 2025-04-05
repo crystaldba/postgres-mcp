@@ -19,6 +19,7 @@ Postgres Pro provides support along the full software development lifecycle—fr
 - [MCP Server API](#mcp-server-api)
 - [Related Projects](#related-projects)
 - [Frequently Asked Questions](#frequently-asked-questions)
+- [Technical Notes](#technical-notes)
 - [Postgres Pro Development](#postgres-pro-development)
 
 ## Features
@@ -324,6 +325,74 @@ There is nothing here yet.
 Tell us what you want to see by opening an [issue](https://github.com/crystaldba/postgres-mcp/issues) or a [pull request](https://github.com/crystaldba/postgres-mcp/pulls).
 
 You can also contact us on [Discord](https://discord.gg/4BEHC7ZM).
+
+## Technical Notes
+
+This section includes a high-level overview technical considerations that influenced the design of Postgres Pro.
+
+### Index Tuning
+
+*WIP*
+
+### Database Health
+
+*WIP*
+
+### Postgres Client Library
+
+Postgres Pro uses [psycopg3](https://www.psycopg.org/) to connect to Postgres using asynchronous I/O.
+Under the hood, psycopg3 uses the [libpq](https://www.postgresql.org/docs/current/libpq.html) library to connect to Postgres, providing access to the full Postgres feature set and an underlying implementation fully supported by the Postgres community.
+
+Some other Python-based MCP servers use [asyncpg](https://github.com/MagicStack/asyncpg), which may simplify installation by eliminating the `libpq` dependency.
+Asyncpg is also probably [faster](https://fernandoarteaga.dev/blog/psycopg-vs-asyncpg/) than psycopg3, but we have not validate this ourselves.
+[Older benchmarks](https://gistpreview.github.io/?0ed296e93523831ea0918d42dd1258c2) report a larger performance gap, suggesting that the newer psycopg3 has closed the gap as it matures.
+
+Balancing these considerations, we selected `psycopg3` over `asyncpg`.
+We remain open to revising this decision in the future.
+
+
+### Connection Configuration
+
+Like the [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres), Postgres Pro takes Postgres connection information at startup.
+This is convenient for users who always connect to the same database, but can be cumbersome when users switch databases.
+
+An alternative approach, taken by [PG-MCP](https://github.com/stuzero/pg-mcp), is provide connection details via MCP tool calls at the time of use.
+This is more convenient for users who switch databases, and allows a single MCP server to simultaneously support multiple end-users.
+
+There must be a better approach than either of these.
+Both have security weaknesses—few MCP clients store the MCP server configuration securely (an exception is Goose), and credentials provided via MCP tools are passed through the LLM and stored in the chat history.
+Both also have usability issues in some scenarios.
+
+
+### Schema Information
+
+The purpose of the schema information tool is to provide the calling AI agent with the information it needs to generate correct and performant SQL.
+For example, suppose a user asks, "How many flights took off from San Francisco and landed in Paris during the past year?"
+The AI agent needs to find the table that stores the flights, the columns that store the origin and destinations, and perhaps a table that maps between airport codes and airport locations.
+
+
+*Why provide schema information tools when LLMs are generally capable of generating the SQL to retrieve this information from Postgres directly?*
+
+Our experience using Claude indicates that the calling LLM is very good at generating SQL to explore the Postgres schema by querying the [Postgres system catalog](https://www.postgresql.org/docs/current/catalogs.html) and the [information schema](https://www.postgresql.org/docs/current/information-schema.html) (an ANSI-standardized database metadata view).
+However, we do not know whether other LLMs do so as reliably and capably.
+
+*Would it be better to provide schema information using [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources) rather than [MCP tools](https://modelcontextprotocol.io/docs/concepts/tools)?*
+
+The [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres) uses resources to expose schema information rather than tools.
+Navigating a resources is similar to navigating a file system, so this approach is natural in many ways.
+However, resource support is not less widespread than tool support in the MCP client ecosystem (see [example clients](https://modelcontextprotocol.io/clients)).
+In addition, while the MCP standard says that resources can be accessed by either AI agents or end-user humans, some clients only support human navigation of the resource tree.
+
+
+### Protected SQL Execution
+
+*WIP*
+
+MCP clients have different mechanisms for protecting the SQL execution.
+
+SQL can be a powerful tool
+
+[Auto-run](https://docs.cursor.com/chat/tools#auto-run)
 
 
 
