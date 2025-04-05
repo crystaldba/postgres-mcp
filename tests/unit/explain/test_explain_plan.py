@@ -412,3 +412,66 @@ async def test_explain_with_like_and_bind_variables_pg16(mock_sql_driver, monkey
     assert "GENERIC_PLAN" not in explain_call[0][0]
     # Verify the parameters were replaced
     assert "LIKE '%John%'" in explain_call[0][0]
+
+
+@pytest.mark.asyncio
+async def test_explain_with_functional_hypothetical_indexes(mock_sql_driver):
+    """Test explain with functional expressions in hypothetical indexes."""
+    # Prepare sample plan data with index scan - including all required fields
+    plan_data = {
+        "Plan": {
+            "Node Type": "Index Scan",
+            "Index Name": "hypothetical_idx",
+            "Relation Name": "title_basics",
+            "Startup Cost": 0.00,
+            "Total Cost": 100.00,
+            "Plan Rows": 100,
+            "Plan Width": 20,
+        }
+    }
+
+    # Mock the hypopg_reset and hypopg_create_index calls
+    def side_effect(query):
+        if "hypopg_" in query or "EXPLAIN" in query:
+            return [MockCell({"QUERY PLAN": [plan_data]})]
+        return None
+
+    mock_sql_driver.execute_query.side_effect = side_effect
+
+    # Sample query with ILIKE and functional indexes
+    sql_query = """
+    SELECT * FROM title_basics
+    WHERE primary_title ILIKE '%star%' OR original_title ILIKE '%star%'
+    ORDER BY start_year DESC
+    LIMIT 20 OFFSET 0;
+    """
+
+    # Complex functional expressions in the hypothetical indexes
+    hypothetical_indexes = [
+        {"table": "title_basics", "columns": ["LOWER(primary_title)"]},
+        {"table": "title_basics", "columns": ["LOWER(original_title)"]},
+        {"table": "title_basics", "columns": ["start_year DESC"]},
+    ]
+
+    tool = ExplainPlanTool(sql_driver=mock_sql_driver)
+    result = await tool.explain_with_hypothetical_indexes(sql_query, hypothetical_indexes)
+
+    # Verify the result is successful
+    assert not isinstance(result, ErrorResult), f"Got error: {result.value if isinstance(result, ErrorResult) else ''}"
+    assert isinstance(result, ExplainPlanArtifact)
+
+    # Check that explain query was called correctly
+    # The important part is that the expression is properly included in the CREATE INDEX statement
+    # We need to ensure "LOWER(primary_title)" isn't broken up or mishandled
+    calls = [call[0][0] for call in mock_sql_driver.execute_query.call_args_list]
+    explain_calls = [call for call in calls if "EXPLAIN" in call]
+
+    assert len(explain_calls) == 1
+    explain_call = explain_calls[0]
+
+    # Verify the hypothetical indexes are created correctly with the expressions
+    assert "SELECT hypopg_reset();" in explain_call
+    assert "hypopg_create_index" in explain_call
+    assert "LOWER(primary_title)" in explain_call
+    assert "LOWER(original_title)" in explain_call
+    assert "start_year DESC" in explain_call
