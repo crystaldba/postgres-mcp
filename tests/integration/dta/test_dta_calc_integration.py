@@ -1,5 +1,4 @@
 import logging
-import os
 import time
 
 import pytest
@@ -14,21 +13,30 @@ logger = logging.getLogger(__name__)
 
 
 @pytest_asyncio.fixture
-async def db_connection():
+async def db_connection(test_postgres_connection_string):
     """Create a connection to the test database."""
-    # Read connection parameters from environment or use defaults
-    database_url = os.getenv("TEST1_DATABASE_URL")
-    if not database_url:
-        pytest.skip("Missing required environment variable: TEST1_DATABASE_URL must be set")
-    driver = SqlDriver(engine_url=database_url)
+    connection_string, version = test_postgres_connection_string
+    logger.info(f"Using connection string: {connection_string}")
+    logger.info(f"Using version: {version}")
+    driver = SqlDriver(engine_url=connection_string)
 
     # Verify connection
     result = await driver.execute_query("SELECT 1")
     assert result is not None
 
     # Create pg_stat_statements extension if needed
-    await driver.execute_query("CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False)
-    await driver.execute_query("CREATE EXTENSION IF NOT EXISTS hypopg", force_readonly=False)
+    try:
+        await driver.execute_query("CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False)
+    except Exception as e:
+        logger.warning(f"Could not create pg_stat_statements extension: {e}")
+        pytest.skip("pg_stat_statements extension is not available")
+
+    # Try to create hypopg extension, but skip the test if not available
+    try:
+        await driver.execute_query("CREATE EXTENSION IF NOT EXISTS hypopg", force_readonly=False)
+    except Exception as e:
+        logger.warning(f"Could not create hypopg extension: {e}")
+        pytest.skip("hypopg extension is not available - required for DTA tests")
 
     yield driver
 
