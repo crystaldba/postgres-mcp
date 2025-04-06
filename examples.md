@@ -64,9 +64,9 @@ What we did:
           <li>Added caching for image loading and expensive queries</li>
           <li>Created an alembic migration script to apply the changes.</li>
         </ol>
-        <p>That was amazing! I was running in "yolo mode" in Cursor, so it did all that without my input. I had Postgres Pro in "restricted" mode (read-only), so I did not have to worry about unintended database changes</p>
+        <p>That was amazing! I was running in "yolo mode" in Cursor, so it did all that without my input. I had Postgres Pro in "restricted" mode (read-only), so I did not have to worry about unintended database changes.</p>
       </td>
-      <td align="center"><a href="https://youtu.be/1yEPbP_Sve0"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-1-go-0-to-1.png"/></a></td>
+      <td align="center"><a href="https://youtu.be/qhcqZ6Lxg3c"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-1-go-0-to-1.png"/></a></td>
     </tr>
     <tr>
       <td align="left" valign="top">
