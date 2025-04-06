@@ -1,13 +1,19 @@
-# Postgres Pro | MCP Server
+# Postgres Pro MCP Server
 
 [ [Quick Start](#quick-start) | [Intro Blog Post](https://www.crystaldba.ai/blog) | [Discord Server](https://discord.gg/4BEHC7ZM) ]
 
 ## Overview
 
-*Postgres Pro* is a Model Context Protocol (MCP) server that helps you query, analyze, optimize, and monitor your PostgreSQL databases.
-It allows AI assistants and agents such as Claude or Cursor to analyze query performance, recommend indexes, and perform health checks on your database.
+*Postgres Pro* is an open source Model Context Protocol (MCP) server built to support you and your AI agents throughout the entire development process—from initial coding, through testing and deployment, and to production tuning and maintenance.
 
-Postgres Pro provides support along the full software development lifecycle—from code generation through testing, deployment, and production maintenance and tuning.
+Postgres Pro does much more than wrap a database connection.
+For example, it provides:
+- Index tuning based on modern industrial-strength algorithms similar to those found in commercial databases.
+  It efficiently explores thousands of possible indexes to find the best solution for your workload.
+- Support for LLM-led indexing by providing “what if?” scenario analysis based on production data distributions and query patterns.
+- Standardized checklists for analyzing database health, ensuring trustworthy and repeatable results.
+
+Postgres Pro is under active development so this list will grow.
 
 *DEMO VIDEO PLACEHOLDER*
 
@@ -24,24 +30,26 @@ Postgres Pro provides support along the full software development lifecycle—fr
 
 ## Features
 
-Postgres Pro offers a set of tools to help you query, analyze, and optimize your Postgres database.
+Postgres Pro includes a set of tools to help you query, analyze, and optimize your Postgres database.
 It provides:
 
-- **Schema Information**.
-  Help your AI Agent generate SQL reliably and successfully with detailed schema information of your database objects—including tables, views, sequences, stored procedures, triggers.
-
-- **Protected SQL Execution**.
-  Work fast or safe, as needed:
-  - *Unrestricted Mode:* Provide full read/write access in development environments. Let your AI agent modify data, change the schema, drop tables, whatever you need it to do.
-  - *Restricted Mode:* Limit access in production environments with checks to ensure read-only operations and limits on resource consumption. These restrictions may become more elaborate in the future.
+- **Database Health**.
+  Check cache hit rates, monitor vacuum health, identify unused/duplicate indexes, and more.
 
 - **Index Tuning**.
   Ensure your SQL queries run efficiently and return quickly.
   Find tuning targets, validate AI-generated suggestions, or generate candidates using classical index optimization algorithms.
   Simulate how Postgres will after adding indexes using the explain plans together with [hypothetical indexes](https://hypopg.readthedocs.io/).
 
-- **Database Health**.
-  Check buffer cache hit rates, identify unused/duplicate indexes, monitor vacuum health, and more.
+- **Schema Information**.
+  Help your AI Agent generate SQL reliably and successfully with detailed schema information of your database objects—including tables, views, sequences, stored procedures, and triggers.
+
+- **Protected SQL Execution**.
+  Work fast or safe, as you choose:
+  - *Unrestricted Mode:* Provide full read/write access for development environments. Let your AI agent modify data, change the schema, drop tables, whatever you need it to do.
+  - *Restricted Mode:* Be safe by limiting access in production environments by enforcing checks to ensure read-only operations and limits on resource consumption.
+
+
 
 
 ## Quick Start
@@ -51,8 +59,6 @@ It provides:
 Before getting started, ensure you have:
 1. Access credentials for your database.
 2. Python 3.12 or higher *or* Docker.
-3. The `pg_statements` and `hypopg` extensions loaded on your database (for full functionality).
-
 #### Access Credentials
  You can confirm your access credentials are valid by using `psql` or a GUI tool such as [pgAdmin](https://www.pgadmin.org/).
 
@@ -62,19 +68,6 @@ Before getting started, ensure you have:
 The choice to use Docker or Python is yours.
 We generally recommend using whichever is most familiar to you.
 
-#### Postgres Extensions
-
-Postgres Pro uses the `pg_statements` extension to analyze query execution statistics.
-For example, this allows it to understand which queries are running slow or consuming significant resources.
-It uses the `hypopg` extension to simulate the behavior of the Postgres query planner after adding indexes.
-While Postgres Pro can run without these extensions, its capabilities will be limited.
-
-If your Postgres database is running on a cloud provider managed service, the `pg_statements` and `hypopg` extensions will probably already be available on the system.
-In this case, you can just run `CREATE EXTENSION` commands using a role with sufficient privileges.
-
-If you are using a self-managed Postgres database, you may need to do additional work.
-Before loading the `pg_statements` extension you must ensure that it is listed in the `shared_preload_libraries` in the Postgres configuration file.
-The `hypopg` extension may also require additional system-level installation (e.g., via your package manager) because it does not always ship with Postgres.
 
 
 ### Installation
@@ -221,6 +214,25 @@ Many MCP clients have similar configuration files to Claude Desktop, and you can
 - If you are using Windsurf, you can navigate to from the `Command Palette` to `Open Windsurf Settings Page` to access the configuration file.
 - If you are using Goose run `goose configure`, then select `Add Extension`.
 
+## Postgres Extension Installation (Optional)
+
+To enable index tuning and comprehensive performance analysis you need to load the `pg_statements` and `hypopg` extensions on your database.
+
+- The `pg_statements` extension allows Postgres Pro to analyze query execution statistics.
+For example, this allows it to understand which queries are running slow or consuming significant resources.
+- The `hypopg` extension allows Postgres Pro to simulate the behavior of the Postgres query planner after adding indexes.
+
+### Installing extensions on AWS RDS, Azure SQL, or Google Cloud SQL
+
+If your Postgres database is running on a cloud provider managed service, the `pg_statements` and `hypopg` extensions should already be available on the system.
+In this case, you can just run `CREATE EXTENSION` commands using a role with sufficient privileges.
+
+### Installing extensions on Self-Managed Postgres
+
+If you are using a self-managed Postgres database, you may need to do additional work.
+Before loading the `pg_statements` extension you must ensure that it is listed in the `shared_preload_libraries` in the Postgres configuration file.
+The `hypopg` extension may also require additional system-level installation (e.g., via your package manager) because it does not always ship with Postgres.
+
 ## Usage Examples
 
 ### Get Database Health Overview
@@ -250,29 +262,31 @@ Ask:
 
 ## MCP Server API
 
-The MCP standard defines various types of endpoints: Tools, Resources, Prompts, and others.
+The [MCP standard](https://modelcontextprotocol.io/) defines various types of endpoints: Tools, Resources, Prompts, and others.
 
-Postgres Pro exposes all of its functionality via MCP tools alone.
-While, some other servers use [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources) to expose schema information, we chose to use [MCP tools](https://modelcontextprotocol.io/docs/concepts/tools) because they are better supported by the MCP client ecosystem.
+Postgres Pro provides functionality via [MCP tools](https://modelcontextprotocol.io/docs/concepts/tools) alone.
+We chose this approach because the [MCP client ecosystem](https://modelcontextprotocol.io/clients) has widespread support for MCP tools.
+This contrasts with the approach of other Postgres MCP servers, including the [Reference Postgres MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres), which use [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources) to expose schema information.
+
 
 Postgres Pro Tools:
 
 | Tool Name | Description |
 |-----------|-------------|
-| `list_schemas` | Lists all database schemas available in the PostgreSQL instance |
-| `list_objects` | Lists database objects (tables, views, sequences, extensions) within a specified schema |
-| `get_object_details` | Provides information about a specific database object, for example, a table's columns, constraints, and indexes |
+| `list_schemas` | Lists all database schemas available in the PostgreSQL instance. |
+| `list_objects` | Lists database objects (tables, views, sequences, extensions) within a specified schema. |
+| `get_object_details` | Provides information about a specific database object, for example, a table's columns, constraints, and indexes. |
 | `execute_sql` | Executes SQL statements on the database, with read-only limitations when connected in restricted mode. |
 | `explain_query` | Gets the execution plan for a SQL query describing how PostgreSQL will process it and exposing the query planner's cost model. Can be invoked with hypothetical indexes to simulate the behavior after adding indexes. |
-| `get_top_queries` | Reports the slowest SQL queries based on total execution time using `pg_stat_statements` data |
-| `analyze_workload_indexes` | Analyzes the database workload to identify resource-intensive queries, then recommends optimal indexes for them |
-| `analyze_query_indexes` | Analyzes a list of specific SQL queries (up to 10) and recommends optimal indexes for them |
-| `analyze_db_health` | Performs comprehensive health checks including:<br>- Buffer cache hit rates<br>- Connection health<br>- Constraint validation<br>- Index health (duplicate/unused/invalid)<br>- Replication status<br>- Sequence limits<br>- Vacuum health |
+| `get_top_queries` | Reports the slowest SQL queries based on total execution time using `pg_stat_statements` data. |
+| `analyze_workload_indexes` | Analyzes the database workload to identify resource-intensive queries, then recommends optimal indexes for them. |
+| `analyze_query_indexes` | Analyzes a list of specific SQL queries (up to 10) and recommends optimal indexes for them. |
+| `analyze_db_health` | Performs comprehensive health checks including: buffer cache hit rates, connection health, constraint validation, index health (duplicate/unused/invalid), sequence limits, and vacuum health. |
 
 
 ## Related Projects
 
-Postgres MCP Servers
+**Postgres MCP Servers**
 - [Query MCP](https://github.com/alexander-zuev/supabase-mcp-server). An MCP server for Supabase Postgres with a three-tier safety architecture and Supabase management API support.
 - [PG-MCP](https://github.com/stuzero/pg-mcp). An MCP server for PostgreSQL with flexible connection options, explain plans, extension context, and more.
 - [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres). A simple MCP Server implementation exposing schema information as MCP resources and executing read-only queries.
@@ -281,14 +295,14 @@ Postgres MCP Servers
 - [Neon MCP Server](https://github.com/neondatabase-labs/mcp-server-neon). An MCP server providing access to the management API for Neon's serverless Postgres service.
 - [Wren MCP Server](https://github.com/Canner/wren-engine). Provides a semantic engine powering business intelligence for Postgres and other databases.
 
-DBA Tools (including commercial offerings)
+**DBA Tools (including commercial offerings)**
 - [Aiven Database Optimizer](https://aiven.io/solutions/aiven-ai-database-optimizer). A tool that provides holistic database workload analysis, query optimizations, and other performance improvements.
 - [dba.ai](https://www.dba.ai/). An AI-powered database administration assistant that integrates with GitHub to resolve code issues.
 - [pgAnalyze](https://pganalyze.com/). A comprehensive monitoring and analytics platform for identifying performance bottlenecks, optimizing queries, and real-time alerting.
 - [Postgres.ai](https://postgres.ai/). An interactive chat experience combining an extensive Postgres knowledge base and GPT-4.
 - [Xata Agent](https://github.com/xataio/agent). An open-source AI agent that automatically monitors database health, diagnoses issues, and provides recommendations using LLM-powered reasoning and playbooks.
 
-Postgres Utilities
+**Postgres Utilities**
 - [Dexter](https://github.com/DexterDB/dexter). A tool for generating and testing hypothetical indexes on PostgreSQL.
 - [PgHero](https://github.com/ankane/pghero). A performance dashboard for Postgres, with recommendations.
 Postgres Pro incorporates health checks from PgHero.
@@ -312,16 +326,17 @@ Testing is critical to ensuring that Postgres Pro is reliable and accurate.
 We are building out a suite of AI-generated adversarial workloads designed to challenge Postgres Pro and ensure it performs under a broad variety of scenarios.
 
 *What Postgres versions are supported?*
-We plan to support Postgres versions 13 through 17.
 Our testing presently focuses on Postgres 15, 16, and 17.
+We plan to support Postgres versions 13 through 17.
 
 *Who created this project?*
 This project is created and maintained by [Crystal DBA](https://www.crystaldba.ai).
 
 ## Roadmap
 
-There is nothing here yet.
+*TBD*
 
+You and your needs are a critical driver for what we build.
 Tell us what you want to see by opening an [issue](https://github.com/crystaldba/postgres-mcp/issues) or a [pull request](https://github.com/crystaldba/postgres-mcp/pulls).
 
 You can also contact us on [Discord](https://discord.gg/4BEHC7ZM).
@@ -379,8 +394,8 @@ However, we do not know whether other LLMs do so as reliably and capably.
 *Would it be better to provide schema information using [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources) rather than [MCP tools](https://modelcontextprotocol.io/docs/concepts/tools)?*
 
 The [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres) uses resources to expose schema information rather than tools.
-Navigating a resources is similar to navigating a file system, so this approach is natural in many ways.
-However, resource support is not less widespread than tool support in the MCP client ecosystem (see [example clients](https://modelcontextprotocol.io/clients)).
+Navigating resources is similar to navigating a file system, so this approach is natural in many ways.
+However, resource support is less widespread than tool support in the MCP client ecosystem (see [example clients](https://modelcontextprotocol.io/clients)).
 In addition, while the MCP standard says that resources can be accessed by either AI agents or end-user humans, some clients only support human navigation of the resource tree.
 
 
