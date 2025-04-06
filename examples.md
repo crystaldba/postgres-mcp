@@ -4,7 +4,7 @@ Here are a few examples of of using [Postgres Pro](https://github.com/crystaldba
 
 # Examples
 
-## Movie Critic App
+## Movie Ratings Website
 
 Let's do a quick AI-coding session and take an idea from concept to launch!
 
@@ -15,7 +15,13 @@ Our AI tools:
 - **Cursor** - as our AI coding agent
 - **Postgres Pro** - to give Cursor a Postgres expert
 
-Let's get started...
+Outline:
+1) Create the initial app on Replit
+2) Fix query performance
+3) Fix empty movie details pages
+4) Improve the sort for top-rated movies
+
+**Let's get started...**
 
 <table>
   <tbody>
@@ -35,8 +41,30 @@ Let's get started...
     <tr>
       <td align="left" valign="top">
         <h4>2) Fix query performance</h4>
-        <p>That was a thrill, but it can't handle even 1 user.</p>
-        <p>Let's switch to Cursor w/ Postgres Pro to get the app ready for launch.</p>
+        <p>Our website looks decent, but the code is just too slow.<br/>
+        Let's switch to Cursor w/ Postgres Pro to get the app ready for launch.</p>
+        <p>Our prompt:</p>
+        <blockquote>
+          <p>My app is slow!  Look for opportunities with poor queries, bad indexes, or caching.</p>
+          <div>1. Look at code to figure out all the queries for all routes and models</div>
+          <div>2. Analyze the explain plans and identify what indexes might help</div>
+          <div>3. Test the indexes by using the explain plans with hypothetical indexes.</div>
+          <div>4. Compare your list to what is already created to finalize a list to both add and remove</div>
+          <div>5. Create a migration script using alembic but don't apply it yet</div>
+          <div>6. Make all code changes necessary for queries, indexes, and caching</div>
+        </blockquote>
+        <div><em>(7 minutes later...)</em></div>
+        <p>Let's see what all the AI agent did.</p>
+        <ol>
+          <li>Explored the schema and code to identify potential problem queries.</li>
+          <li>Used Postgres Pro to help identify solutions, include the <code>explain_plan</code>, <code>get_top_queries</code>, <code>analyze_query_indexes</code>, <code>analyze_database_health</code> tools.</li>
+          <li>Added indexes to fix table scans and ILIKE queries</li>
+          <li>Remove unused and bloated indexes</li>
+          <li>Optimized complex sub-queries causing repeated database hits</li>
+          <li>Added caching for image loading and expensive queries</li>
+          <li>Created an alembic migration script to apply the changes.</li>
+        </ol>
+        <p>That was amazing! I was running in "yolo mode" in Cursor, so it did all that without my input. I had Postgres Pro in "restricted" mode (read-only), so I did not have to worry about unintended database changes</p>
       </td>
       <td align="center"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-1-go-0-to-1.png"/></td>
     </tr>
@@ -81,7 +109,7 @@ Let's get started...
         <div>The AI Agent pulls sample data via the Postgres MCP to determine that a 10K vote minimum would work.</div>
         <div>It gives me confidence seeing the results are grounded in reality and not just some hallucination.</div>
       </td>
-      <td align="center"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-2-movie-details.png"/></td>
+      <td align="center"><a href="https://youtube.com/shorts/UTqmeiC2xU8"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-3-top-rated-sort.png"/></a></td>
     </tr>
   </tbody>
 </table>
