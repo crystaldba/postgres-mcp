@@ -49,6 +49,18 @@ Our AI tools:
           <div>- The ratings looks misplaced. move it closer to the title</div>
           <div>- Do we have additional data we can include like a description? Check the schema.</div>
         </blockquote>
+        <br/>
+        <div>What did the AI Agent do?</div>
+        <ol>
+          <li>It used Postgres Pro to inspect the schema and compare it against the code.</li>
+          <li>It fixed the query in the route to join with <code>name_basics</code>.</li>
+          <li>Postgres Pro helped Cursor identify additional data in <code>title_basics</code>
+          to create a new About section with genre, runtime, and release years.</li>
+        </ol>
+        <p>I asked to check for missing data</p>
+        <p>It ran the queries via Postgres Pro, found the missing data, and wrote a script
+        to import them in a more reliable way.</p>
+        <div><em>(it turned out my original script aborted on errors)</em></p>
       </td>
       <td align="center"><a href="https://youtu.be/1yEPbP_Sve0"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-2-movie-details.png"/></a></td>
     </tr>
