@@ -10,10 +10,10 @@ Postgres Pro does much more than wrap a database connection.
 For example, it provides:
 - Index tuning based on modern industrial-strength algorithms similar to those found in commercial databases.
   It efficiently explores thousands of possible indexes to find the best solution for your workload.
-- Support for LLM-led indexing by providing “what if?” scenario analysis based on production data distributions and query patterns.
+- Support for LLM-led indexing by providing "what if?" scenario analysis based on production data distributions and query patterns.
 - Standardized checklists for analyzing database health, ensuring trustworthy and repeatable results.
 
-Postgres Pro is under active development so this list will grow.
+Postgres Pro also provides comprehensive schema information to support SQL generation, restricted and filtered SQL execution for safety, and more.
 
 *DEMO VIDEO PLACEHOLDER*
 
@@ -30,8 +30,7 @@ Postgres Pro is under active development so this list will grow.
 
 ## Features
 
-Postgres Pro includes a set of tools to help you query, analyze, and optimize your Postgres database.
-It provides:
+Postgres Pro includes an expanding set of tools covering several areas:
 
 - **Database Health**.
   Check cache hit rates, monitor vacuum health, identify unused/duplicate indexes, and more.
@@ -50,8 +49,6 @@ It provides:
   - *Restricted Mode:* Be safe by limiting access in production environments by enforcing checks to ensure read-only operations and limits on resource consumption.
 
 
-
-
 ## Quick Start
 
 ### Prerequisites
@@ -67,7 +64,6 @@ Before getting started, ensure you have:
 
 The choice to use Docker or Python is yours.
 We generally recommend using whichever is most familiar to you.
-
 
 
 ### Installation
@@ -290,7 +286,7 @@ Postgres Pro Tools:
 - [Query MCP](https://github.com/alexander-zuev/supabase-mcp-server). An MCP server for Supabase Postgres with a three-tier safety architecture and Supabase management API support.
 - [PG-MCP](https://github.com/stuzero/pg-mcp). An MCP server for PostgreSQL with flexible connection options, explain plans, extension context, and more.
 - [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres). A simple MCP Server implementation exposing schema information as MCP resources and executing read-only queries.
-- [Supabase Postgres MCP Server](https://github.com/supabase-community/supabase-mcp). A MCP Server implementation with Supabase management features.
+- [Supabase Postgres MCP Server](https://github.com/supabase-community/supabase-mcp). This MCP Server provides Supabase management features and is actively maintained by the Supabase community.
 - [Nile MCP Server](https://github.com/niledatabase/nile-mcp-server). An MCP server providing access to the management API for the Nile's multi-tenant Postgres service.
 - [Neon MCP Server](https://github.com/neondatabase-labs/mcp-server-neon). An MCP server providing access to the management API for Neon's serverless Postgres service.
 - [Wren MCP Server](https://github.com/Canner/wren-engine). Provides a semantic engine powering business intelligence for Postgres and other databases.
@@ -338,7 +334,6 @@ This project is created and maintained by [Crystal DBA](https://www.crystaldba.a
 
 You and your needs are a critical driver for what we build.
 Tell us what you want to see by opening an [issue](https://github.com/crystaldba/postgres-mcp/issues) or a [pull request](https://github.com/crystaldba/postgres-mcp/pulls).
-
 You can also contact us on [Discord](https://discord.gg/4BEHC7ZM).
 
 ## Technical Notes
@@ -351,7 +346,28 @@ This section includes a high-level overview technical considerations that influe
 
 ### Database Health
 
-*WIP*
+Database health checks identify tuning opportunities and maintenance needs before they become lead to critical issues.
+In the present release, Postgres Pro adapts the database health checks directly from [PgHero](https://github.com/ankane/pghero).
+We are working to fully validate these checks and may extend them in the future.
+
+
+- *Index health*. Looks for unused indexes, duplicate indexes, and indexes that are bloated. Bloated indexes make inefficient use of database pages. When Postgres autovacuum cleans up index entries pointing to dead tuples, and marks the entries as reusable. However, it does not compact the index pages, so eventually index pages may contain few live tuple references.
+- *Buffer Cache Hit Rate*. Measures the proportion of database reads that are served from the buffer cache, instead of disk.
+  A low buffer cache hit rate must be investigated as it is often not cost-optimal and leads to degraded application performance.
+- *Connection Health*. Checks the number of connections to the database and reports on their utilization.
+  The biggest risk is running out of connections, but a high number of idle or blocked connections can also indicate issues.
+- *Vacuum Health*. Vacuum is important for many reasons.
+  A critical one is preventing transaction id wraparound, which can cause the database to stop accepting writes.
+  The Postgres multi-version concurrency control (MVCC) mechanism requires a unique transaction id for each transaction.
+  However, because Postgres uses a 32-bit signed integer for transaction ids, it needs to re-use transaction ids after after a maximum of 2 billion transactions.
+  To do this it "freezes" the transaction ids of historical transactions, setting them all to a special value that indicates distant past.
+  When records first go to disk, they are written visibility for a range of transaction ids.
+  Before re-using these transaction ids, Postgres must update any on-disk records, "freezing" them to remove the references to the transaction ids to be reused.
+  This check looks for tables that require vacuuming to prevent transaction id wraparound.
+- *Constraint Health*. During normal operation, Postgres rejects any transactions that would cause a constraint violation.
+  However, invalid constraints may occur after loading data or in recovery scenarios. This check looks for any invalid constraints.
+- *Sequence Health*. Looks for sequences that are at risk of exceeding their maximum value.
+
 
 ### Postgres Client Library
 
@@ -401,14 +417,46 @@ In addition, while the MCP standard says that resources can be accessed by eithe
 
 ### Protected SQL Execution
 
-*WIP*
+AI amplifies longstanding challenges of protecting databases from a range of threats, ranging from simple mistakes to sophisticated attacks by malicious actors.
+Whether the threat is accidental or malicious, a similar security framework applies, with aims that fall into three categories: confidentiality, integrity, and availability.
+The familiar tension between convenience and safety is also evident and pronounced.
 
-MCP clients have different mechanisms for protecting the SQL execution.
+Postgres Pro's protected SQL execution mode focuses on integrity.
+In the context of MCP, we are most concerned with LLM-generated SQL causing damage—for example, unintended data modification or deletion, or other changes that might circumvent an organization's change management process.
 
-SQL can be a powerful tool
+The simplest way provide integrity is to ensure that all SQL executed against the database is read-only.
+One way to do this is by creating a database user with read-only access permissions.
+While this is a good approach, in practice many find this cumbersome.
+Postgres does not provide a way to place a connection or session into read-only mode, so Postgres Pro uses a more complex approach to ensure read-only SQL execution on top of a read-write connection.
 
-[Auto-run](https://docs.cursor.com/chat/tools#auto-run)
+Postgres provides a read-only transaction mode that prevents data and schema modifications.
+Like the [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres), we use read-only transactions to provide protected SQL execution.
 
+To make this mechanism robust, we need to ensure that the SQL does not somehow circumvent the read-only transaction mode, say by issuing a `COMMIT` or `ROLLBACK` statement and then beginning a new transaction.
+
+For example, the LLM can circumvent the read-only transaction mode by issuing a `ROLLBACK` statement and then beginning a new transaction.
+For example:
+```sql
+ROLLBACK; DROP TABLE users;
+```
+
+To prevent cases like this, we parse the SQL before execution using the [pglast](https://pglast.readthedocs.io/) library.
+We reject any SQL that contains `commit` or `rollback` statements.
+Helpfully, the popular Postgres stored procedure languages, including PL/pgSQL and PL/Python, do not allow for `COMMIT` or `ROLLBACK` statements.
+If you have unsafe stored procedure languages enabled on your database then our read-only protections could be circumvented.
+
+At present, Postgres Pro provides two levels of protection for the database, one at either extreme of the convenience/safety spectrum.
+- "Unrestricted" provides maximum flexibility.
+It is suitable for development environments, where speed and flexibility are paramount and where there is no need to protect valuable or sensitive data.
+- "Restricted" provides a balance between flexibility and safety.
+It is suitable for production environments, where the database is exposed to untrusted users and where it is important to protect valuable or sensitive data.
+
+Unrestricted mode aligns with the approach of [Cursor's auto-run mode](https://docs.cursor.com/chat/tools#auto-run), where the AI agent operates with limited human oversight or approvals.
+We expect auto-run to be deployed in development environments where the consequences of mistakes are low, where databases do not contain valuable or sensitive data, and where they can be recreated or restored from backups when needed.
+
+We designed restricted mode to be conservative, erring on the side of safety even though it may be inconvenient.
+Restricted mode is limited to read-only operations, and we limit query execution time to prevent long-running queries from impacting system performance.
+We may add measures in the future to make sure that restricted mode is safe to use with production databases.
 
 
 ## Postgres Pro Development
