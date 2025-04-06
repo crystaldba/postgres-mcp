@@ -15,7 +15,7 @@ Our AI tools:
 - **Cursor** - as our AI coding agent
 - **Postgres Pro** - to give Cursor a Postgres expert
 
-Outline:
+What we did:
 1) Create the initial app on Replit
 2) Fix query performance
 3) Fix empty movie details pages
@@ -57,7 +57,7 @@ Outline:
         <p>Let's see what all the AI agent did.</p>
         <ol>
           <li>Explored the schema and code to identify potential problem queries.</li>
-          <li>Used Postgres Pro to help identify solutions, include the <code>explain_plan</code>, <code>get_top_queries</code>, <code>analyze_query_indexes</code>, <code>analyze_database_health</code> tools.</li>
+          <li>Used Postgres Pro to help identify solutions, calling tools like <code>explain_plan</code>, <code>get_top_queries</code>, <code>analyze_query_indexes</code>, <code>analyze_database_health</code>.</li>
           <li>Added indexes to fix table scans and ILIKE queries</li>
           <li>Remove unused and bloated indexes</li>
           <li>Optimized complex sub-queries causing repeated database hits</li>
@@ -66,7 +66,7 @@ Outline:
         </ol>
         <p>That was amazing! I was running in "yolo mode" in Cursor, so it did all that without my input. I had Postgres Pro in "restricted" mode (read-only), so I did not have to worry about unintended database changes</p>
       </td>
-      <td align="center"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-1-go-0-to-1.png"/></td>
+      <td align="center"><a href="https://youtu.be/1yEPbP_Sve0"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-1-go-0-to-1.png"/></a></td>
     </tr>
     <tr>
       <td align="left" valign="top">
