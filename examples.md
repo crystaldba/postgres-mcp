@@ -1,6 +1,6 @@
 # Overview
 
-Here are a few examples of of using [Postgres Pro](https://github.com/crystaldba/postgres-mcp), an MCP server by [crystaldba.ai](crystaldba.ai), to build, test, and scale applications. 
+Here are a few examples of of using [Postgres Pro](https://github.com/crystaldba/postgres-mcp) to build, test, and scale applications. Postgres Pro is an MCP server by [crystaldba.ai](crystaldba.ai) which gives apps like Cursor and Windsurf access to a Postgres expert using the [MCP protocol](https://modelcontextprotocol.io/introduction) from Anthropic.
 
 # Examples
 
@@ -18,7 +18,7 @@ Our AI tools:
 <table>
   <tbody>
     <tr>
-      <td align="left">
+      <td align="left" valign="top">
         <h4>1) Create the initial app on Replit</h4>
         <p>On Replit we enter...</p>
         <blockquote>
@@ -31,22 +31,29 @@ Our AI tools:
       <td align="center"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-0-initial-app.png"/></td>
     </tr>
     <tr>
-      <td align="left">
+      <td align="left" valign="top">
         <h4>2) Fix query performance</h4>
-        <p>I built that fast, but it won't even work for 1 user. Let's get the app ready for launch.
-        <p>We'll switch to Cursor and install [Postgres MCP Pro](https://github.com/crystaldba/postgres-mcp)</p>
+        <p>I built that fast, but it won't even work for 1 user.
+        <p>We'll switch to Cursor and install <a href="https://github.com/crystaldba/postgres-mcp">Postgres Pro</a> to get the app ready for launch.</p>
       </td>
-      <td align="center"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-2-movie-details.png"/></td>
+      <td align="center"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-1-go-0-to-1.png"/></td>
     </tr>
     <tr>
-      <td align="left">
+      <td align="left" valign="top">
         <h4>3) Fix empty movie details pages</h4>
-        <p>On Replit we enter...</p>
+        <p>I noticed the movie details pages look broken. Barely any content is showing up.
+        In Cursor we enter...</p>
+        <blockquote>
+          <div>The movie details page looks awful.</div>
+          <div>- no cast/crew. Are we missing the data or is the query wrong?</div>
+          <div>- The ratings looks misplaced. move it closer to the title</div>
+          <div>- Do we have additional data we can include like a description? Check the schema.</div>
+        </blockquote>
       </td>
-      <td align="center"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-2-movie-details.png"/></td>
+      <td align="center"><a href="https://youtu.be/1yEPbP_Sve0"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-2-movie-details.png"/></a></td>
     </tr>
     <tr>
-      <td align="left">
+      <td align="left" valign="top">
         <h4>4) Improve the top-rated sorting</h4>
         <p>On Replit we enter...</p>
       </td>
