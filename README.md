@@ -154,7 +154,7 @@ You will now edit the `mcpServers` section of the configuration file.
       "args": [
         "run",
         "--rm",
-        "postgres-mcp",
+        "crystaldba/postgres-mcp",
         "postgresql://username:password@localhost:5432/dbname",
         "--access-mode=unrestricted"
       ]
