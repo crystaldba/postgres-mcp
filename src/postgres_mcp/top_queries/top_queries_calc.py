@@ -36,7 +36,7 @@ class TopQueriesCalc:
                 # Determine which column to sort by
                 order_by_column = "total_exec_time" if sort_by == "total" else "mean_exec_time"
 
-                query = """
+                query = f"""
                     SELECT
                         query,
                         calls,
@@ -44,13 +44,13 @@ class TopQueriesCalc:
                         mean_exec_time,
                         rows
                     FROM pg_stat_statements
-                    ORDER BY {} DESC
-                    LIMIT {};
+                    ORDER BY {order_by_column} DESC
+                    LIMIT {{}};
                 """
                 slow_query_rows = await SafeSqlDriver.execute_param_query(
                     self.sql_driver,
                     query,
-                    [order_by_column, limit],
+                    [limit],
                 )
                 slow_queries = [row.cells for row in slow_query_rows] if slow_query_rows else []
 
