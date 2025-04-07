@@ -24,6 +24,12 @@ class ExtensionStatus(TypedDict):
     default_version: str | None
 
 
+def reset_postgres_version_cache() -> None:
+    """Reset the PostgreSQL version cache. Primarily used for testing."""
+    global _POSTGRES_VERSION
+    _POSTGRES_VERSION = None
+
+
 async def get_postgres_version(sql_driver: SqlDriver) -> int:
     """
     Get the major PostgreSQL version as an integer.

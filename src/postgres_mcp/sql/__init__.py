@@ -7,6 +7,7 @@ from .extension_utils import check_extension
 from .extension_utils import check_hypopg_installation_status
 from .extension_utils import check_postgres_version_requirement
 from .extension_utils import get_postgres_version
+from .extension_utils import reset_postgres_version_cache
 from .index import IndexConfig
 from .safe_sql import SafeSqlDriver
 from .sql_driver import DbConnPool
@@ -26,4 +27,5 @@ __all__ = [
     "check_postgres_version_requirement",
     "get_postgres_version",
     "obfuscate_password",
+    "reset_postgres_version_cache",
 ]
