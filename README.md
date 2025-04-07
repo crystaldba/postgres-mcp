@@ -419,7 +419,8 @@ Database health checks identify tuning opportunities and maintenance needs befor
 In the present release, Postgres Pro adapts the database health checks directly from [PgHero](https://github.com/ankane/pghero).
 We are working to fully validate these checks and may extend them in the future.
 
-- *Index health*. Looks for unused indexes, duplicate indexes, and indexes that are bloated. Bloated indexes make inefficient use of database pages. Postgres autovacuum cleans up index entries pointing to dead tuples, and marks the entries as reusable. However, it does not compact the index pages and, eventually, index pages may contain few live tuple references.
+- *Index Health*. Looks for unused indexes, duplicate indexes, and indexes that are bloated. Bloated indexes make inefficient use of database pages.
+  Postgres autovacuum cleans up index entries pointing to dead tuples, and marks the entries as reusable. However, it does not compact the index pages and, eventually, index pages may contain few live tuple references.
 - *Buffer Cache Hit Rate*. Measures the proportion of database reads that are served from the buffer cache instead of disk.
   A low buffer cache hit rate must be investigated as it is often not cost-optimal and leads to degraded application performance.
 - *Connection Health*. Checks the number of connections to the database and reports on their utilization.
@@ -432,6 +433,7 @@ We are working to fully validate these checks and may extend them in the future.
   When records first go to disk, they are written visibility for a range of transaction ids.
   Before re-using these transaction ids, Postgres must update any on-disk records, "freezing" them to remove the references to the transaction ids to be reused.
   This check looks for tables that require vacuuming to prevent transaction id wraparound.
+- *Replication Health*. Checks replication health by monitoring lag between primary and replicas, verifying replication status, and tracking usage of replication slots.
 - *Constraint Health*. During normal operation, Postgres rejects any transactions that would cause a constraint violation.
   However, invalid constraints may occur after loading data or in recovery scenarios. This check looks for any invalid constraints.
 - *Sequence Health*. Looks for sequences that are at risk of exceeding their maximum value.
