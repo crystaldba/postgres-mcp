@@ -456,7 +456,12 @@ async def get_top_queries(
         default="mean",
     ),
 ) -> ResponseType:
-    """Reports the slowest SQL queries based on execution time."""
+    """Reports the slowest SQL queries based on execution time.
+
+    This tool handles PostgreSQL version differences automatically:
+    - In PostgreSQL 13+: Uses total_exec_time/mean_exec_time columns
+    - In PostgreSQL 12 and older: Uses total_time/mean_time columns
+    """
     try:
         sql_driver = await get_sql_driver()
         top_queries_tool = TopQueriesCalc(sql_driver=sql_driver)

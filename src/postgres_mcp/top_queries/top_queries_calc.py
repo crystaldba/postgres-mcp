@@ -4,6 +4,7 @@ from typing import Union
 from ..sql import SafeSqlDriver
 from ..sql import SqlDriver
 from ..sql.extension_utils import check_extension
+from ..sql.extension_utils import get_postgres_version
 
 PG_STAT_STATEMENTS = "pg_stat_statements"
 
@@ -32,39 +33,8 @@ class TopQueriesCalc:
                 include_messages=False,
             )
 
-            if extension_status["is_installed"]:
-                # Determine which column to sort by
-                order_by_column = "total_exec_time" if sort_by == "total" else "mean_exec_time"
-
-                query = f"""
-                    SELECT
-                        query,
-                        calls,
-                        total_exec_time,
-                        mean_exec_time,
-                        rows
-                    FROM pg_stat_statements
-                    ORDER BY {order_by_column} DESC
-                    LIMIT {{}};
-                """
-                slow_query_rows = await SafeSqlDriver.execute_param_query(
-                    self.sql_driver,
-                    query,
-                    [limit],
-                )
-                slow_queries = [row.cells for row in slow_query_rows] if slow_query_rows else []
-
-                # Create result description based on sort criteria
-                if sort_by == "total":
-                    criteria = "total execution time"
-                else:
-                    criteria = "mean execution time per call"
-
-                result = f"Top {len(slow_queries)} slowest queries by {criteria}:\n"
-                result += str(slow_queries)
-                return result
-            else:
-                # Use the message from extension_status with customization
+            if not extension_status["is_installed"]:
+                # Return installation instructions if the extension is not installed
                 monitoring_message = (
                     f"The '{PG_STAT_STATEMENTS}' extension is required to "
                     f"report slow queries, but it is not currently "
@@ -80,5 +50,49 @@ class TopQueriesCalc:
                     f"but this is usually negligible unless under extreme load."
                 )
                 return monitoring_message
+
+            # Check PostgreSQL version to determine column names
+            pg_version = await get_postgres_version(self.sql_driver)
+
+            # Column names changed in PostgreSQL 13
+            if pg_version >= 13:
+                # PostgreSQL 13 and newer
+                total_time_col = "total_exec_time"
+                mean_time_col = "mean_exec_time"
+            else:
+                # PostgreSQL 12 and older
+                total_time_col = "total_time"
+                mean_time_col = "mean_time"
+
+            # Determine which column to sort by based on sort_by parameter and version
+            order_by_column = total_time_col if sort_by == "total" else mean_time_col
+
+            query = f"""
+                SELECT
+                    query,
+                    calls,
+                    {total_time_col},
+                    {mean_time_col},
+                    rows
+                FROM pg_stat_statements
+                ORDER BY {order_by_column} DESC
+                LIMIT {{}};
+            """
+            slow_query_rows = await SafeSqlDriver.execute_param_query(
+                self.sql_driver,
+                query,
+                [limit],
+            )
+            slow_queries = [row.cells for row in slow_query_rows] if slow_query_rows else []
+
+            # Create result description based on sort criteria
+            if sort_by == "total":
+                criteria = "total execution time"
+            else:
+                criteria = "mean execution time per call"
+
+            result = f"Top {len(slow_queries)} slowest queries by {criteria}:\n"
+            result += str(slow_queries)
+            return result
         except Exception as e:
             return f"Error getting slow queries: {e}"
