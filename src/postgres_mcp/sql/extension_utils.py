@@ -43,7 +43,7 @@ async def get_postgres_version(sql_driver: SqlDriver) -> int:
         return int(major_version)
     except Exception as e:
         logger.warning(f"Error determining PostgreSQL version: {e}")
-        return 0
+        raise e
 
 
 async def check_postgres_version_requirement(sql_driver: SqlDriver, min_version: int, feature_name: str) -> tuple[bool, str]:
@@ -201,13 +201,15 @@ async def check_hypopg_installation_status(sql_driver: SqlDriver, message_type: 
                 "It is generally safe to install and allows testing indexes without creating them."
             )
 
+    pg_version = await get_postgres_version(sql_driver)
+    major_version_str = f"{pg_version}" if pg_version > 0 else "XX"
     # Extension is not available
     if message_type == "markdown":
         return False, (
             "The **hypopg** extension is not available on this PostgreSQL server.\n\n"
             "To install HypoPG:\n"
-            "1. For Debian/Ubuntu: `sudo apt-get install postgresql-contrib postgresql-hypopg`\n"
-            "2. For RHEL/CentOS: `sudo yum install postgresql-hypopg`\n"
+            f"1. For Debian/Ubuntu: `sudo apt-get install postgresql-{major_version_str}-hypopg`\n"
+            f"2. For RHEL/CentOS: `sudo yum install postgresql{major_version_str}-hypopg`\n"
             "3. For MacOS with Homebrew: `brew install hypopg`\n"
             "4. For other systems, build from source: `git clone https://github.com/HypoPG/hypopg`\n\n"
             "After installing the extension packages, connect to your database and run: `CREATE EXTENSION hypopg;`"
@@ -216,8 +218,8 @@ async def check_hypopg_installation_status(sql_driver: SqlDriver, message_type: 
         return False, (
             "The hypopg extension is not available on this PostgreSQL server.\n"
             "To install HypoPG:\n"
-            "1. For Debian/Ubuntu: sudo apt-get install postgresql-hypopg\n"
-            "2. For RHEL/CentOS: sudo yum install postgresql-hypopg\n"
+            f"1. For Debian/Ubuntu: sudo apt-get install postgresql-{major_version_str}-hypopg\n"
+            f"2. For RHEL/CentOS: sudo yum install postgresql{major_version_str}-hypopg\n"
             "3. For MacOS with Homebrew: brew install hypopg\n"
             "4. For other systems, build from source: git clone https://github.com/HypoPG/hypopg\n"
             "After installing the extension packages, connect to your database and run: CREATE EXTENSION hypopg;"
