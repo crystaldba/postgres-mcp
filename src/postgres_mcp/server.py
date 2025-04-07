@@ -429,10 +429,21 @@ async def analyze_query_indexes(
         return format_error_response(str(e))
 
 
-@mcp.tool(description="Analyzes database health for specified components including cache hit rates, indexes, sequences, and more.")
+@mcp.tool(
+    description="Analyzes database health.  Here are the available health checks:\n"
+    "- index - checks for invalid, duplicate, and bloated indexes\n"
+    "- connection - checks the number of connection and their utilization\n"
+    "- vacuum - checks vacuum health for transaction id wraparound\n"
+    "- sequence - checks sequences at risk of exceeding their maximum value\n"
+    "- replication - checks replication health including lag and slots\n"
+    "- buffer - checks for buffer cache hit rates for indexes and tables\n"
+    "- constraint - checks for invalid constraints\n"
+    "- all - runs all checks\n"
+    "You can optionally specify a single health check, a comma-separated list of health checks. The default is 'all' checks.\n"
+)
 async def analyze_db_health(
     health_type: str = Field(
-        description=f"Valid values are: {', '.join(sorted([t.value for t in HealthType]))}.",
+        description=f"Optional. Valid values are: {', '.join(sorted([t.value for t in HealthType]))}.",
         default="all",
     ),
 ) -> ResponseType:
