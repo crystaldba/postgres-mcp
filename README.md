@@ -223,9 +223,9 @@ For example, this allows it to understand which queries are running slow or cons
 If your Postgres database is running on a cloud provider managed service, the `pg_statements` and `hypopg` extensions should already be available on the system.
 In this case, you can just run `CREATE EXTENSION` commands using a role with sufficient privileges.
 
-### Installing extensions on Self-Managed Postgres
+### Installing extensions on self-managed Postgres
 
-If you are using a self-managed Postgres database, you may need to do additional work.
+If you are managing your own Postgres installation, you may need to do additional work.
 Before loading the `pg_statements` extension you must ensure that it is listed in the `shared_preload_libraries` in the Postgres configuration file.
 The `hypopg` extension may also require additional system-level installation (e.g., via your package manager) because it does not always ship with Postgres.
 
@@ -234,27 +234,27 @@ The `hypopg` extension may also require additional system-level installation (e.
 ### Get Database Health Overview
 
 Ask:
-> "Check the health of my database and identify any issues."
+> Check the health of my database and identify any issues.
 
 ### Analyze Slow Queries
 
 Ask:
-> "What are the slowest queries in my database? And how can I speed them up?"
+> What are the slowest queries in my database? And how can I speed them up?
 
 ### Get Recommendations On How To Speed Things Up
 
 Ask:
-> "My app is slow. How can I make it faster?"
+> My app is slow. How can I make it faster?
 
 ### Generate Index Recommendations
 
 Ask:
-> Analyze my database workload and suggest indexes to improve performance."
+> Analyze my database workload and suggest indexes to improve performance.
 
 ### Optimize a Specific Query
 
 Ask:
-> Help me optimize this query: SELECT \* FROM orders JOIN customers ON orders.customer_id = customers.id WHERE orders.created_at > '2023-01-01';"
+> Help me optimize this query: SELECT \* FROM orders JOIN customers ON orders.customer_id = customers.id WHERE orders.created_at > '2023-01-01';
 
 ## MCP Server API
 
@@ -342,14 +342,75 @@ This section includes a high-level overview technical considerations that influe
 
 ### Index Tuning
 
-*WIP*
+Developers know that missing indexes are one of the most common causes of database performance issues.
+Indexes provide access methods that allow Postgres to quickly locate data that is required to execute a query.
+When tables are small, indexes make little difference, but at the size of the data grows, the difference in algorithmic complexity between a table scan and an index lookup becomes significant (typically *O*(*n*) vs *O*(*log* *n*), potentially more if joins on multiple tables are involved).
+
+Generating suggested indexes in Postgres Pro proceeds in several stages:
+
+1. *Identify SQL queries in need of tuning*.
+    If you know you are having a problem with a specific SQL query you can provide it.
+    Postgres Pro can also analyze the workload to identify index tuning targets.
+    To do this, it relies on the `pg_stat_statements` extension, which records the runtime and resource consumption of each query.
+
+    A query is a candidate for index tuning if it is a top resource consumer, either on a per-execution basis or in aggregate.
+    At present, we use execution time as a proxy for cumulative resource consumption, but it may also make sense to look at specifics resources, e.g., the number of blocks accessed or the number of blocks read from disk.
+
+    Sophisticated index tuning systems use "workload compression" to produce a representative subset of queries that reflects the characteristics of the workload as a whole, reducing the problem for downstream algorithms.
+    Postgres Pro performs a limited form of workload compression by normalizing queries so that those generated from the same template appear as one.
+    It weights each query equally, a simplification that works when the benefits to indexing are large.
+
+2. *Generate candidate indexes*
+    Once we have a list of SQL queries that we want to improve through indexing, we generate a list of indexes that we might want to add.
+    To do this we parse the SQL and identify any columns used in filters, joins, grouping, or sorting.
+
+    To generate all possible indexes we need to consider combinations of these columns, because Postgres supports [multicolumn indexes](https://www.postgresql.org/docs/current/indexes-multicolumn.html).
+    In the present implementation we include only one permutation of each possible multicolumn index, selected at random.
+    We make this simplification to reduce the search space because permutations often have equivalent performance, however we hope to improve in this area.
+
+3. *Search for the optimal index configuration*.
+    Our objective is to find the combination of indexes that optimally balances the performance benefits against the costs of storing and maintaining those indexes.
+    We estimate the performance improvement by using the "what if?" capabilities provided by the `hypopg` extension.
+    This simulates how the Postgres query optimizer will execute a query after the addition of indexes, and reports changes based on the actual Postgres cost model.
+
+    One challenge is that generating query plans generally requires knowledge of the specific parameter values used in the query.
+    Query normalization, which is necessary to reduce the queries under considerations, removes parameter constants.
+    Parameter values provided via bind variables are similarly not available to us.
+
+    To address this problem, produce realistic constants that we can provide as parameters by sampling from the table statistics.
+    In version 16, Postgres added [generic explain plan functionality](https://www.postgresql.org/docs/current/sql-explain.html), but it has limitations, for example around `LIKE` clauses, which our implementation does not have.
+
+    Search strategy is critical because evaluating all possible index combinations feasible only in simple situations.
+    This is what most most sets apart various indexing approaches.
+    Adapting the approach of Microsoft's Anytime algorithm, we employ a greedy search strategy, i.e., find the best one-index solution, then find the best index to add to that to produce a two-index solution.
+    Our search terminates when the time budget is exhausted, or when a round of exploration fails to produce any gains above the minimum improvement threshold of 10%.
+
+4. *Cost-benefit analysis*.
+    When posed with two indexing alternatives, one which produces better performance and one which requires more space, how do we decide which to choose?
+    Traditionally, index advisors ask for a storage budget, and optimize performance with respect to that storage budget.
+    We also take a storage budget, but perform a cost-benefit analysis throughout the optimization.
+
+    We frame this as the problem of selecting a point along the [Pareto front](https://en.wikipedia.org/wiki/Pareto_front)—the set of choices for which improving one quality metric necessarily worsens another.
+    In an ideal world, we might want to assess the cost of the storage and the benefit of improved performance in monetary terms.
+    However, there is a simpler and more practical approach: to look at the changes in relative terms.
+    Most people would agree that a 100x performance improvement is worth it, even if the storage cost is 2x.
+    In our implementation, use a configurable parameter to set this threshold.
+    By default we require the change in the log (base 10) of the performance improvement to be 2x the difference in the log of the space cost.
+    This works out to allowing a maximum 10x increase in space for a 100x performance improvement.
+
+Our implementation is most closely related to the [Anytime Algorithm](https://www.microsoft.com/en-us/research/wp-content/uploads/2020/06/Anytime-Algorithm-of-Database-Tuning-Advisor-for-Microsoft-SQL-Server.pdf) found in Microsoft SQL Server.
+Compared to [Dexter](https://github.com/ankane/dexter/), an automatic indexing tool for Postgres, we search a larger space and use different heuristics.
+This allows us to generate better solutions at the cost of longer runtime.
+
+We also show the work done in each round of the search, including a comparison of the query plans before and after the addition of each index.
+This give the LLM additional context that it can use when responding to the indexing recommendations.
+
 
 ### Database Health
 
 Database health checks identify tuning opportunities and maintenance needs before they become lead to critical issues.
 In the present release, Postgres Pro adapts the database health checks directly from [PgHero](https://github.com/ankane/pghero).
 We are working to fully validate these checks and may extend them in the future.
-
 
 - *Index health*. Looks for unused indexes, duplicate indexes, and indexes that are bloated. Bloated indexes make inefficient use of database pages. When Postgres autovacuum cleans up index entries pointing to dead tuples, and marks the entries as reusable. However, it does not compact the index pages, so eventually index pages may contain few live tuple references.
 - *Buffer Cache Hit Rate*. Measures the proportion of database reads that are served from the buffer cache, instead of disk.
