@@ -439,7 +439,7 @@ async def analyze_query_indexes(
     "- buffer - checks for buffer cache hit rates for indexes and tables\n"
     "- constraint - checks for invalid constraints\n"
     "- all - runs all checks\n"
-    "You can optionally specify a single health check or a comma-separated list of health checks. The default is 'all' checks.\n"
+    "You can optionally specify a single health check or a comma-separated list of health checks. The default is 'all' checks."
 )
 async def analyze_db_health(
     health_type: str = Field(
