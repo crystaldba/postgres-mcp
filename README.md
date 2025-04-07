@@ -196,7 +196,7 @@ You can also use `psql`-style connection parameters:
 
 Postgres Pro supports multiple *access modes* to give you control over the operations that the AI agent can perform on the database:
 - **Unrestricted Mode**: Allows full read/write access to modify data and schema. It is suitable for development environments.
-- **Restricted Mode**: Limits operations to read-only transactions with resource constraints. It is suitable for production environments.
+- **Restricted Mode**: Limits operations to read-only transactions and imposes constraints on resource utilization (presently only execution time). It is suitable for production environments.
 
 To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode=restricted` in the configuration examples above.
 
@@ -220,7 +220,12 @@ For example, this allows it to understand which queries are running slow or cons
 ### Installing extensions on AWS RDS, Azure SQL, or Google Cloud SQL
 
 If your Postgres database is running on a cloud provider managed service, the `pg_statements` and `hypopg` extensions should already be available on the system.
-In this case, you can just run `CREATE EXTENSION` commands using a role with sufficient privileges.
+In this case, you can just run `CREATE EXTENSION` commands using a role with sufficient privileges:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_statements;
+CREATE EXTENSION IF NOT EXISTS hypopg;
+```
 
 ### Installing extensions on self-managed Postgres
 
@@ -343,7 +348,7 @@ This section includes a high-level overview technical considerations that influe
 
 Developers know that missing indexes are one of the most common causes of database performance issues.
 Indexes provide access methods that allow Postgres to quickly locate data that is required to execute a query.
-When tables are small, indexes make little difference, but at the size of the data grows, the difference in algorithmic complexity between a table scan and an index lookup becomes significant (typically *O*(*n*) vs *O*(*log* *n*), potentially more if joins on multiple tables are involved).
+When tables are small, indexes make little difference, but as the size of the data grows, the difference in algorithmic complexity between a table scan and an index lookup becomes significant (typically *O*(*n*) vs *O*(*log* *n*), potentially more if joins on multiple tables are involved).
 
 Generating suggested indexes in Postgres Pro proceeds in several stages:
 
@@ -368,7 +373,7 @@ Generating suggested indexes in Postgres Pro proceeds in several stages:
     To generate all possible indexes we need to consider combinations of these columns, because Postgres supports [multicolumn indexes](https://www.postgresql.org/docs/current/indexes-multicolumn.html).
     In the present implementation, we include only one permutation of each possible multicolumn index, which is selected at random.
     We make this simplification to reduce the search space because permutations often have equivalent performance.
-    However we hope to improve in this area.
+    However, we hope to improve in this area.
 
 3. *Search for the optimal index configuration*.
     Our objective is to find the combination of indexes that optimally balances the performance benefits against the costs of storing and maintaining those indexes.
