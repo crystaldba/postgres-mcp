@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
 from enum import Enum
@@ -511,7 +512,15 @@ async def main():
 
     logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
 
-    database_url = args.database_url
+    # Get database URL from environment variable or command line
+    database_url = os.environ.get("DATABASE_URL", args.database_url)
+
+    if not database_url:
+        print(
+            "Error: No database URL provided. Please specify via 'DATABASE_URL' environment variable or command-line argument.",
+            file=sys.stderr,
+        )
+        return
 
     # Initialize database connection pool
     try:

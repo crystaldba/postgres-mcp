@@ -118,9 +118,11 @@ You will now edit the `mcpServers` section of the configuration file.
     "postgres": {
       "command": "postgres-mcp",
       "args": [
-        "postgresql://username:password@localhost:5432/dbname",
         "--access-mode=unrestricted"
-      ]
+      ],
+      "env": {
+        "DATABASE_URL": "postgresql://username:password@localhost:5432/dbname"
+      }
     }
   }
 }
@@ -136,9 +138,11 @@ You will now edit the `mcpServers` section of the configuration file.
       "args": [
         "run",
         "postgres-mcp",
-        "postgresql://username:password@localhost:5432/dbname",
         "--access-mode=unrestricted"
-      ]
+      ],
+      "env": {
+        "DATABASE_URL": "postgresql://username:password@localhost:5432/dbname"
+      }
     }
   }
 }
@@ -155,9 +159,11 @@ You will now edit the `mcpServers` section of the configuration file.
         "run",
         "--rm",
         "crystaldba/postgres-mcp",
-        "postgresql://username:password@localhost:5432/dbname",
         "--access-mode=unrestricted"
-      ]
+      ],
+      "env": {
+        "DATABASE_URL": "postgresql://username:password@localhost:5432/dbname"
+      }
     }
   }
 }
