@@ -516,11 +516,9 @@ async def main():
     database_url = os.environ.get("DATABASE_URL", args.database_url)
 
     if not database_url:
-        print(
+        raise ValueError(
             "Error: No database URL provided. Please specify via 'DATABASE_URL' environment variable or command-line argument.",
-            file=sys.stderr,
         )
-        return
 
     # Initialize database connection pool
     try:
