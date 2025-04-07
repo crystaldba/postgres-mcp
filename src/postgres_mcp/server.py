@@ -430,7 +430,7 @@ async def analyze_query_indexes(
 
 
 @mcp.tool(
-    description="Analyzes database health.  Here are the available health checks:\n"
+    description="Analyzes database health. Here are the available health checks:\n"
     "- index - checks for invalid, duplicate, and bloated indexes\n"
     "- connection - checks the number of connection and their utilization\n"
     "- vacuum - checks vacuum health for transaction id wraparound\n"
