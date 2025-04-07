@@ -354,6 +354,8 @@ Generating suggested indexes in Postgres Pro proceeds in several stages:
 
     A query is a candidate for index tuning if it is a top resource consumer, either on a per-execution basis or in aggregate.
     At present, we use execution time as a proxy for cumulative resource consumption, but it may also make sense to look at specifics resources, e.g., the number of blocks accessed or the number of blocks read from disk.
+    The `analyze_query_workload` tool focuses on slow queries, using the mean time per execution with thresholds for execution count and mean execution time.
+    Agents may also call `get_top_queries`, which accepts a parameter for mean vs. total execution time, then pass these queries `analyze_query_indexes` to get index recommendations.
 
     Sophisticated index tuning systems use "workload compression" to produce a representative subset of queries that reflects the characteristics of the workload as a whole, reducing the problem for downstream algorithms.
     Postgres Pro performs a limited form of workload compression by normalizing queries so that those generated from the same template appear as one.
