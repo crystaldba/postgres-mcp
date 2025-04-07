@@ -513,11 +513,11 @@ async def main():
     logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
 
     # Get database URL from environment variable or command line
-    database_url = os.environ.get("DATABASE_URL", args.database_url)
+    database_url = os.environ.get("DATABASE_URI", args.database_url)
 
     if not database_url:
         raise ValueError(
-            "Error: No database URL provided. Please specify via 'DATABASE_URL' environment variable or command-line argument.",
+            "Error: No database URL provided. Please specify via 'DATABASE_URI' environment variable or command-line argument.",
         )
 
     # Initialize database connection pool

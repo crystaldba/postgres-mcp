@@ -47,6 +47,4 @@ jobs:
         run: uv run pyright
 
       - name: Run Tests
-        env:
-          TEST2_DATABASE_URL: "postgresql://postgres:mysecretpassword@127.0.0.1:5432/postgres"
         run: uv run pytest -v --log-cli-level=INFO

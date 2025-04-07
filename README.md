@@ -121,7 +121,7 @@ You will now edit the `mcpServers` section of the configuration file.
         "--access-mode=unrestricted"
       ],
       "env": {
-        "DATABASE_URL": "postgresql://username:password@localhost:5432/dbname"
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
       }
     }
   }
@@ -141,7 +141,7 @@ You will now edit the `mcpServers` section of the configuration file.
         "--access-mode=unrestricted"
       ],
       "env": {
-        "DATABASE_URL": "postgresql://username:password@localhost:5432/dbname"
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
       }
     }
   }
@@ -162,7 +162,7 @@ You will now edit the `mcpServers` section of the configuration file.
         "--access-mode=unrestricted"
       ],
       "env": {
-        "DATABASE_URL": "postgresql://username:password@localhost:5432/dbname"
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
       }
     }
   }
