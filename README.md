@@ -158,6 +158,8 @@ You will now edit the `mcpServers` section of the configuration file.
       "args": [
         "run",
         "--rm",
+        "-e",
+        "DATABASE_URI",
         "crystaldba/postgres-mcp",
         "--access-mode=unrestricted"
       ],
