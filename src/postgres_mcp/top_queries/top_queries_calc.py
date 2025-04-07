@@ -1,3 +1,4 @@
+from typing import Literal
 from typing import Union
 
 from ..sql import SafeSqlDriver
@@ -13,11 +14,13 @@ class TopQueriesCalc:
     def __init__(self, sql_driver: Union[SqlDriver, SafeSqlDriver]):
         self.sql_driver = sql_driver
 
-    async def get_top_queries(self, limit: int = 10) -> str:
-        """Reports the slowest SQL queries based on total execution time.
+    async def get_top_queries(self, limit: int = 10, sort_by: Literal["total", "mean"] = "mean") -> str:
+        """Reports the slowest SQL queries based on execution time.
 
         Args:
             limit: Number of slow queries to return
+            sort_by: Sort criteria - 'total' for total execution time or
+                'mean' for mean execution time per call (default)
 
         Returns:
             A string with the top queries or installation instructions
@@ -30,6 +33,9 @@ class TopQueriesCalc:
             )
 
             if extension_status["is_installed"]:
+                # Determine which column to sort by
+                order_by_column = "total_exec_time" if sort_by == "total" else "mean_exec_time"
+
                 query = """
                     SELECT
                         query,
@@ -38,33 +44,40 @@ class TopQueriesCalc:
                         mean_exec_time,
                         rows
                     FROM pg_stat_statements
-                    ORDER BY total_exec_time DESC
+                    ORDER BY {} DESC
                     LIMIT {};
                 """
                 slow_query_rows = await SafeSqlDriver.execute_param_query(
                     self.sql_driver,
                     query,
-                    [limit],
+                    [order_by_column, limit],
                 )
                 slow_queries = [row.cells for row in slow_query_rows] if slow_query_rows else []
-                result_prefix = "Top {} slowest queries by total execution time:\n"
-                result_text = result_prefix.format(len(slow_queries))
-                result_text += str(slow_queries)
-                return result_text
+
+                # Create result description based on sort criteria
+                if sort_by == "total":
+                    criteria = "total execution time"
+                else:
+                    criteria = "mean execution time per call"
+
+                result = f"Top {len(slow_queries)} slowest queries by {criteria}:\n"
+                result += str(slow_queries)
+                return result
             else:
                 # Use the message from extension_status with customization
                 monitoring_message = (
-                    f"The '{PG_STAT_STATEMENTS}' extension is required to report "
-                    f"slow queries, but it is not currently installed.\n\n"
+                    f"The '{PG_STAT_STATEMENTS}' extension is required to "
+                    f"report slow queries, but it is not currently "
+                    f"installed.\n\n"
                     f"You can install it by running: "
                     f"`CREATE EXTENSION {PG_STAT_STATEMENTS};`\n\n"
-                    f"**What does it do?** It records statistics (like execution "
-                    f"time, number of calls, rows returned) for every query "
-                    f"executed against the database.\n\n"
+                    f"**What does it do?** It records statistics (like "
+                    f"execution time, number of calls, rows returned) for "
+                    f"every query executed against the database.\n\n"
                     f"**Is it safe?** Installing '{PG_STAT_STATEMENTS}' is "
                     f"generally safe and a standard practice for performance "
-                    f"monitoring. It adds overhead by tracking statistics, but "
-                    f"this is usually negligible unless under extreme load."
+                    f"monitoring. It adds overhead by tracking statistics, "
+                    f"but this is usually negligible unless under extreme load."
                 )
                 return monitoring_message
         except Exception as e:

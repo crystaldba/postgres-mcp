@@ -448,15 +448,19 @@ async def analyze_db_health(
     return format_text_response(result)
 
 
-@mcp.tool(description=f"Reports the slowest SQL queries based on total execution time, using data from the '{PG_STAT_STATEMENTS}' extension.")
+@mcp.tool(description=f"Reports the slowest SQL queries based on execution time, using data from the '{PG_STAT_STATEMENTS}' extension.")
 async def get_top_queries(
     limit: int = Field(description="Number of slow queries to return", default=10),
+    sort_by: str = Field(
+        description="Sort criteria: 'total' for total execution time or 'mean' for mean execution time per call",
+        default="mean",
+    ),
 ) -> ResponseType:
-    """Reports the slowest SQL queries based on total execution time."""
+    """Reports the slowest SQL queries based on execution time."""
     try:
         sql_driver = await get_sql_driver()
         top_queries_tool = TopQueriesCalc(sql_driver=sql_driver)
-        result = await top_queries_tool.get_top_queries(limit=limit)
+        result = await top_queries_tool.get_top_queries(limit=limit, sort_by=("mean" if sort_by == "mean" else "total"))
         return format_text_response(result)
     except Exception as e:
         logger.error(f"Error getting slow queries: {e}")
