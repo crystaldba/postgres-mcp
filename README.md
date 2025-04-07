@@ -38,7 +38,7 @@ Postgres Pro includes an expanding set of tools covering several areas:
 - **Index Tuning**.
   Ensure your SQL queries run efficiently and return quickly.
   Find tuning targets, validate AI-generated suggestions, or generate candidates using classical index optimization algorithms.
-  Simulate how Postgres will after adding indexes using the explain plans together with [hypothetical indexes](https://hypopg.readthedocs.io/).
+  Simulate how Postgres will perform after adding indexes using the explain plans together with [hypothetical indexes](https://hypopg.readthedocs.io/).
 
 - **Schema Information**.
   Help your AI Agent generate SQL reliably and successfully with detailed schema information of your database objects—including tables, views, sequences, stored procedures, and triggers.
@@ -60,7 +60,7 @@ Before getting started, ensure you have:
  You can confirm your access credentials are valid by using `psql` or a GUI tool such as [pgAdmin](https://www.pgadmin.org/).
 
 
-#### Python  or Docker
+#### Python or Docker
 
 The choice to use Docker or Python is yours.
 We generally recommend using whichever is most familiar to you.
@@ -382,7 +382,7 @@ Generating suggested indexes in Postgres Pro proceeds in several stages:
     In version 16, Postgres added [generic explain plan functionality](https://www.postgresql.org/docs/current/sql-explain.html), but it has limitations, for example around `LIKE` clauses, which our implementation does not have.
 
     Search strategy is critical because evaluating all possible index combinations feasible only in simple situations.
-    This is what most most sets apart various indexing approaches.
+    This is what most sets apart various indexing approaches.
     Adapting the approach of Microsoft's Anytime algorithm, we employ a greedy search strategy, i.e., find the best one-index solution, then find the best index to add to that to produce a two-index solution.
     Our search terminates when the time budget is exhausted or when a round of exploration fails to produce any gains above the minimum improvement threshold of 10%.
 
@@ -395,7 +395,7 @@ Generating suggested indexes in Postgres Pro proceeds in several stages:
     In an ideal world, we might want to assess the cost of the storage and the benefit of improved performance in monetary terms.
     However, there is a simpler and more practical approach: to look at the changes in relative terms.
     Most people would agree that a 100x performance improvement is worth it, even if the storage cost is 2x.
-    In our implementation, use a configurable parameter to set this threshold.
+    In our implementation, we use a configurable parameter to set this threshold.
     By default, we require the change in the log (base 10) of the performance improvement to be 2x the difference in the log of the space cost.
     This works out to allowing a maximum 10x increase in space for a 100x performance improvement.
 
@@ -413,7 +413,7 @@ Database health checks identify tuning opportunities and maintenance needs befor
 In the present release, Postgres Pro adapts the database health checks directly from [PgHero](https://github.com/ankane/pghero).
 We are working to fully validate these checks and may extend them in the future.
 
-- *Index health*. Looks for unused indexes, duplicate indexes, and indexes that are bloated. Bloated indexes make inefficient use of database pages. When Postgres autovacuum cleans up index entries pointing to dead tuples, and marks the entries as reusable. However, it does not compact the index pages and, eventually, index pages may contain few live tuple references.
+- *Index health*. Looks for unused indexes, duplicate indexes, and indexes that are bloated. Bloated indexes make inefficient use of database pages. Postgres autovacuum cleans up index entries pointing to dead tuples, and marks the entries as reusable. However, it does not compact the index pages and, eventually, index pages may contain few live tuple references.
 - *Buffer Cache Hit Rate*. Measures the proportion of database reads that are served from the buffer cache instead of disk.
   A low buffer cache hit rate must be investigated as it is often not cost-optimal and leads to degraded application performance.
 - *Connection Health*. Checks the number of connections to the database and reports on their utilization.
@@ -486,9 +486,9 @@ The familiar tension between convenience and safety is also evident and pronounc
 Postgres Pro's protected SQL execution mode focuses on integrity.
 In the context of MCP, we are most concerned with LLM-generated SQL causing damage—for example, unintended data modification or deletion, or other changes that might circumvent an organization's change management process.
 
-The simplest way provide integrity is to ensure that all SQL executed against the database is read-only.
+The simplest way to provide integrity is to ensure that all SQL executed against the database is read-only.
 One way to do this is by creating a database user with read-only access permissions.
-While this is a good approach many find this cumbersome in practice.
+While this is a good approach, many find this cumbersome in practice.
 Postgres does not provide a way to place a connection or session into read-only mode, so Postgres Pro uses a more complex approach to ensure read-only SQL execution on top of a read-write connection.
 
 Postgres provides a read-only transaction mode that prevents data and schema modifications.
