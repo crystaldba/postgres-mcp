@@ -1,6 +1,6 @@
 # Postgres Pro MCP Server
 
-[ [Quick Start](#quick-start) | [Intro Blog Post](https://www.crystaldba.ai/blog) | [Discord Server](https://discord.gg/4BEHC7ZM) ]
+[ [Quick Start](#quick-start) | [Discord Server](https://discord.gg/4BEHC7ZM) ]
 
 ## Overview
 
@@ -15,7 +15,6 @@ For example, it provides:
 
 Postgres Pro also provides comprehensive schema information to support SQL generation, restricted and filtered SQL execution for safety, and more.
 
-*DEMO VIDEO PLACEHOLDER*
 
 ## Contents
 
