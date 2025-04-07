@@ -206,7 +206,7 @@ async def check_hypopg_installation_status(sql_driver: SqlDriver, message_type: 
         return False, (
             "The **hypopg** extension is not available on this PostgreSQL server.\n\n"
             "To install HypoPG:\n"
-            "1. For Debian/Ubuntu: `sudo apt-get install postgresql-contrib postgresql-${PG_MAJOR_VERSION}-hypopg`\n"
+            "1. For Debian/Ubuntu: `sudo apt-get install postgresql-contrib postgresql-hypopg`\n"
             "2. For RHEL/CentOS: `sudo yum install postgresql-hypopg`\n"
             "3. For MacOS with Homebrew: `brew install hypopg`\n"
             "4. For other systems, build from source: `git clone https://github.com/HypoPG/hypopg`\n\n"
