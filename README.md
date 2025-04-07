@@ -362,11 +362,12 @@ Generating suggested indexes in Postgres Pro proceeds in several stages:
 
 2. *Generate candidate indexes*
     Once we have a list of SQL queries that we want to improve through indexing, we generate a list of indexes that we might want to add.
-    To do this we parse the SQL and identify any columns used in filters, joins, grouping, or sorting.
+    To do this, we parse the SQL and identify any columns used in filters, joins, grouping, or sorting.
 
     To generate all possible indexes we need to consider combinations of these columns, because Postgres supports [multicolumn indexes](https://www.postgresql.org/docs/current/indexes-multicolumn.html).
-    In the present implementation we include only one permutation of each possible multicolumn index, selected at random.
-    We make this simplification to reduce the search space because permutations often have equivalent performance, however we hope to improve in this area.
+    In the present implementation, we include only one permutation of each possible multicolumn index, which is selected at random.
+    We make this simplification to reduce the search space because permutations often have equivalent performance.
+    However we hope to improve in this area.
 
 3. *Search for the optimal index configuration*.
     Our objective is to find the combination of indexes that optimally balances the performance benefits against the costs of storing and maintaining those indexes.
@@ -374,20 +375,20 @@ Generating suggested indexes in Postgres Pro proceeds in several stages:
     This simulates how the Postgres query optimizer will execute a query after the addition of indexes, and reports changes based on the actual Postgres cost model.
 
     One challenge is that generating query plans generally requires knowledge of the specific parameter values used in the query.
-    Query normalization, which is necessary to reduce the queries under considerations, removes parameter constants.
+    Query normalization, which is necessary to reduce the queries under consideration, removes parameter constants.
     Parameter values provided via bind variables are similarly not available to us.
 
-    To address this problem, produce realistic constants that we can provide as parameters by sampling from the table statistics.
+    To address this problem, we produce realistic constants that we can provide as parameters by sampling from the table statistics.
     In version 16, Postgres added [generic explain plan functionality](https://www.postgresql.org/docs/current/sql-explain.html), but it has limitations, for example around `LIKE` clauses, which our implementation does not have.
 
     Search strategy is critical because evaluating all possible index combinations feasible only in simple situations.
     This is what most most sets apart various indexing approaches.
     Adapting the approach of Microsoft's Anytime algorithm, we employ a greedy search strategy, i.e., find the best one-index solution, then find the best index to add to that to produce a two-index solution.
-    Our search terminates when the time budget is exhausted, or when a round of exploration fails to produce any gains above the minimum improvement threshold of 10%.
+    Our search terminates when the time budget is exhausted or when a round of exploration fails to produce any gains above the minimum improvement threshold of 10%.
 
 4. *Cost-benefit analysis*.
     When posed with two indexing alternatives, one which produces better performance and one which requires more space, how do we decide which to choose?
-    Traditionally, index advisors ask for a storage budget, and optimize performance with respect to that storage budget.
+    Traditionally, index advisors ask for a storage budget and optimize performance with respect to that storage budget.
     We also take a storage budget, but perform a cost-benefit analysis throughout the optimization.
 
     We frame this as the problem of selecting a point along the [Pareto front](https://en.wikipedia.org/wiki/Pareto_front)—the set of choices for which improving one quality metric necessarily worsens another.
@@ -395,7 +396,7 @@ Generating suggested indexes in Postgres Pro proceeds in several stages:
     However, there is a simpler and more practical approach: to look at the changes in relative terms.
     Most people would agree that a 100x performance improvement is worth it, even if the storage cost is 2x.
     In our implementation, use a configurable parameter to set this threshold.
-    By default we require the change in the log (base 10) of the performance improvement to be 2x the difference in the log of the space cost.
+    By default, we require the change in the log (base 10) of the performance improvement to be 2x the difference in the log of the space cost.
     This works out to allowing a maximum 10x increase in space for a 100x performance improvement.
 
 Our implementation is most closely related to the [Anytime Algorithm](https://www.microsoft.com/en-us/research/wp-content/uploads/2020/06/Anytime-Algorithm-of-Database-Tuning-Advisor-for-Microsoft-SQL-Server.pdf) found in Microsoft SQL Server.
@@ -408,19 +409,19 @@ This give the LLM additional context that it can use when responding to the inde
 
 ### Database Health
 
-Database health checks identify tuning opportunities and maintenance needs before they become lead to critical issues.
+Database health checks identify tuning opportunities and maintenance needs before they lead to critical issues.
 In the present release, Postgres Pro adapts the database health checks directly from [PgHero](https://github.com/ankane/pghero).
 We are working to fully validate these checks and may extend them in the future.
 
-- *Index health*. Looks for unused indexes, duplicate indexes, and indexes that are bloated. Bloated indexes make inefficient use of database pages. When Postgres autovacuum cleans up index entries pointing to dead tuples, and marks the entries as reusable. However, it does not compact the index pages, so eventually index pages may contain few live tuple references.
-- *Buffer Cache Hit Rate*. Measures the proportion of database reads that are served from the buffer cache, instead of disk.
+- *Index health*. Looks for unused indexes, duplicate indexes, and indexes that are bloated. Bloated indexes make inefficient use of database pages. When Postgres autovacuum cleans up index entries pointing to dead tuples, and marks the entries as reusable. However, it does not compact the index pages and, eventually, index pages may contain few live tuple references.
+- *Buffer Cache Hit Rate*. Measures the proportion of database reads that are served from the buffer cache instead of disk.
   A low buffer cache hit rate must be investigated as it is often not cost-optimal and leads to degraded application performance.
 - *Connection Health*. Checks the number of connections to the database and reports on their utilization.
   The biggest risk is running out of connections, but a high number of idle or blocked connections can also indicate issues.
 - *Vacuum Health*. Vacuum is important for many reasons.
   A critical one is preventing transaction id wraparound, which can cause the database to stop accepting writes.
   The Postgres multi-version concurrency control (MVCC) mechanism requires a unique transaction id for each transaction.
-  However, because Postgres uses a 32-bit signed integer for transaction ids, it needs to re-use transaction ids after after a maximum of 2 billion transactions.
+  However, because Postgres uses a 32-bit signed integer for transaction ids, it needs to reuse transaction ids after after a maximum of 2 billion transactions.
   To do this it "freezes" the transaction ids of historical transactions, setting them all to a special value that indicates distant past.
   When records first go to disk, they are written visibility for a range of transaction ids.
   Before re-using these transaction ids, Postgres must update any on-disk records, "freezing" them to remove the references to the transaction ids to be reused.
@@ -436,7 +437,7 @@ Postgres Pro uses [psycopg3](https://www.psycopg.org/) to connect to Postgres us
 Under the hood, psycopg3 uses the [libpq](https://www.postgresql.org/docs/current/libpq.html) library to connect to Postgres, providing access to the full Postgres feature set and an underlying implementation fully supported by the Postgres community.
 
 Some other Python-based MCP servers use [asyncpg](https://github.com/MagicStack/asyncpg), which may simplify installation by eliminating the `libpq` dependency.
-Asyncpg is also probably [faster](https://fernandoarteaga.dev/blog/psycopg-vs-asyncpg/) than psycopg3, but we have not validate this ourselves.
+Asyncpg is also probably [faster](https://fernandoarteaga.dev/blog/psycopg-vs-asyncpg/) than psycopg3, but we have not validated this ourselves.
 [Older benchmarks](https://gistpreview.github.io/?0ed296e93523831ea0918d42dd1258c2) report a larger performance gap, suggesting that the newer psycopg3 has closed the gap as it matures.
 
 Balancing these considerations, we selected `psycopg3` over `asyncpg`.
@@ -446,7 +447,7 @@ We remain open to revising this decision in the future.
 ### Connection Configuration
 
 Like the [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres), Postgres Pro takes Postgres connection information at startup.
-This is convenient for users who always connect to the same database, but can be cumbersome when users switch databases.
+This is convenient for users who always connect to the same database but can be cumbersome when users switch databases.
 
 An alternative approach, taken by [PG-MCP](https://github.com/stuzero/pg-mcp), is provide connection details via MCP tool calls at the time of use.
 This is more convenient for users who switch databases, and allows a single MCP server to simultaneously support multiple end-users.
@@ -487,7 +488,7 @@ In the context of MCP, we are most concerned with LLM-generated SQL causing dama
 
 The simplest way provide integrity is to ensure that all SQL executed against the database is read-only.
 One way to do this is by creating a database user with read-only access permissions.
-While this is a good approach, in practice many find this cumbersome.
+While this is a good approach many find this cumbersome in practice.
 Postgres does not provide a way to place a connection or session into read-only mode, so Postgres Pro uses a more complex approach to ensure read-only SQL execution on top of a read-write connection.
 
 Postgres provides a read-only transaction mode that prevents data and schema modifications.
@@ -504,13 +505,13 @@ ROLLBACK; DROP TABLE users;
 To prevent cases like this, we parse the SQL before execution using the [pglast](https://pglast.readthedocs.io/) library.
 We reject any SQL that contains `commit` or `rollback` statements.
 Helpfully, the popular Postgres stored procedure languages, including PL/pgSQL and PL/Python, do not allow for `COMMIT` or `ROLLBACK` statements.
-If you have unsafe stored procedure languages enabled on your database then our read-only protections could be circumvented.
+If you have unsafe stored procedure languages enabled on your database, then our read-only protections could be circumvented.
 
 At present, Postgres Pro provides two levels of protection for the database, one at either extreme of the convenience/safety spectrum.
 - "Unrestricted" provides maximum flexibility.
-It is suitable for development environments, where speed and flexibility are paramount and where there is no need to protect valuable or sensitive data.
+It is suitable for development environments where speed and flexibility are paramount, and where there is no need to protect valuable or sensitive data.
 - "Restricted" provides a balance between flexibility and safety.
-It is suitable for production environments, where the database is exposed to untrusted users and where it is important to protect valuable or sensitive data.
+It is suitable for production environments where the database is exposed to untrusted users, and where it is important to protect valuable or sensitive data.
 
 Unrestricted mode aligns with the approach of [Cursor's auto-run mode](https://docs.cursor.com/chat/tools#auto-run), where the AI agent operates with limited human oversight or approvals.
 We expect auto-run to be deployed in development environments where the consequences of mistakes are low, where databases do not contain valuable or sensitive data, and where they can be recreated or restored from backups when needed.
