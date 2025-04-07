@@ -465,7 +465,9 @@ async def get_top_queries(
     try:
         sql_driver = await get_sql_driver()
         top_queries_tool = TopQueriesCalc(sql_driver=sql_driver)
-        result = await top_queries_tool.get_top_queries(limit=limit, sort_by=("mean" if sort_by == "mean" else "total"))
+        if sort_by != "mean" and sort_by != "total":
+            return format_error_response("Invalid sort criteria. Please use 'mean' or 'total'.")
+        result = await top_queries_tool.get_top_queries(limit=limit, sort_by=sort_by)
         return format_text_response(result)
     except Exception as e:
         logger.error(f"Error getting slow queries: {e}")
