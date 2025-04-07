@@ -9,6 +9,10 @@ from .sql_driver import SqlDriver
 
 logger = logging.getLogger(__name__)
 
+# Single global PostgreSQL version cache
+# TODO: If we support multiple connections in the future, this should be connection-specific
+_POSTGRES_VERSION = None
+
 
 class ExtensionStatus(TypedDict):
     """Status of an extension."""
@@ -31,6 +35,11 @@ async def get_postgres_version(sql_driver: SqlDriver) -> int:
         The major PostgreSQL version as an integer (e.g., 16 for PostgreSQL 16.2)
         Returns 0 if the version cannot be determined
     """
+    # Check if we have a cached version
+    global _POSTGRES_VERSION
+    if _POSTGRES_VERSION is not None:
+        return _POSTGRES_VERSION
+
     try:
         rows = await sql_driver.execute_query("SHOW server_version")
         if not rows:
@@ -40,7 +49,12 @@ async def get_postgres_version(sql_driver: SqlDriver) -> int:
         version_string = rows[0].cells["server_version"]
         # Extract the major version (before the first dot)
         major_version = version_string.split(".")[0]
-        return int(major_version)
+        version = int(major_version)
+
+        # Cache the version globally
+        _POSTGRES_VERSION = version
+
+        return version
     except Exception as e:
         logger.warning(f"Error determining PostgreSQL version: {e}")
         raise e
