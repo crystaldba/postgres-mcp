@@ -12,6 +12,16 @@ from attrs import field
 INFINITE_IMPROVEMENT_MULTIPLIER = 1000000.0
 
 
+class ErrorResult:
+    """Simple error result class."""
+
+    def to_text(self) -> str:
+        return self.value
+
+    def __init__(self, message: str):
+        self.value = message
+
+
 def calculate_improvement_multiple(base_cost: float, rec_cost: float) -> float:
     """Calculate the improvement multiple from this recommendation."""
     if base_cost <= 0.0:
@@ -147,7 +157,9 @@ class ExplainPlanArtifact:
 
         # Add actual metrics if available in a compact form
         if node.actual_total_time is not None:
-            output += f" [Actual: {node.actual_startup_time:.2f}..{node.actual_total_time:.2f} ms, Rows: {node.actual_rows}, Loops: {node.actual_loops}]"
+            output += (
+                f" [Actual: {node.actual_startup_time:.2f}..{node.actual_total_time:.2f} ms, Rows: {node.actual_rows}, Loops: {node.actual_loops}]"
+            )
 
         # Add filter if present
         if node.filter:
@@ -209,9 +221,7 @@ class ExplainPlanArtifact:
             return f"Error summarizing plan: {e}"
 
     @staticmethod
-    def create_plan_diff(
-        before_plan: dict[str, Any], after_plan: dict[str, Any]
-    ) -> str:
+    def create_plan_diff(before_plan: dict[str, Any], after_plan: dict[str, Any]) -> str:
         """Generate a textual diff between two explain plans.
 
         Args:
@@ -226,24 +236,14 @@ class ExplainPlanArtifact:
 
         try:
             # Create PlanNode objects from the plans
-            before_tree = (
-                PlanNode.from_json_data(before_plan["Plan"])
-                if "Plan" in before_plan
-                else None
-            )
-            after_tree = (
-                PlanNode.from_json_data(after_plan["Plan"])
-                if "Plan" in after_plan
-                else None
-            )
+            before_tree = PlanNode.from_json_data(before_plan["Plan"]) if "Plan" in before_plan else None
+            after_tree = PlanNode.from_json_data(after_plan["Plan"]) if "Plan" in after_plan else None
 
             if not before_tree or not after_tree:
                 return "Cannot generate diff: Invalid plan structure"
 
             # Format the plans as text
-            before_lines = ExplainPlanArtifact._format_plan_node(before_tree).split(
-                "\n"
-            )
+            before_lines = ExplainPlanArtifact._format_plan_node(before_tree).split("\n")
             after_lines = ExplainPlanArtifact._format_plan_node(after_tree).split("\n")
 
             # Generate a readable diff with context
@@ -256,9 +256,7 @@ class ExplainPlanArtifact:
             after_cost = after_tree.total_cost
             improvement = calculate_improvement_multiple(before_cost, after_cost)
 
-            diff_lines.append(
-                f"Cost: {before_cost:.2f} → {after_cost:.2f} ({improvement:.1f}x improvement)"
-            )
+            diff_lines.append(f"Cost: {before_cost:.2f} → {after_cost:.2f} ({improvement:.1f}x improvement)")
             diff_lines.append("")
 
             # Node type changes - a simplified structural diff
@@ -305,25 +303,19 @@ class ExplainPlanArtifact:
 
             # For simplicity, we'll just list key changes in cost and rows
             if before_tree.node_type != after_tree.node_type:
-                diff_lines.append(
-                    f"- Root operation changed: {before_tree.node_type} → {after_tree.node_type}"
-                )
+                diff_lines.append(f"- Root operation changed: {before_tree.node_type} → {after_tree.node_type}")
 
             # Compare scan methods used
             before_scans = [line for line in before_lines if "Seq Scan" in line]
             after_scans = [line for line in after_lines if "Seq Scan" in line]
             if len(before_scans) > len(after_scans):
-                diff_lines.append(
-                    f"- {len(before_scans) - len(after_scans)} sequential scans replaced with more efficient access methods"
-                )
+                diff_lines.append(f"- {len(before_scans) - len(after_scans)} sequential scans replaced with more efficient access methods")
 
             # Look for new index scans
             before_idx_scans = [line for line in before_lines if "Index Scan" in line]
             after_idx_scans = [line for line in after_lines if "Index Scan" in line]
             if len(after_idx_scans) > len(before_idx_scans):
-                diff_lines.append(
-                    f"- {len(after_idx_scans) - len(before_idx_scans)} new index scans used"
-                )
+                diff_lines.append(f"- {len(after_idx_scans) - len(before_idx_scans)} new index scans used")
 
             return "\n".join(diff_lines)
 

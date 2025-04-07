@@ -34,9 +34,7 @@ class ConnectionHealthCalc:
 
         if total <= self.max_total_connections:
             return f"Total connections healthy: {total}"
-        return (
-            f"High number of connections: {total} (max: {self.max_total_connections})"
-        )
+        return f"High number of connections: {total} (max: {self.max_total_connections})"
 
     async def idle_connections_check(self) -> str:
         """Check if number of idle connections is within healthy limits."""

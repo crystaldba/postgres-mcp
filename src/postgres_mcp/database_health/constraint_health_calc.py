@@ -35,9 +35,7 @@ class ConstraintHealthCalc:
                     f"referencing '{metric.referenced_schema}.{metric.referenced_table}' is invalid"
                 )
             else:
-                result.append(
-                    f"Constraint '{metric.name}' on table '{metric.schema}.{metric.table}' is invalid"
-                )
+                result.append(f"Constraint '{metric.name}' on table '{metric.schema}.{metric.table}' is invalid")
         return "\n".join(result)
 
     async def _get_invalid_constraints(self) -> list[ConstraintMetrics]:

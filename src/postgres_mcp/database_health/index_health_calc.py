@@ -17,9 +17,7 @@ class IndexHealthCalc:
         if not invalid_indexes:
             return "No invalid indexes found."
 
-        return "Invalid indexes found: " + "\n".join(
-            [f"{idx['name']} on {idx['table']} is invalid." for idx in invalid_indexes]
-        )
+        return "Invalid indexes found: " + "\n".join([f"{idx['name']} on {idx['table']} is invalid." for idx in invalid_indexes])
 
     async def duplicate_index_check(self) -> str:
         indexes = await self._indexes()
@@ -34,9 +32,7 @@ class IndexHealthCalc:
             indexes_by_table[key].append(idx)
 
         # Check each valid non-primary/unique index for duplicates
-        for index in [
-            i for i in indexes if i["valid"] and not i["primary"] and not i["unique"]
-        ]:
+        for index in [i for i in indexes if i["valid"] and not i["primary"] and not i["unique"]]:
             table_indexes = indexes_by_table[(index["schema"], index["table"])]
 
             # Find covering indexes
@@ -56,9 +52,7 @@ class IndexHealthCalc:
                         or covering_idx["primary"]
                         or covering_idx["unique"]
                     ):
-                        dup_indexes.append(
-                            {"unneeded_index": index, "covering_index": covering_idx}
-                        )
+                        dup_indexes.append({"unneeded_index": index, "covering_index": covering_idx})
                         break
 
         if not dup_indexes:
@@ -236,10 +230,7 @@ class IndexHealthCalc:
         for idx in bloated_indexes_dicts:
             bloat_mb = int(idx["bloat_bytes"]) / (1024 * 1024)
             total_mb = int(idx["index_bytes"]) / (1024 * 1024)
-            result.append(
-                f"Index '{idx['index']}' on table '{idx['table']}' "
-                f"has {bloat_mb:.1f}MB bloat out of {total_mb:.1f}MB total size"
-            )
+            result.append(f"Index '{idx['index']}' on table '{idx['table']}' has {bloat_mb:.1f}MB bloat out of {total_mb:.1f}MB total size")
 
         return "\n".join(result)
 
@@ -348,9 +339,7 @@ class IndexHealthCalc:
                 continue
             size_mb = int(idx["size_bytes"]) / (1024 * 1024)
             result.append(
-                f"Index '{idx['index']}' on table '{idx['table']}' "
-                f"has only been scanned {idx['index_scans']} times "
-                f"and uses {size_mb:.1f}MB of space"
+                f"Index '{idx['index']}' on table '{idx['table']}' has only been scanned {idx['index_scans']} times and uses {size_mb:.1f}MB of space"
             )
 
         return "\n".join(result)

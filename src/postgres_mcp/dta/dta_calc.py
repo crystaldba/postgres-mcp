@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 import time
 from dataclasses import dataclass
 from dataclasses import field
@@ -10,19 +9,20 @@ from typing import Iterable
 
 import humanize
 from pglast import parse_sql
-from pglast.ast import A_Expr
 from pglast.ast import ColumnRef
 from pglast.ast import JoinExpr
 from pglast.ast import Node
-from pglast.ast import RangeVar
 from pglast.ast import SelectStmt
-from pglast.ast import SortBy
-from pglast.ast import SortGroupClause
-from pglast.visitors import Visitor
 
-from .artifacts import calculate_improvement_multiple
+from ..artifacts import calculate_improvement_multiple
+from ..explain import ExplainPlanTool
+from ..sql import ColumnCollector
+from ..sql import IndexConfig
 from ..sql import SafeSqlDriver
+from ..sql import SqlBindParams
 from ..sql import SqlDriver
+from ..sql import TableAliasVisitor
+from ..sql import check_hypopg_installation_status
 
 logger = logging.getLogger(__name__)
 
@@ -30,41 +30,6 @@ logger = logging.getLogger(__name__)
 MAX_NUM_DTA_QUERIES_LIMIT = 10
 
 # --- Data Classes ---
-
-
-@dataclass(frozen=True)
-class IndexConfig:
-    """Immutable index configuration for hashing."""
-
-    table: str
-    columns: tuple[str, ...]
-    using: str = "btree"
-    potential_problematic_reason: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "table": self.table,
-            "columns": list(self.columns),
-            "using": self.using,
-            "definition": self.definition,
-        }
-
-    @property
-    def definition(self) -> str:
-        return f"CREATE INDEX {self.name} ON {self.table} USING {self.using} ({', '.join(self.columns)})"
-
-    @property
-    def name(self) -> str:
-        return (
-            f"crystaldba_idx_{self.table}_{'_'.join(self.columns)}_{len(self.columns)}"
-            + ("" if self.using == "btree" else f"_{self.using}")
-        )
-
-    def __str__(self) -> str:
-        return self.definition
-
-    def __repr__(self) -> str:
-        return self.definition
 
 
 @dataclass
@@ -82,9 +47,7 @@ class Index:
         estimated_size: int = 0,
         potential_problematic_reason: str | None = None,
     ):
-        self.index_config = IndexConfig(
-            table, columns, using, potential_problematic_reason
-        )
+        self.index_config = IndexConfig(table, columns, using, potential_problematic_reason)
         self.estimated_size = estimated_size
 
     @property
@@ -125,9 +88,7 @@ class Index:
         return self.index_config.__str__() + f" (estimated_size: {self.estimated_size})"
 
     def __repr__(self) -> str:
-        return (
-            self.index_config.__repr__() + f" (estimated_size: {self.estimated_size})"
-        )
+        return self.index_config.__repr__() + f" (estimated_size: {self.estimated_size})"
 
 
 @dataclass
@@ -149,16 +110,12 @@ class IndexRecommendation:
     @property
     def progressive_improvement_multiple(self) -> float:
         """Calculate the progressive percentage improvement from this recommendation."""
-        return calculate_improvement_multiple(
-            self.progressive_base_cost, self.progressive_recommendation_cost
-        )
+        return calculate_improvement_multiple(self.progressive_base_cost, self.progressive_recommendation_cost)
 
     @property
     def individual_improvement_multiple(self) -> float:
         """Calculate the individual percentage improvement from this recommendation."""
-        return calculate_improvement_multiple(
-            self.individual_base_cost, self.individual_recommendation_cost
-        )
+        return calculate_improvement_multiple(self.individual_base_cost, self.individual_recommendation_cost)
 
 
 @dataclass
@@ -212,7 +169,7 @@ class DatabaseTuningAdvisor:
         self._table_size_cache = {}
         self._estimate_table_size_cache = {}
         self._explain_plans_cache = {}
-        self._column_stats_cache = {}
+        self._sql_bind_params = SqlBindParams(self.sql_driver)
 
         # Add trace accumulator
         self._dta_traces: list[str] = []
@@ -228,50 +185,17 @@ class DatabaseTuningAdvisor:
             The DTASession with error information if any check fails, None if all checks pass
         """
         # Pre-check 1: Check HypoPG with more granular feedback
-        # First check if HypoPG is installed
-        installed_result = await self.sql_driver.execute_query(
-            "SELECT 1 FROM pg_extension WHERE extname = 'hypopg'"
-        )
-        if installed_result:
-            # Case 1: HypoPG is installed and ready to use
-            pass
-        else:
-            # Check if HypoPG is available but not installed
-            available_result = await self.sql_driver.execute_query(
-                "SELECT 1 FROM pg_available_extensions WHERE name = 'hypopg'"
-            )
-            if available_result:
-                # Case 2: Available but not installed
-                error_message = (
-                    "The HypoPG extension is available but not installed.\n"
-                    "Please connect to the database and run this statement: 'CREATE EXTENSION hypopg;'\n"
-                    "You can also use the 'install_extension_hypopg' tool to install it if the user agrees and has the necessary permissions."
-                )
-                session.error = error_message
-                logger.error(error_message)
-                return session
-            else:
-                # Case 3: Not available at all
-                error_message = (
-                    "The HypoPG extension is not available on this PostgreSQL server.\n"
-                    "To install HypoPG:\n"
-                    "1. For Debian/Ubuntu: sudo apt-get install postgresql-hypopg\n"
-                    "2. For RHEL/CentOS: sudo yum install postgresql-hypopg\n"
-                    "3. For MacOS with Homebrew: brew install hypopg\n"
-                    "4. For other systems, build from source: git clone https://github.com/HypoPG/hypopg\n"
-                    "After installing the extension packages, connect to your database and run: CREATE EXTENSION hypopg;"
-                )
-                session.error = error_message
-                logger.error(error_message)
-                return session
+        # Use our new utility function to check HypoPG status
+        is_hypopg_installed, hypopg_message = await check_hypopg_installation_status(self.sql_driver)
+
+        # If hypopg is not installed or not available, add error to session
+        if not is_hypopg_installed:
+            session.error = hypopg_message
+            return session
 
         # Pre-check 2: Check if ANALYZE has been run at least once
-        result = await self.sql_driver.execute_query(
-            "SELECT s.last_analyze FROM pg_stat_user_tables s ORDER BY s.last_analyze LIMIT 1;"
-        )
-        if not result or not any(
-            row.cells.get("last_analyze") is not None for row in result
-        ):
+        result = await self.sql_driver.execute_query("SELECT s.last_analyze FROM pg_stat_user_tables s ORDER BY s.last_analyze LIMIT 1;")
+        if not result or not any(row.cells.get("last_analyze") is not None for row in result):
             error_message = (
                 "Statistics are not up-to-date. The database needs to be analyzed first. "
                 "Please run 'ANALYZE;' on your database before using the tuning advisor. "
@@ -343,9 +267,7 @@ class DatabaseTuningAdvisor:
                 session.workload = workload
             # Then try direct query list if provided
             elif query_list:
-                logger.debug(
-                    f"Using provided query list with {len(query_list)} queries"
-                )
+                logger.debug(f"Using provided query list with {len(query_list)} queries")
                 session.workload_source = "query_list"
                 session.workload = []
                 for i, query in enumerate(query_list):
@@ -367,9 +289,7 @@ class DatabaseTuningAdvisor:
             else:
                 logger.debug("Using query statistics from the database")
                 session.workload_source = "query_store"
-                session.workload = await self._get_query_stats(
-                    min_calls, min_avg_time_ms, limit
-                )
+                session.workload = await self._get_query_stats(min_calls, min_avg_time_ms, limit)
 
             if not session.workload:
                 logger.warning("No workload to analyze")
@@ -380,9 +300,7 @@ class DatabaseTuningAdvisor:
             query_weights = self._covert_workload_to_query_weights(session.workload)
 
             # Generate and evaluate index recommendations
-            session.recommendations = await self._generate_recommendations(
-                query_weights
-            )
+            session.recommendations = await self._generate_recommendations(query_weights)
             # Reset HypoPG only once at the end
             await self.sql_driver.execute_query("SELECT hypopg_reset();")
 
@@ -393,9 +311,7 @@ class DatabaseTuningAdvisor:
         session.dta_traces = self._dta_traces
         return session
 
-    async def _validate_and_parse_workload(
-        self, workload: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    async def _validate_and_parse_workload(self, workload: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Validate the workload to ensure it is analyzable."""
         validated_workload = []
         for q in workload:
@@ -406,7 +322,7 @@ class DatabaseTuningAdvisor:
             query_text = query_text.strip().lower()
 
             # Replace parameter placeholders with dummy values
-            query_text = await self._replace_parameters(query_text)
+            query_text = await self._sql_bind_params.replace_parameters(query_text)
 
             parsed = parse_sql(query_text)
             if not parsed:
@@ -422,22 +338,15 @@ class DatabaseTuningAdvisor:
             validated_workload.append(q)
         return validated_workload
 
-    def _covert_workload_to_query_weights(
-        self, workload: list[dict[str, Any]]
-    ) -> list[tuple[str, SelectStmt, float]]:
+    def _covert_workload_to_query_weights(self, workload: list[dict[str, Any]]) -> list[tuple[str, SelectStmt, float]]:
         """Convert workload to query weights based on query frequency."""
-        return [
-            (q["query"], q["stmt"], self.convert_query_info_to_weight(q))
-            for q in workload
-        ]
+        return [(q["query"], q["stmt"], self.convert_query_info_to_weight(q)) for q in workload]
 
     def convert_query_info_to_weight(self, query_info: dict[str, Any]) -> float:
         """Convert query info to weight based on query frequency."""
         return query_info.get("calls", 1.0) * query_info.get("avg_exec_time", 1.0)
 
-    async def _generate_recommendations(
-        self, query_weights: list[tuple[str, SelectStmt, float]]
-    ) -> list[IndexRecommendation]:
+    async def _generate_recommendations(self, query_weights: list[tuple[str, SelectStmt, float]]) -> list[IndexRecommendation]:
         """Generate index recommendations using a hybrid 'seed + greedy' approach with a time cutoff."""
         if query_weights is None or len(query_weights) == 0:
             self.dta_trace("No query provided")
@@ -446,25 +355,17 @@ class DatabaseTuningAdvisor:
         # Gather queries as strings
         workload_queries = [q for q, _, _ in query_weights]
 
-        self.dta_trace(
-            f"Workload queries ({len(workload_queries)}): {self._pp_list(workload_queries)}"
-        )
+        self.dta_trace(f"Workload queries ({len(workload_queries)}): {self._pp_list(workload_queries)}")
 
         # get existing indexes
-        existing_defs = {
-            idx["definition"] for idx in await self._get_existing_indexes()
-        }
+        existing_defs = {idx["definition"] for idx in await self._get_existing_indexes()}
 
-        logger.debug(
-            f"Existing indexes ({len(existing_defs)}): {self._pp_list(existing_defs)}"
-        )
+        logger.debug(f"Existing indexes ({len(existing_defs)}): {self._pp_list(existing_defs)}")
 
         # generate initial candidates
         all_candidates = await self.generate_candidates(query_weights, existing_defs)
 
-        self.dta_trace(
-            f"All candidates ({len(all_candidates)}): {self.candidate_str(all_candidates)}"
-        )
+        self.dta_trace(f"All candidates ({len(all_candidates)}): {self.candidate_str(all_candidates)}")
 
         # TODO: Remove this once we have a better way to generate seeds
         # # produce seeds if desired
@@ -491,9 +392,7 @@ class DatabaseTuningAdvisor:
                 break
 
             self.dta_trace("Evaluating seed:")
-            current_cost = await self._evaluate_configuration_cost(
-                query_weights, frozenset(seed)
-            )
+            current_cost = await self._evaluate_configuration_cost(query_weights, frozenset(seed))
             candidate_indexes = set(
                 {
                     IndexConfig(
@@ -505,9 +404,7 @@ class DatabaseTuningAdvisor:
                     for c in all_candidates
                 }
             )
-            final_indexes, final_cost = await self._enumerate_greedy(
-                query_weights, seed.copy(), current_cost, candidate_indexes - seed
-            )
+            final_indexes, final_cost = await self._enumerate_greedy(query_weights, seed.copy(), current_cost, candidate_indexes - seed)
 
             if final_cost < best_config[1]:
                 best_config = (final_indexes, final_cost)
@@ -515,9 +412,7 @@ class DatabaseTuningAdvisor:
         # build final recommendations from best_config
         total_size = 0
         budget_bytes = self.budget_mb * 1024 * 1024
-        individual_base_cost = (
-            await self._evaluate_configuration_cost(query_weights, frozenset()) or 1.0
-        )
+        individual_base_cost = await self._evaluate_configuration_cost(query_weights, frozenset()) or 1.0
         progressive_base_cost = individual_base_cost
         indexes_so_far = []
         for index_config in best_config[0]:
@@ -532,9 +427,7 @@ class DatabaseTuningAdvisor:
                 frozenset([index_config]),  # Only this index
             )
 
-            size = await self._estimate_index_size(
-                index_config.table, list(index_config.columns)
-            )
+            size = await self._estimate_index_size(index_config.table, list(index_config.columns))
             if budget_bytes < 0 or total_size + size <= budget_bytes:
                 self.dta_trace(f"Adding index: {self.candidate_str([index_config])}")
                 rec = IndexRecommendation(
@@ -554,21 +447,17 @@ class DatabaseTuningAdvisor:
                 recommendations.append(rec)
                 total_size += size
             else:
-                self.dta_trace(
-                    f"Skipping index: {self.candidate_str([index_config])} because it exceeds budget"
-                )
+                self.dta_trace(f"Skipping index: {self.candidate_str([index_config])} because it exceeds budget")
 
         # Sort recs by benefit desc
         return recommendations
 
-    async def generate_candidates(
-        self, workload: list[tuple[str, SelectStmt, float]], existing_defs: set[str]
-    ) -> list[Index]:
+    async def generate_candidates(self, workload: list[tuple[str, SelectStmt, float]], existing_defs: set[str]) -> list[Index]:
         """Generates index candidates from queries, with batch creation."""
         table_columns_usage = {}  # table -> {col -> usage_count}
         # Extract columns from all queries
-        for q, stmt, _ in workload:
-            columns_per_table = self.extract_stmt_columns(q, stmt)
+        for _q, stmt, _ in workload:
+            columns_per_table = self._sql_bind_params.extract_stmt_columns(stmt)
             for tbl, cols in columns_per_table.items():
                 if tbl not in table_columns_usage:
                     table_columns_usage[tbl] = {}
@@ -579,9 +468,7 @@ class DatabaseTuningAdvisor:
         # e.g. skip columns that appear in fewer than self.min_column_usage queries
         table_columns: dict[str, set[str]] = {}
         for tbl, usage_map in table_columns_usage.items():
-            kept_cols = {
-                c for c, usage in usage_map.items() if usage >= self.min_column_usage
-            }
+            kept_cols = {c for c, usage in usage_map.items() if usage >= self.min_column_usage}
             if kept_cols:
                 table_columns[tbl] = kept_cols
 
@@ -594,28 +481,18 @@ class DatabaseTuningAdvisor:
                     candidates.append(Index(table=table, columns=tuple(combo)))
 
         # filter out duplicates with existing indexes
-        filtered_candidates = [
-            c for c in candidates if not self._index_exists(c, existing_defs)
-        ]
+        filtered_candidates = [c for c in candidates if not self._index_exists(c, existing_defs)]
 
         # filter out candidates with columns not used in query conditions
-        condition_filtered1 = self._filter_candidates_by_query_conditions(
-            workload, filtered_candidates
-        )
+        condition_filtered1 = self._filter_candidates_by_query_conditions(workload, filtered_candidates)
 
         # filter out long text columns
         condition_filtered = await self._filter_long_text_columns(condition_filtered1)
 
         self.dta_trace(f"Generated {len(candidates)} total candidates")
-        self.dta_trace(
-            f"Filtered to {len(filtered_candidates)} after removing existing indexes."
-        )
-        self.dta_trace(
-            f"Filtered to {len(condition_filtered1)} after removing unused columns."
-        )
-        self.dta_trace(
-            f"Filtered to {len(condition_filtered)} after removing long text columns."
-        )
+        self.dta_trace(f"Filtered to {len(filtered_candidates)} after removing existing indexes.")
+        self.dta_trace(f"Filtered to {len(condition_filtered1)} after removing unused columns.")
+        self.dta_trace(f"Filtered to {len(condition_filtered)} after removing long text columns.")
         # Batch create all hypothetical indexes and store their size estimates
         if len(condition_filtered) > 0:
             query = "SELECT hypopg_create_index({});" * len(condition_filtered)
@@ -630,9 +507,7 @@ class DatabaseTuningAdvisor:
                 "SELECT index_name, hypopg_relation_size(indexrelid) as index_size FROM hypopg_list_indexes;"
             )
             if result is not None:
-                index_map = {
-                    r.cells["index_name"]: r.cells["index_size"] for r in result
-                }
+                index_map = {r.cells["index_name"]: r.cells["index_size"] for r in result}
                 for idx in condition_filtered:
                     if idx.name in index_map:
                         idx.estimated_size = index_map[idx.name]
@@ -641,11 +516,7 @@ class DatabaseTuningAdvisor:
         return condition_filtered
 
     def candidate_str(self, indexes: Iterable[Index] | Iterable[IndexConfig]) -> str:
-        return (
-            ", ".join(f"{idx.table}({','.join(idx.columns)})" for idx in indexes)
-            if indexes
-            else "(no indexes)"
-        )
+        return ", ".join(f"{idx.table}({','.join(idx.columns)})" for idx in indexes) if indexes else "(no indexes)"
 
     async def _evaluate_configuration_cost(
         self,
@@ -655,14 +526,10 @@ class DatabaseTuningAdvisor:
         """Evaluate total cost with selective enabling and caching."""
         # Use indexes as cache key
         if indexes in self.cost_cache:
-            self.dta_trace(
-                f"  - Using cached cost for configuration: {self.candidate_str(indexes)}"
-            )
+            self.dta_trace(f"  - Using cached cost for configuration: {self.candidate_str(indexes)}")
             return self.cost_cache[indexes]
 
-        self.dta_trace(
-            f"  - Evaluating cost for configuration: {self.candidate_str(indexes)}"
-        )
+        self.dta_trace(f"  - Evaluating cost for configuration: {self.candidate_str(indexes)}")
 
         total_cost = 0.0
         valid_queries = 0
@@ -672,9 +539,7 @@ class DatabaseTuningAdvisor:
             for query_text, _stmt, weight in weighted_workload:
                 try:
                     # Get the explain plan using our memoized helper
-                    plan_data = await self.get_explain_plan_with_indexes(
-                        query_text, indexes
-                    )
+                    plan_data = await self.get_explain_plan_with_indexes(query_text, indexes)
 
                     # Extract cost from the plan data
                     cost = self.extract_cost_from_json_plan(plan_data)
@@ -692,9 +557,7 @@ class DatabaseTuningAdvisor:
 
             avg_cost = total_cost / valid_queries
             self.cost_cache[indexes] = avg_cost
-            self.dta_trace(
-                f"    + config cost: {avg_cost:.2f} (from {valid_queries} queries)"
-            )
+            self.dta_trace(f"    + config cost: {avg_cost:.2f} (from {valid_queries} queries)")
             return avg_cost
 
         except Exception as e:
@@ -724,12 +587,8 @@ class DatabaseTuningAdvisor:
         min_time_improvement = self.min_time_improvement  # 5% default
 
         self.dta_trace("\n[GREEDY SEARCH] Starting enumeration")
-        self.dta_trace(
-            f"  - Parameters: alpha={alpha}, min_time_improvement={min_time_improvement}"
-        )
-        self.dta_trace(
-            f"  - Initial indexes: {len(current_indexes)}, Candidates: {len(candidate_indexes)}"
-        )
+        self.dta_trace(f"  - Parameters: alpha={alpha}, min_time_improvement={min_time_improvement}")
+        self.dta_trace(f"  - Initial indexes: {len(current_indexes)}, Candidates: {len(candidate_indexes)}")
 
         # Get the tables involved in this analysis
         tables = set()
@@ -737,30 +596,17 @@ class DatabaseTuningAdvisor:
             tables.add(idx.table)
 
         # Estimate base relation size for each table
-        base_relation_size = sum(
-            [await self._get_table_size(table) for table in tables]
-        )
+        base_relation_size = sum([await self._get_table_size(table) for table in tables])
 
-        self.dta_trace(
-            f"  - Base relation size: {humanize.naturalsize(base_relation_size)}"
-        )
+        self.dta_trace(f"  - Base relation size: {humanize.naturalsize(base_relation_size)}")
 
         # Calculate current indexes size
-        indexes_size = sum(
-            [
-                await self._estimate_index_size(idx.table, list(idx.columns))
-                for idx in current_indexes
-            ]
-        )
+        indexes_size = sum([await self._estimate_index_size(idx.table, list(idx.columns)) for idx in current_indexes])
 
         # Total space is base relation plus indexes
         current_space = base_relation_size + indexes_size
         current_time = current_cost
-        current_objective = (
-            math.log(current_time) + alpha * math.log(current_space)
-            if current_cost > 0 and current_space > 0
-            else float("inf")
-        )
+        current_objective = math.log(current_time) + alpha * math.log(current_space) if current_cost > 0 and current_space > 0 else float("inf")
 
         self.dta_trace(
             f"  - Initial configuration: Time={current_time:.2f}, "
@@ -781,23 +627,16 @@ class DatabaseTuningAdvisor:
             best_time_improvement = 0
 
             for candidate in candidate_indexes:
-                self.dta_trace(
-                    f"Evaluating candidate: {self.candidate_str([candidate])}"
-                )
+                self.dta_trace(f"Evaluating candidate: {self.candidate_str([candidate])}")
                 # Calculate additional size from this index
-                index_size = await self._estimate_index_size(
-                    candidate.table, list(candidate.columns)
-                )
+                index_size = await self._estimate_index_size(candidate.table, list(candidate.columns))
                 self.dta_trace(f"    + Index size: {humanize.naturalsize(index_size)}")
                 # Total space with this index = current space + new index size
                 test_space = current_space + index_size
                 self.dta_trace(f"    + Total space: {humanize.naturalsize(test_space)}")
 
                 # Check budget constraint
-                if (
-                    self.budget_mb > 0
-                    and (test_space - base_relation_size) > self.budget_mb * 1024 * 1024
-                ):
+                if self.budget_mb > 0 and (test_space - base_relation_size) > self.budget_mb * 1024 * 1024:
                     self.dta_trace(
                         f"  - Skipping candidate: {self.candidate_str([candidate])} because total "
                         f"index size ({humanize.naturalsize(test_space - base_relation_size)}) exceeds "
@@ -806,9 +645,7 @@ class DatabaseTuningAdvisor:
                     continue
 
                 # Calculate new time (cost) with this index
-                test_time = await self._evaluate_configuration_cost(
-                    queries, frozenset(current_indexes | {candidate})
-                )
+                test_time = await self._evaluate_configuration_cost(queries, frozenset(current_indexes | {candidate}))
                 self.dta_trace(f"    + Eval cost (time): {test_time}")
 
                 # Calculate relative time improvement
@@ -816,22 +653,15 @@ class DatabaseTuningAdvisor:
 
                 # Skip if time improvement is below threshold
                 if time_improvement < min_time_improvement:
-                    self.dta_trace(
-                        f"  - Skipping candidate: {self.candidate_str([candidate])} because time improvement is below threshold"
-                    )
+                    self.dta_trace(f"  - Skipping candidate: {self.candidate_str([candidate])} because time improvement is below threshold")
                     continue
 
                 # Calculate objective for this configuration
                 test_objective = math.log(test_time) + alpha * math.log(test_space)
 
                 # Select the index with the best time improvement that meets our threshold
-                if (
-                    test_objective < best_objective
-                    and time_improvement > best_time_improvement
-                ):
-                    self.dta_trace(
-                        f"  - Updating best candidate: {self.candidate_str([candidate])}"
-                    )
+                if test_objective < best_objective and time_improvement > best_time_improvement:
+                    self.dta_trace(f"  - Updating best candidate: {self.candidate_str([candidate])}")
                     best_index = candidate
                     best_time = test_time
                     best_space = test_space
@@ -844,9 +674,7 @@ class DatabaseTuningAdvisor:
 
             # If no improvement or no valid candidates, stop
             if best_index is None:
-                self.dta_trace(
-                    f"STOPPED SEARCH: No indexes found with time improvement >= {min_time_improvement:.2%}"
-                )
+                self.dta_trace(f"STOPPED SEARCH: No indexes found with time improvement >= {min_time_improvement:.2%}")
                 break
 
             # Calculate improvements/changes
@@ -882,12 +710,7 @@ class DatabaseTuningAdvisor:
         # Log final configuration
         self.dta_trace("\n[SEARCH COMPLETE]")
         if added_indexes:
-            indexes_size = sum(
-                [
-                    await self._estimate_index_size(idx.table, list(idx.columns))
-                    for idx in current_indexes
-                ]
-            )
+            indexes_size = sum([await self._estimate_index_size(idx.table, list(idx.columns)) for idx in current_indexes])
             self.dta_trace(
                 f"  - Final configuration: {len(added_indexes)} indexes added"
                 f"\n    + Final time: {current_time:.2f}"
@@ -919,9 +742,7 @@ class DatabaseTuningAdvisor:
         try:
             # Use the proper way to calculate table size with quoted identifiers
             query = "SELECT pg_total_relation_size(quote_ident({})) as rel_size"
-            result = await SafeSqlDriver.execute_param_query(
-                self.sql_driver, query, [table]
-            )
+            result = await SafeSqlDriver.execute_param_query(self.sql_driver, query, [table])
 
             if result and len(result) > 0 and len(result[0].cells) > 0:
                 size = int(result[0].cells["rel_size"])
@@ -944,9 +765,7 @@ class DatabaseTuningAdvisor:
         """Estimate the size of a table if we can't get it from the database."""
         try:
             # Try a simple query to get row count and then estimate size
-            result = await SafeSqlDriver.execute_param_query(
-                self.sql_driver, "SELECT count(*) as row_count FROM {}", [table]
-            )
+            result = await SafeSqlDriver.execute_param_query(self.sql_driver, "SELECT count(*) as row_count FROM {}", [table])
             if result and len(result) > 0 and len(result[0].cells) > 0:
                 row_count = int(result[0].cells["row_count"])
                 # Rough estimate: assume 1KB per row
@@ -1000,22 +819,16 @@ class DatabaseTuningAdvisor:
 
             return queries
         except Exception as e:
-            logger.error(
-                f"Error loading queries from file {file_path}: {e}", exc_info=True
-            )
+            logger.error(f"Error loading queries from file {file_path}: {e}", exc_info=True)
             return []
 
-    async def _get_query_stats(
-        self, min_calls: int, min_avg_time_ms: float, limit: int
-    ) -> list[dict[str, Any]]:
+    async def _get_query_stats(self, min_calls: int, min_avg_time_ms: float, limit: int) -> list[dict[str, Any]]:
         """Get query statistics from pg_stat_statements"""
 
         # Reference to original implementation
         return await self._get_query_stats_direct(min_calls, min_avg_time_ms, limit)
 
-    async def _get_query_stats_direct(
-        self, min_calls: int = 50, min_avg_time_ms: float = 5.0, limit: int = 100
-    ) -> list[dict[str, Any]]:
+    async def _get_query_stats_direct(self, min_calls: int = 50, min_avg_time_ms: float = 5.0, limit: int = 100) -> list[dict[str, Any]]:
         """Direct implementation of query stats collection."""
         query = """
         SELECT queryid, query, calls, total_exec_time/calls as avg_exec_time
@@ -1049,44 +862,9 @@ class DatabaseTuningAdvisor:
         visitor(stmt)
 
         # Skip queries that only access system tables
-        if all(
-            table.startswith("pg_") or table.startswith("aurora_")
-            for table in visitor.tables
-        ):
+        if all(table.startswith("pg_") or table.startswith("aurora_") for table in visitor.tables):
             return False
         return True
-
-    def extract_columns(self, query: str) -> dict[str, set[str]]:
-        """Extract columns from a query using improved visitors."""
-        try:
-            parsed = parse_sql(query)
-            if not parsed:
-                return {}
-            stmt = parsed[0].stmt
-            if not isinstance(stmt, SelectStmt):
-                self.dta_trace(f"Skipping non-SELECT query: {query[:50]}...")
-                return {}
-
-            return self.extract_stmt_columns(query, stmt)
-
-        except Exception as e:
-            self.dta_trace(f"Error parsing query '{query[:50]}...': {e}", exc_info=True)
-            return {}
-
-    def extract_stmt_columns(self, query: str, stmt: SelectStmt) -> dict[str, set[str]]:
-        """Extract columns from a query using improved visitors."""
-        try:
-            # Second pass: collect columns with table context
-            collector = ColumnCollector()
-            collector(stmt)
-
-            return collector.columns
-
-        except Exception as e:
-            self.dta_trace(
-                f"Error collecting columns from '{query[:50]}...': {e}", exc_info=True
-            )
-            return {}
 
     def _index_exists(self, index: Index, existing_defs: set[str]) -> bool:
         """Check if an index with the same table, columns, and type already exists in the database.
@@ -1112,10 +890,7 @@ class DatabaseTuningAdvisor:
             for existing_def in existing_defs:
                 try:
                     # Skip if it's obviously not an index
-                    if not (
-                        "CREATE INDEX" in existing_def.upper()
-                        or "CREATE UNIQUE INDEX" in existing_def.upper()
-                    ):
+                    if not ("CREATE INDEX" in existing_def.upper() or "CREATE UNIQUE INDEX" in existing_def.upper()):
                         continue
 
                     # Parse the existing index
@@ -1126,16 +901,12 @@ class DatabaseTuningAdvisor:
                     existing_info = self._extract_index_info(existing_node)
 
                     # Compare the key components
-                    if existing_info and self._is_same_index(
-                        candidate_info, existing_info
-                    ):
+                    if existing_info and self._is_same_index(candidate_info, existing_info):
                         return True
                 except Exception as e:
                     self.dta_trace(f"Error parsing existing index: {e}")
                     # If parsing fails, try substring matching as fallback
-                    if index.table.lower() in existing_def.lower() and all(
-                        col.lower() in existing_def.lower() for col in index.columns
-                    ):
+                    if index.table.lower() in existing_def.lower() and all(col.lower() in existing_def.lower() for col in index.columns):
                         return True
 
             return False
@@ -1143,8 +914,7 @@ class DatabaseTuningAdvisor:
             logger.warning(f"Error in robust index comparison: {e}")
             # Fallback to simpler heuristic if parsing fails
             return any(
-                index.table.lower() in existing_def.lower()
-                and all(col.lower() in existing_def.lower() for col in index.columns)
+                index.table.lower() in existing_def.lower() and all(col.lower() in existing_def.lower() for col in index.columns)
                 for existing_def in existing_defs
             )
 
@@ -1208,9 +978,7 @@ class DatabaseTuningAdvisor:
         # Same columns (order matters for most index types)?
         if index1["columns"] != index2["columns"]:
             # For hash indexes, order doesn't matter
-            if index1["type"] == "hash" and set(index1["columns"]) == set(
-                index2["columns"]
-            ):
+            if index1["type"] == "hash" and set(index1["columns"]) == set(index2["columns"]):
                 return True
             return False
 
@@ -1284,9 +1052,7 @@ class DatabaseTuningAdvisor:
                 [table, columns],
             )
             if result and result[0].cells:
-                size_estimate = self._estimate_index_size_internal(
-                    dict(result[0].cells)
-                )
+                size_estimate = self._estimate_index_size_internal(dict(result[0].cells))
 
                 # Cache the result
                 self._size_estimate_cache[cache_key] = size_estimate
@@ -1304,9 +1070,7 @@ class DatabaseTuningAdvisor:
         size_estimate = int(width * ndistinct * 2.0)
         return size_estimate
 
-    def _filter_candidates_by_query_conditions(
-        self, workload: list[tuple[str, SelectStmt, float]], candidates: list[Index]
-    ) -> list[Index]:
+    def _filter_candidates_by_query_conditions(self, workload: list[tuple[str, SelectStmt, float]], candidates: list[Index]) -> list[Index]:
         """Filter out index candidates that contain columns not used in query conditions."""
         if not workload or not candidates:
             return candidates
@@ -1338,17 +1102,13 @@ class DatabaseTuningAdvisor:
                 continue
 
             # Check if all columns in the index are used in conditions
-            all_columns_used = all(
-                col in condition_columns[table] for col in candidate.columns
-            )
+            all_columns_used = all(col in condition_columns[table] for col in candidate.columns)
             if all_columns_used:
                 filtered_candidates.append(candidate)
 
         return filtered_candidates
 
-    async def _filter_long_text_columns(
-        self, candidates: list[Index], max_text_length: int = 100
-    ) -> list[Index]:
+    async def _filter_long_text_columns(self, candidates: list[Index], max_text_length: int = 100) -> list[Index]:
         """Filter out indexes that contain long text columns based on catalog information.
 
         Args:
@@ -1414,13 +1174,9 @@ class DatabaseTuningAdvisor:
             avg_width = row.cells.get("avg_width")
 
             # Use avg_width from pg_stats as a heuristic - if it's high, likely contains long text
-            if potential_long and (
-                avg_width is None or avg_width > max_text_length * 0.4
-            ):
+            if potential_long and (avg_width is None or avg_width > max_text_length * 0.4):
                 problematic_columns.add((table, column))
-                logger.debug(
-                    f"Identified potentially long text column: {table}.{column} (avg_width: {avg_width})"
-                )
+                logger.debug(f"Identified potentially long text column: {table}.{column} (avg_width: {avg_width})")
             elif potential_long:
                 potential_problematic_columns.add((table, column))
 
@@ -1431,9 +1187,7 @@ class DatabaseTuningAdvisor:
             for column in candidate.columns:
                 if (candidate.table, column) in problematic_columns:
                     valid = False
-                    logger.debug(
-                        f"Skipping index candidate with long text column: {candidate.table}.{column}"
-                    )
+                    logger.debug(f"Skipping index candidate with long text column: {candidate.table}.{column}")
                     break
                 elif (candidate.table, column) in potential_problematic_columns:
                     candidate.potential_problematic_reason = "long_text_column"
@@ -1443,588 +1197,14 @@ class DatabaseTuningAdvisor:
 
         return filtered_candidates
 
-    # --- Parameter replacement ---
-
-    async def _replace_parameters(self, query: str) -> str:
-        """Replace parameter placeholders with appropriate values based on column statistics.
-
-        This handles queries from pg_stat_statements where literals
-        have been replaced with $1, $2, etc.
-        """
-        try:
-            modified_query = query
-            # Find all parameter placeholders
-            param_matches = list(re.finditer(r"\$\d+", query))
-            if not param_matches:
-                logger.debug(f"No parameters found for query: {query[:50]}...")
-                return query
-
-            # Handle common special cases in a specific order to prevent incorrect replacements
-
-            # 1. Handle LIMIT clauses - these should always be replaced with integers
-            limit_pattern = re.compile(r"limit\s+\$(\d+)", re.IGNORECASE)
-            modified_query = limit_pattern.sub(r"limit 100", modified_query)
-
-            # 2. Handle static INTERVAL expressions
-            interval_pattern = re.compile(
-                r"interval\s+'(\d+)\s+([a-z]+)'", re.IGNORECASE
-            )
-            modified_query = interval_pattern.sub(
-                lambda m: f"interval '2 {m.group(2)}'", modified_query
-            )
-
-            # 3. Handle parameterized INTERVAL expressions (INTERVAL $1)
-            param_interval_pattern = re.compile(r"interval\s+\$(\d+)", re.IGNORECASE)
-            modified_query = param_interval_pattern.sub(
-                "interval '2 days'", modified_query
-            )
-
-            # 4. Handle OFFSET clauses - similar to LIMIT
-            offset_pattern = re.compile(r"offset\s+\$(\d+)", re.IGNORECASE)
-            modified_query = offset_pattern.sub(r"offset 0", modified_query)
-
-            # Find all remaining parameter placeholders
-            param_matches = list(re.finditer(r"\$\d+", modified_query))
-            if not param_matches:
-                self.dta_trace(
-                    f"No further parameters found for query: {query[:50]}..."
-                )
-                return modified_query
-
-            # Then, handle BETWEEN clauses as special cases
-            between_pattern = re.compile(
-                r"(\w+(?:\.\w+)?)\s+between\s+\$(\d+)\s+and\s+\$(\d+)", re.IGNORECASE
-            )
-            for match in between_pattern.finditer(query):
-                column_ref, param1, param2 = match.groups()
-                # Extract table and column name from the reference
-                if "." in column_ref:
-                    parts = column_ref.split(".")
-                    alias = parts[0]
-                    col_name = parts[1]
-                    # Resolve the table alias
-                    table_columns = self.extract_columns(query)
-                    table_name = None
-                    for tbl, _cols in table_columns.items():
-                        if any(alias == a for a in self._get_table_aliases(query, tbl)):
-                            table_name = tbl
-                            break
-                else:
-                    # No alias, try to find the column in any table
-                    col_name = column_ref
-                    table_columns = self.extract_columns(query)
-                    table_name = None
-                    for tbl, cols in table_columns.items():
-                        if col_name in cols:
-                            table_name = tbl
-                            break
-
-                # Default numeric bounds if statistics not available
-                lower_bound = 10
-                upper_bound = 100
-                if table_name and col_name:
-                    stats = await self._get_column_statistics(table_name, col_name)
-                    if stats:
-                        # Get appropriate values for both bounds
-                        lower_bound = self._get_bound_values(stats, is_lower=True)
-                        upper_bound = self._get_bound_values(stats, is_lower=False)
-
-                # Replace both parameters in the BETWEEN clause
-                param1_pattern = r"\$" + param1
-                param2_pattern = r"\$" + param2
-                self.dta_trace(
-                    f"Replacing {param1_pattern} with {lower_bound} and {param2_pattern} with {upper_bound}"
-                )
-                modified_query = re.sub(
-                    param1_pattern, str(lower_bound), modified_query
-                )
-                modified_query = re.sub(
-                    param2_pattern, str(upper_bound), modified_query
-                )
-
-            # Now handle remaining parameters normally
-            # Recompute matches after BETWEEN replacements
-            param_matches = list(re.finditer(r"\$\d+", modified_query))
-            if not param_matches:
-                self.dta_trace(
-                    f"No additional parameters found for query: {query[:50]}..."
-                )
-                return modified_query
-
-            table_columns = self.extract_columns(query)
-            if not table_columns:
-                self.dta_trace(f"No table columns found for query: {query[:50]}...")
-                return self._replace_parameters_generic(modified_query)
-
-            # Process each remaining parameter
-            for match in reversed(param_matches):
-                param_position = match.start()
-
-                # Extract a narrower context
-                clause_start = max(
-                    modified_query.rfind(" where ", 0, param_position),
-                    modified_query.rfind(" and ", 0, param_position),
-                    modified_query.rfind(" or ", 0, param_position),
-                    modified_query.rfind(",", 0, param_position),
-                    modified_query.rfind("(", 0, param_position),
-                    -1,
-                )
-
-                if clause_start == -1:
-                    clause_start = max(0, param_position - 100)
-
-                preceding_text = modified_query[clause_start : param_position + 2]
-
-                # Try to identify which column this parameter belongs to
-                column_info = self._identify_parameter_column(
-                    preceding_text, table_columns
-                )
-                if column_info:
-                    table_name, column_name = column_info
-                    stats = await self._get_column_statistics(table_name, column_name)
-                    if stats:
-                        replacement = self._get_replacement_value(stats, preceding_text)
-                    else:
-                        replacement = self._get_generic_replacement(preceding_text)
-                else:
-                    replacement = self._get_generic_replacement(preceding_text)
-
-                modified_query = (
-                    modified_query[: match.start()]
-                    + replacement
-                    + modified_query[match.end() :]
-                )
-
-            return modified_query
-        except Exception as e:
-            logger.error(f"Error replacing parameters: {e}", exc_info=True)
-            return query  # Return original if replacement fails
-
-    def _get_bound_values(self, stats: dict[str, Any], is_lower: bool = True) -> Any:
-        """Get appropriate bound values for range queries based on column statistics.
-
-        Args:
-            stats: Column statistics from pg_stats
-            is_lower: True if we want the lower bound, False for upper bound
-
-        Returns:
-            Appropriate tight bound value based on available statistics
-        """
-        data_type = stats.get("data_type", "").lower()
-
-        # First check for most common values - these are statistically most relevant
-        common_vals = stats.get("common_vals")
-        common_freqs = stats.get("common_freqs")
-
-        if common_vals and common_freqs and len(common_vals) == len(common_freqs):
-            # Use the most common value if available
-            if len(common_vals) > 0:
-                common_vals_list = list(common_vals)  # make sure it's a list
-                common_freqs_list = list(common_freqs)  # make sure it's a list
-                # Find the most frequent value
-                max_freq_idx = common_freqs_list.index(max(common_freqs_list))
-                most_common = common_vals_list[max_freq_idx]
-
-                # For tight bounds, use the most common value with small adjustment
-                try:
-                    if isinstance(most_common, float):
-                        # Small +/- adjustment around most common value
-                        adjustment = abs(most_common) * 0.05 if most_common != 0 else 1
-                        return (
-                            most_common - adjustment
-                            if is_lower
-                            else most_common + adjustment
-                        )
-                    if isinstance(most_common, int):
-                        # Small +/- adjustment around most common value
-                        adjustment = abs(most_common) * 0.05 if most_common != 0 else 1
-                        return (
-                            int(most_common - adjustment)
-                            if is_lower
-                            else int(most_common + adjustment)
-                        )
-                    elif isinstance(most_common, str) and most_common.isdigit():
-                        # For string digits, convert and adjust
-                        num_val = float(most_common)
-                        adjustment = abs(num_val) * 0.05 if num_val != 0 else 1
-                        return (
-                            str(int(num_val - adjustment))
-                            if is_lower
-                            else str(int(num_val + adjustment))
-                        )
-                    else:
-                        # For non-numeric, just use most common
-                        return most_common
-                except (TypeError, ValueError):
-                    # If adaptation fails, just use the value
-                    return most_common
-
-        # Next, try histogram bounds focusing on central values
-        histogram_bounds = stats.get("histogram_bounds")
-        if histogram_bounds and len(histogram_bounds) >= 3:
-            # For tight bounds, use values very close to median
-            median_idx = len(histogram_bounds) // 2
-            # Only move 10% away from median in either direction for tight bounds
-            idx_offset = max(1, len(histogram_bounds) // 10)
-
-            if is_lower:
-                bound_idx = max(0, median_idx - idx_offset)
-            else:
-                bound_idx = min(len(histogram_bounds) - 1, median_idx + idx_offset)
-
-            return histogram_bounds[bound_idx]
-
-        # Fall back to standard statistics if available
-        most_common = (
-            stats.get("most_common_vals", [None])[0]
-            if stats.get("most_common_vals")
-            else None
-        )
-        if most_common is not None:
-            return most_common
-
-        # Use very conservative defaults as last resort
-        if "int" in data_type or data_type in ["smallint", "integer", "bigint"]:
-            return 10 if is_lower else 20  # Very tight range
-        elif data_type in ["numeric", "decimal", "real", "double precision", "float"]:
-            return 10.0 if is_lower else 20.0  # Very tight range
-        elif "date" in data_type or "time" in data_type:
-            return "'2023-01-01'" if is_lower else "'2023-01-31'"  # Just one month
-        elif data_type == "boolean":
-            return "true"  # Same value for both bounds for boolean
-        else:
-            # Default string-like behavior - narrow range
-            return "'m'" if is_lower else "'n'"  # Just two adjacent letters
-
-    def _get_table_aliases(self, query: str, table_name: str) -> list[str]:
-        """Extract table aliases for a given table using SQL parser.
-
-        Args:
-            query: The SQL query to parse
-            table_name: The name of the table to find aliases for
-
-        Returns:
-            List of aliases (including the table name itself)
-        """
-        try:
-            # Parse the query
-            parsed = parse_sql(query)
-            if not parsed:
-                return [table_name]  # Return just the table name if parsing fails
-
-            # Get the statement tree
-            stmt = parsed[0].stmt
-
-            # Use TableAliasVisitor to extract aliases
-            alias_visitor = TableAliasVisitor()
-            alias_visitor(stmt)
-
-            # Find all aliases for this table
-            aliases = [table_name]  # Always include the table name itself
-
-            for alias, table in alias_visitor.aliases.items():
-                if table.lower() == table_name.lower():
-                    aliases.append(alias)
-
-            self.dta_trace(f"Found aliases for {table_name}: {aliases}")
-            return aliases
-        except Exception as e:
-            logger.error(f"Error extracting table aliases: {e}", exc_info=True)
-            return [table_name]  # Fallback to just the table name
-
-    def _identify_parameter_column(
-        self, context: str, table_columns: dict[str, set[str]]
-    ) -> tuple[str, str] | None:
-        """Identify which column a parameter likely belongs to based on context."""
-        # Look for patterns like "column_name = $1" or "column_name IN ($1)"
-        for table, columns in table_columns.items():
-            for column in columns:
-                # Various patterns to match column references
-                patterns = [
-                    rf"{column}\s*=\s*\$\d+",  # column = $1
-                    rf"{column}\s+in\s+\([^)]*\$\d+[^)]*\)",  # column in (...$1...)
-                    rf"{column}\s+like\s+\$\d+",  # column like $1
-                    rf"{column}\s*>\s*\$\d+",  # column > $1
-                    rf"{column}\s*<\s*\$\d+",  # column < $1
-                    rf"{column}\s*>=\s*\$\d+",  # column >= $1
-                    rf"{column}\s*<=\s*\$\d+",  # column <= $1
-                    rf"{column}\s+between\s+\$\d+\s+and\s+\$\d+",  # column between $1 and $2
-                ]
-
-                for pattern in patterns:
-                    if re.search(pattern, context, re.IGNORECASE):
-                        return (table, column)
-
-        return None
-
-    async def _get_column_statistics(
-        self, table_name: str, column_name: str
-    ) -> dict[str, Any] | None:
-        """Get statistics for a column from pg_stats."""
-        # Initialize cache if it doesn't exist
-        if not hasattr(self, "_column_stats_cache"):
-            self._column_stats_cache = {}
-
-        # Create a cache key from table and column name
-        cache_key = f"{table_name}.{column_name}"
-
-        # Check if we already have this in cache
-        if cache_key in self._column_stats_cache:
-            return self._column_stats_cache[cache_key]
-
-        # Not in cache, query the database
-        try:
-            query = """
-            SELECT
-                data_type,
-                most_common_vals as common_vals,
-                most_common_freqs as common_freqs,
-                histogram_bounds,
-                null_frac,
-                n_distinct,
-                correlation
-            FROM pg_stats
-            JOIN information_schema.columns
-                ON pg_stats.tablename = information_schema.columns.table_name
-                AND pg_stats.attname = information_schema.columns.column_name
-            WHERE pg_stats.tablename = {}
-            AND pg_stats.attname = {}
-            """
-
-            self.dta_trace(f"Getting statistics for {table_name}.{column_name}")
-
-            result = await SafeSqlDriver.execute_param_query(
-                self.sql_driver,
-                query,
-                [table_name, column_name],
-            )
-            if not result or not result[0]:
-                self.dta_trace(f"No statistics found for {table_name}.{column_name}")
-                self._column_stats_cache[cache_key] = None
-                return None
-
-            stats = dict(result[0].cells)
-
-            # Convert PostgreSQL arrays to Python lists for easier handling
-            for key in ["common_vals", "common_freqs", "histogram_bounds"]:
-                if key in stats and stats[key] is not None:
-                    if isinstance(stats[key], str):
-                        # Parse array literals like '{val1,val2}' into Python lists
-                        array_str = stats[key].strip("{}")
-                        if array_str:
-                            stats[key] = [
-                                self._parse_pg_array_value(val)
-                                for val in array_str.split(",")
-                            ]
-                        else:
-                            stats[key] = []
-
-            # Cache the processed results
-            self._column_stats_cache[cache_key] = stats
-            return stats
-        except Exception as e:
-            logger.warning(
-                f"Error getting column statistics for {table_name}.{column_name}: {e}"
-            )
-            self._column_stats_cache[cache_key] = None
-            return None
-
-    def _parse_pg_array_value(self, value: str) -> Any:
-        """Parse a single value from a PostgreSQL array representation."""
-        value = value.strip()
-
-        # Try to convert to appropriate type
-        if value == "null":
-            return None
-        elif value.startswith('"') and value.endswith('"'):
-            return value[1:-1]  # Strip quotes for string values
-
-        # Try numeric conversion
-        try:
-            if "." in value:
-                return float(value)
-            else:
-                return int(value)
-        except ValueError:
-            # Return as string if not a number
-            return value
-
-    def _get_replacement_value(self, stats: dict[str, Any], context: str) -> str:
-        """Generate an appropriate replacement value based on column statistics."""
-        data_type = stats.get("data_type", "").lower()
-        common_vals = stats.get("common_vals")
-        histogram_bounds = stats.get("histogram_bounds")
-
-        # If we have common values, use the most common one for equality,
-        # or a value in the middle of the range for range queries
-
-        # Detect query operator context
-        is_equality = "=" in context and "!=" not in context and "<>" not in context
-        is_range = any(op in context for op in [">", "<", ">=", "<=", "between"])
-        is_like = "like" in context
-
-        # For string types
-        if "char" in data_type or data_type == "text":
-            if is_like:
-                return "'%test%'"
-            elif common_vals and is_equality:
-                # Use the most common value for equality
-                sample = common_vals[0]
-                return f"'{sample}'"
-            elif common_vals:
-                # Use any sample value
-                sample = common_vals[0]
-                return f"'{sample}'"
-            else:
-                # Default string
-                return "'sample_value'"
-
-        # For numeric types
-        elif "int" in data_type or data_type in [
-            "numeric",
-            "decimal",
-            "real",
-            "double",
-        ]:
-            if histogram_bounds and is_range:
-                # For range queries, use a value in the middle
-                bounds = histogram_bounds
-                if isinstance(bounds, list) and len(bounds) > 1:
-                    middle_idx = len(bounds) // 2
-                    value = bounds[middle_idx]
-                    return str(value)
-            elif common_vals and is_equality:
-                # Use most common value for equality
-                return str(common_vals[0])
-            elif histogram_bounds:
-                # Use a reasonable value from histogram
-                bounds = histogram_bounds
-                if isinstance(bounds, list) and len(bounds) > 0:
-                    return str(bounds[0])
-
-            # Default numeric values by type
-            if "int" in data_type:
-                return "41"
-            else:
-                return "41.5"
-
-        # For date/time types
-        elif "date" in data_type or "time" in data_type:
-            if is_range:
-                return "'2023-01-15'"  # Middle of the month
-            return "'2023-01-01'"
-
-        # For boolean
-        elif data_type == "boolean":
-            return "true"
-
-        # Default fallback
-        return "'sample_value'"
-
-    def _get_generic_replacement(self, context: str) -> str:
-        """Provide a generic replacement when we can't determine the specific column type."""
-        context = context.lower()
-
-        # Try to guess based on context
-        if any(
-            date_word in context.split() for date_word in ["date", "timestamp", "time"]
-        ):
-            return "'2023-01-01'"
-
-        if any(word in context for word in ["id", "key", "code", "num"]):
-            return "43"
-
-        if "like" in context:
-            return "'%sample%'"
-
-        if any(word in context for word in ["amount", "price", "cost", "fee"]):
-            return "99.99"
-
-        # If in comparison context, use a number
-        if any(op in context for op in ["=", ">", "<", ">=", "<="]):
-            return "44"
-
-        # Default to string
-        return "'sample_value'"
-
-    def _replace_parameters_generic(self, query: str) -> str:
-        """Fallback generic parameter replacement when catalog lookup fails."""
-        try:
-            modified_query = query
-
-            # Replace string parameters
-            modified_query = re.sub(r"like \$\d+", "like '%'", modified_query)
-
-            # Context-aware replacements
-            modified_query = re.sub(
-                r"(\w+)\s*=\s*\$\d+",
-                lambda m: self._context_replace(m, "="),
-                modified_query,
-            )
-            modified_query = re.sub(
-                r"(\w+)\s*<\s*\$\d+",
-                lambda m: self._context_replace(m, "<"),
-                modified_query,
-            )
-            modified_query = re.sub(
-                r"(\w+)\s*>\s*\$\d+",
-                lambda m: self._context_replace(m, ">"),
-                modified_query,
-            )
-
-            # Replace numeric parameters in inequalities
-            modified_query = re.sub(r"(\d+) and \$\d+", r"\1 and 100", modified_query)
-            modified_query = re.sub(r"\$\d+ and (\d+)", r"1 and \1", modified_query)
-            modified_query = re.sub(r">\s*\$\d+", "> 1", modified_query)
-            modified_query = re.sub(r"<\s*\$\d+", "< 100", modified_query)
-            modified_query = re.sub(r"=\s*\$\d+\b", "= 45", modified_query)
-
-            # For any remaining parameters, use a generic replacement
-            modified_query = re.sub(r"\$\d+", "'sample_value'", modified_query)
-
-            return modified_query
-        except Exception as e:
-            logger.error(f"Error in generic parameter replacement: {e}", exc_info=True)
-            return query
-
-    def _context_replace(self, match, op: str):
-        """Replace parameters based on column name context."""
-        col_name = match.group(1).lower()
-
-        # ID-like columns (numeric)
-        if col_name.endswith("id") or col_name.endswith("_id") or col_name == "id":
-            return f"{col_name} {op} 46"
-
-        # Date/time columns
-        if any(word in col_name for word in ["date", "time", "created", "updated"]):
-            return f"{col_name} {op} '2023-01-01'"
-
-        # Numeric-looking columns
-        if any(
-            word in col_name
-            for word in ["amount", "price", "cost", "count", "num", "qty"]
-        ):
-            return f"{col_name} {op} 46.5"
-
-        # Status-like columns (likely string enums)
-        if "status" in col_name or "type" in col_name or "state" in col_name:
-            return f"{col_name} {op} 'active'"
-
-        # Default to string for other columns
-        return f"{col_name} {op} 'sample_value'"
-
     # --- Debugging ---
 
     @staticmethod
     def _pp_list(lst) -> str:
         """Pretty print a list."""
-        return ("\n  - " if len(lst) > 0 else "") + "\n  - ".join(
-            [str(item) for item in lst]
-        )
+        return ("\n  - " if len(lst) > 0 else "") + "\n  - ".join([str(item) for item in lst])
 
-    async def get_explain_plan_with_indexes(
-        self, query_text: str, indexes: frozenset[IndexConfig]
-    ) -> dict[str, Any]:
+    async def get_explain_plan_with_indexes(self, query_text: str, indexes: frozenset[IndexConfig]) -> dict[str, Any]:
         """
         Get the explain plan for a query with a specific set of indexes.
         Results are memoized to avoid redundant explain operations.
@@ -2045,65 +1225,12 @@ class DatabaseTuningAdvisor:
             return existing_plan
 
         # Generate the plan using the static method
-        plan = await self.generate_explain_plan_with_hypothetical_indexes(
-            self.sql_driver, query_text, indexes, self
-        )
+        explain_plan_tool = ExplainPlanTool(self.sql_driver)
+        plan = await explain_plan_tool.generate_explain_plan_with_hypothetical_indexes(query_text, indexes, False, self)
 
         # Cache the result
         self._explain_plans_cache[cache_key] = plan
         return plan
-
-    @staticmethod
-    async def generate_explain_plan_with_hypothetical_indexes(
-        sql_driver: SqlDriver,
-        query_text: str,
-        indexes: frozenset[IndexConfig],
-        dta=None,
-    ) -> dict[str, Any]:
-        """
-        Generate an explain plan for a query with specified indexes.
-
-        Args:
-            sql_driver: SQL driver to execute the query
-            query_text: The SQL query to explain
-            indexes: A frozenset of IndexConfig objects representing the indexes to enable
-
-        Returns:
-            The explain plan as a dictionary
-        """
-        try:
-            # Create the indexes query
-            create_indexes_query = "SELECT hypopg_reset();"
-            if len(indexes) > 0:
-                create_indexes_query += SafeSqlDriver.param_sql_to_query(
-                    "SELECT hypopg_create_index({});" * len(indexes),
-                    [idx.definition for idx in indexes],
-                )
-
-            # Execute explain with the indexes
-            explain_plan_query = f"{create_indexes_query} EXPLAIN ({'COSTS TRUE, ' if indexes else ''}FORMAT JSON) {query_text}"
-            plan_result = await sql_driver.execute_query(explain_plan_query)  # type: ignore
-
-            # Extract the plan
-            if plan_result and plan_result[0].cells.get("QUERY PLAN"):
-                plan_data = plan_result[0].cells.get("QUERY PLAN")
-                if isinstance(plan_data, list) and len(plan_data) > 0:
-                    return plan_data[0]
-                else:
-                    dta.dta_trace(  # type: ignore
-                        f"      - plan_data is an empty list with plan_data type: {type(plan_data)}"
-                    )  # type: ignore
-
-            dta.dta_trace("      - returning empty plan")  # type: ignore
-            # Return empty plan if no result
-            return {"Plan": {"Total Cost": float("inf")}}
-
-        except Exception as e:
-            logger.error(
-                f"Error getting explain plan for query: {query_text} with error: {e}",
-                exc_info=True,
-            )
-            return {"Plan": {"Total Cost": float("inf")}}
 
     def dta_trace(self, message: Any, exc_info: bool = False):
         """Convenience function to log DTA thinking process."""
@@ -2118,260 +1245,6 @@ class DatabaseTuningAdvisor:
 
 
 # --- Visitor Classes ---
-
-
-class TableAliasVisitor(Visitor):
-    """Extracts table aliases and names from the SQL AST."""
-
-    def __init__(self) -> None:
-        super().__init__()  # Initialize the base Visitor class
-        self.aliases: dict[str, str] = {}
-        self.tables: set[str] = set()
-
-    def __call__(self, node):
-        super().__call__(node)
-        return self.aliases, self.tables
-
-    def visit_RangeVar(self, ancestors: list[Node], node: Node) -> None:  # noqa: N802
-        """Visit table references, including those in FROM clause."""
-        if isinstance(node, RangeVar):  # Type narrowing for RangeVar
-            if node.relname is not None:
-                self.tables.add(node.relname)
-            if node.alias and node.alias.aliasname is not None:
-                self.aliases[node.alias.aliasname] = str(node.relname)
-
-    def visit_JoinExpr(self, ancestors: list[Node], node: Node) -> None:  # noqa: N802
-        """Visit both sides of JOIN expressions."""
-        if isinstance(node, JoinExpr):  # Type narrowing for JoinExpr
-            if node.larg is not None:
-                self(node.larg)  # type: ignore
-            if node.rarg is not None:
-                self(node.rarg)  # type: ignore
-
-
-class ColumnCollector(Visitor):
-    """
-    Collects columns used in WHERE, JOIN, ORDER BY, GROUP BY, HAVING, and SELECT clauses.
-    With improved handling of column aliases.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.context_stack = []  # Stack of (tables, aliases) for each scope
-        self.columns = {}  # Collected columns, keyed by table
-        self.target_list = None
-        self.inside_select = False
-        self.column_aliases = {}  # Track column aliases and their definitions
-        self.current_query_level = 0  # Track nesting level for subqueries
-
-    def __call__(self, node):
-        super().__call__(node)
-        return self.columns
-
-    def visit_SelectStmt(self, ancestors: list[Node], node: Node) -> None:  # noqa: N802
-        """Visit a SelectStmt node and process its targetList for column aliases."""
-        if isinstance(node, SelectStmt):
-            self.inside_select = True
-            self.current_query_level += 1
-            query_level = self.current_query_level
-
-            # Collect tables and aliases
-            alias_visitor = TableAliasVisitor()
-            if hasattr(node, "fromClause") and node.fromClause:
-                for from_item in node.fromClause:
-                    alias_visitor(from_item)
-            scope_tables = alias_visitor.tables
-            scope_aliases = alias_visitor.aliases
-
-            # Push new context for this scope
-            self.context_stack.append((scope_tables, scope_aliases))
-
-            # First pass: collect column aliases from targetList
-            if hasattr(node, "targetList") and node.targetList:
-                self.target_list = node.targetList
-                for target_entry in self.target_list:
-                    if hasattr(target_entry, "name") and target_entry.name:
-                        # This is a column alias
-                        col_alias = target_entry.name
-                        # Store the expression node for this alias
-                        if hasattr(target_entry, "val"):
-                            self.column_aliases[col_alias] = {
-                                "node": target_entry.val,
-                                "level": query_level,
-                            }
-
-            # Second pass: process the rest of the query
-            self._process_query_clauses(node)
-
-            # Pop context after processing
-            self.context_stack.pop()
-            self.inside_select = False
-            self.current_query_level -= 1
-
-    def _process_query_clauses(self, node):
-        """Process various query clauses for column collection."""
-        # Process targetList expressions
-        if hasattr(node, "targetList") and node.targetList:
-            self.target_list = node.targetList
-            for target_entry in self.target_list:
-                if hasattr(target_entry, "val"):
-                    self(target_entry.val)
-
-        # Handle GROUP BY clause
-        if hasattr(node, "groupClause") and node.groupClause:
-            for group_item in node.groupClause:
-                if isinstance(group_item, SortGroupClause) and isinstance(
-                    group_item.tleSortGroupRef, int
-                ):
-                    ref_index = group_item.tleSortGroupRef
-                    if self.target_list and ref_index <= len(self.target_list):
-                        target_entry = self.target_list[ref_index - 1]  # 1-based index
-                        if hasattr(target_entry, "val"):
-                            self(target_entry.val)
-                        if hasattr(target_entry, "expr"):
-                            self(target_entry.expr)  # Visit the expression
-
-        # Process WHERE clause (including subqueries)
-        if hasattr(node, "whereClause") and node.whereClause:
-            self(node.whereClause)
-
-        # Process FROM clause (may contain subqueries)
-        if hasattr(node, "fromClause") and node.fromClause:
-            for from_item in node.fromClause:
-                self(from_item)
-
-        # Process HAVING clause
-        if hasattr(node, "havingClause") and node.havingClause:
-            self(node.havingClause)
-
-        # Handle ORDER BY clause
-        if hasattr(node, "sortClause") and node.sortClause:
-            for sort_item in node.sortClause:
-                self._process_sort_item(sort_item)
-
-    def _process_sort_item(self, sort_item):
-        """Process a sort item, resolving column aliases if needed."""
-        if not hasattr(sort_item, "node"):
-            return
-
-        # If it's a simple column reference, it might be an alias
-        if (
-            isinstance(sort_item.node, ColumnRef)
-            and hasattr(sort_item.node, "fields")
-            and sort_item.node.fields
-        ):
-            fields = [f.sval for f in sort_item.node.fields if hasattr(f, "sval")]
-            if len(fields) == 1:
-                col_name = fields[0]
-                # Check if this is a known alias
-                if col_name in self.column_aliases:
-                    # Process the original expression instead
-                    alias_info = self.column_aliases[col_name]
-                    if alias_info["level"] == self.current_query_level:
-                        self(alias_info["node"])
-                        return
-
-        # Regular processing for non-alias sort items
-        self(sort_item.node)
-
-    def visit_ColumnRef(self, ancestors: list[Node], node: Node) -> None:  # noqa: N802
-        """Visit a ColumnRef node and collect column names, skipping aliases."""
-        if isinstance(node, ColumnRef) and self.inside_select:
-            if not hasattr(node, "fields") or not node.fields:
-                return
-
-            fields = [f.sval if hasattr(f, "sval") else "*" for f in node.fields]
-
-            # Skip collecting if this is a reference to a column alias
-            if len(fields) == 1 and (
-                fields[0] == "*" or fields[0] in self.column_aliases
-            ):
-                return
-
-            if len(fields) == 2 and fields[1] == "*":
-                return
-
-            # Use current scope's tables and aliases
-            current_tables, current_aliases = (
-                self.context_stack[-1] if self.context_stack else ({}, {})
-            )
-
-            if len(fields) == 2:  # Qualified column (e.g., u.name)
-                table_or_alias, column = fields
-                table = current_aliases.get(table_or_alias, table_or_alias)
-                if table not in self.columns:
-                    self.columns[table] = set()
-                self.columns[table].add(column)
-            elif len(fields) == 1:  # Unqualified column
-                column = fields[0]
-                if len(current_tables) == 1:  # Only one table in scope
-                    table = next(iter(current_tables))
-                    if table not in self.columns:
-                        self.columns[table] = set()
-                    self.columns[table].add(column)
-                else:
-                    # Try to find which table this column belongs to
-                    for table in current_tables:
-                        if self._column_exists(table, column):
-                            if table not in self.columns:
-                                self.columns[table] = set()
-                            self.columns[table].add(column)
-                            break
-
-    def _column_exists(self, table: str, column: str) -> bool:
-        """Check if column exists in table."""
-        # This is a placeholder. We'd query the schema
-        # Ideally this would be cached to avoid repeated queries
-        return True  # Default to True for the sake of collecting all possibilities
-
-    def visit_A_Expr(self, ancestors: list[Node], node: Node) -> None:  # noqa: N802
-        """
-        Visit an A_Expr node (arithmetic or comparison expression).
-        """
-        if isinstance(node, A_Expr) and self.inside_select:
-            if hasattr(node, "lexpr") and node.lexpr:
-                self(node.lexpr)
-                if isinstance(node.lexpr, SelectStmt):
-                    alias_visitor = TableAliasVisitor()
-                    alias_visitor(node.lexpr)
-                    self.context_stack.append(
-                        (alias_visitor.tables, alias_visitor.aliases)
-                    )
-                    self(node.lexpr)
-                    self.context_stack.pop()
-            if hasattr(node, "rexpr") and node.rexpr:
-                if isinstance(node.rexpr, SelectStmt):
-                    alias_visitor = TableAliasVisitor()
-                    alias_visitor(node.rexpr)
-                    self.context_stack.append(
-                        (alias_visitor.tables, alias_visitor.aliases)
-                    )
-                    self(node.rexpr)
-                    self.context_stack.pop()
-                else:
-                    self(node.rexpr)
-
-    def visit_JoinExpr(self, ancestors: list[Node], node: Node) -> None:  # noqa: N802
-        """
-        Visit a JoinExpr node to handle JOIN conditions.
-        """
-        if (
-            isinstance(node, JoinExpr) and self.inside_select
-        ):  # Type narrowing for JoinExpr
-            if hasattr(node, "larg") and node.larg:
-                self(node.larg)
-            if hasattr(node, "rarg") and node.rarg:
-                self(node.rarg)
-            if hasattr(node, "quals") and node.quals:
-                self(node.quals)
-
-    def visit_SortBy(self, ancestors: list[Node], node: Node) -> None:  # noqa: N802
-        """
-        Visit a SortBy node (ORDER BY expression).
-        """
-        if isinstance(node, SortBy) and self.inside_select:  # Type narrowing for SortBy
-            if hasattr(node, "node") and node.node:
-                self(node.node)
 
 
 class ConditionColumnCollector(ColumnCollector):
@@ -2479,11 +1352,7 @@ class ConditionColumnCollector(ColumnCollector):
 
         # If node is a column reference, it might be an alias
         if isinstance(node, ColumnRef) and hasattr(node, "fields") and node.fields:
-            fields = (
-                [f.sval for f in node.fields if hasattr(f, "sval")]
-                if node.fields
-                else []
-            )
+            fields = [f.sval for f in node.fields if hasattr(f, "sval")] if node.fields else []
             if len(fields) == 1:
                 col_name = fields[0]
                 # Check if this is a known alias
@@ -2512,18 +1381,14 @@ class ConditionColumnCollector(ColumnCollector):
         tables, aliases = self.context_stack[-1]
 
         # Extract table and column names
-        fields = (
-            [f.sval for f in node.fields if hasattr(f, "sval")] if node.fields else []
-        )
+        fields = [f.sval for f in node.fields if hasattr(f, "sval")] if node.fields else []
 
         # Check if this is a reference to a column alias
         if len(fields) == 1 and fields[0] in self.column_aliases:
             # Process the original expression node instead
             alias_info = self.column_aliases[fields[0]]
             if alias_info["level"] == self.current_query_level:
-                self.in_condition = (
-                    True  # Ensure we collect from the aliased expression
-                )
+                self.in_condition = True  # Ensure we collect from the aliased expression
                 self(alias_info["node"])
             return
 
@@ -2555,9 +1420,7 @@ class ConditionColumnCollector(ColumnCollector):
                     found_match = True
 
             if not found_match:
-                logger.debug(
-                    f"Could not resolve unqualified column '{column}' to any table"
-                )
+                logger.debug(f"Could not resolve unqualified column '{column}' to any table")
 
     def _column_exists(self, table: str, column: str) -> bool:
         """Check if column exists in table."""

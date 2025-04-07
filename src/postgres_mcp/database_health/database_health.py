@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-import mcp.types as types
 from typing import List
+
+import mcp.types as types
 
 from .buffer_health_calc import BufferHealthCalc
 from .connection_health_calc import ConnectionHealthCalc
@@ -61,73 +62,35 @@ class DatabaseHealthTool:
 
             if HealthType.INDEX in health_types:
                 index_health = IndexHealthCalc(self.sql_driver)
-                result += (
-                    "Invalid index check: "
-                    + await index_health.invalid_index_check()
-                    + "\n"
-                )
-                result += (
-                    "Duplicate index check: "
-                    + await index_health.duplicate_index_check()
-                    + "\n"
-                )
+                result += "Invalid index check: " + await index_health.invalid_index_check() + "\n"
+                result += "Duplicate index check: " + await index_health.duplicate_index_check() + "\n"
                 result += "Index bloat: " + await index_health.index_bloat() + "\n"
-                result += (
-                    "Unused index check: " + await index_health.unused_indexes() + "\n"
-                )
+                result += "Unused index check: " + await index_health.unused_indexes() + "\n"
 
             if HealthType.CONNECTION in health_types:
                 connection_health = ConnectionHealthCalc(self.sql_driver)
-                result += (
-                    "Connection health: "
-                    + await connection_health.connection_health_check()
-                    + "\n"
-                )
+                result += "Connection health: " + await connection_health.connection_health_check() + "\n"
 
             if HealthType.VACUUM in health_types:
                 vacuum_health = VacuumHealthCalc(self.sql_driver)
-                result += (
-                    "Vacuum health: "
-                    + await vacuum_health.transaction_id_danger_check()
-                    + "\n"
-                )
+                result += "Vacuum health: " + await vacuum_health.transaction_id_danger_check() + "\n"
 
             if HealthType.SEQUENCE in health_types:
                 sequence_health = SequenceHealthCalc(self.sql_driver)
-                result += (
-                    "Sequence health: "
-                    + await sequence_health.sequence_danger_check()
-                    + "\n"
-                )
+                result += "Sequence health: " + await sequence_health.sequence_danger_check() + "\n"
 
             if HealthType.REPLICATION in health_types:
                 replication_health = ReplicationCalc(self.sql_driver)
-                result += (
-                    "Replication health: "
-                    + await replication_health.replication_health_check()
-                    + "\n"
-                )
+                result += "Replication health: " + await replication_health.replication_health_check() + "\n"
 
             if HealthType.BUFFER in health_types:
                 buffer_health = BufferHealthCalc(self.sql_driver)
-                result += (
-                    "Buffer health for indexes: "
-                    + await buffer_health.index_hit_rate()
-                    + "\n"
-                )
-                result += (
-                    "Buffer health for tables: "
-                    + await buffer_health.table_hit_rate()
-                    + "\n"
-                )
+                result += "Buffer health for indexes: " + await buffer_health.index_hit_rate() + "\n"
+                result += "Buffer health for tables: " + await buffer_health.table_hit_rate() + "\n"
 
             if HealthType.CONSTRAINT in health_types:
                 constraint_health = ConstraintHealthCalc(self.sql_driver)
-                result += (
-                    "Constraint health: "
-                    + await constraint_health.invalid_constraints_check()
-                    + "\n"
-                )
+                result += "Constraint health: " + await constraint_health.invalid_constraints_check() + "\n"
 
             return result if result else "No health checks were performed."
         except Exception as e:

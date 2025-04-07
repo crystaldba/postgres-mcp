@@ -40,6 +40,27 @@ dev = [
     "ruff==0.11.2",
 ]
 
+[tool.black]
+line-length = 150
+
+[tool.ruff]
+line-length = 150
+target-version = "py38"
+exclude = [".venv*"]
+
+lint.select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "W",   # pycodestyle warnings
+    # "C90", # mccabe complexity
+    "N",   # pep8-naming
+    # "D",   # pydocstyle
+    "UP",  # pyupgrade
+    "RUF"  # ruff-specific rules
+]
+
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"

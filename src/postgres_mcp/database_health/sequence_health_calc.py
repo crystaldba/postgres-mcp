@@ -1,8 +1,8 @@
 from dataclasses import dataclass
+
 from psycopg.sql import Identifier
 
 from ..sql import SafeSqlDriver
-
 from ..sql import SqlDriver
 
 
@@ -98,9 +98,7 @@ class SequenceHealthCalc:
                 continue
 
             # Determine max value based on column type
-            max_value = (
-                2147483647 if seq["column_type"] == "integer" else 9223372036854775807
-            )
+            max_value = 2147483647 if seq["column_type"] == "integer" else 9223372036854775807
 
             # Get sequence attributes
             attrs = await SafeSqlDriver.execute_param_query(
