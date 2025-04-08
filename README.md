@@ -27,6 +27,17 @@ Postgres Pro also provides comprehensive schema information to support SQL gener
 - [Technical Notes](#technical-notes)
 - [Postgres Pro Development](#postgres-pro-development)
 
+## Demo
+
+Here is a demo of using Postgres Pro in Cursor to optimize and fix an AI-generated app. The sample app was generated in Replit but was incredibly slow/unusable because of the large IMDB dataset.
+
+You'll see the agent:
+- fixing performance - including ORM queries, indexing, and caching
+- fixing bugs that require connecting bugs to code
+- adding new features with single prompts
+[Full demo walkthrough](examples.md)
+
+
 ## Features
 
 Postgres Pro includes an expanding set of tools covering several areas:
