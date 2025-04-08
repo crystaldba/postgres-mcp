@@ -19,7 +19,7 @@ We'll use the [IMDB dataset](https://developer.imdb.com/non-commercial-datasets/
 
 *(play-by-play walkthrough is below)*
 
-https://github.com/user-attachments/assets/75af8664-3137-4e22-a877-9de78afe43b7
+https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
 
 **Let's get started...**
 
