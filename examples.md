@@ -91,7 +91,9 @@ What we did:
         to import them in a more reliable way.</p>
         <div><em>(it turned out my original script aborted on errors)</em></p>
       </td>
-      <td align="center"><a href="https://youtu.be/1yEPbP_Sve0"><img src="https://github.com/user-attachments/assets/78b9df86-c9ae-4cc1-98c8-1090bd0c8193"/></a></td>
+      <td align="center">
+        <a href="https://youtu.be/1yEPbP_Sve0"><img src="https://github.com/user-attachments/assets/a5727fd5-3845-4110-998d-5af4f386ce0e"/></a>
+      </td>
     </tr>
     <tr>
       <td align="left" valign="top">
@@ -109,9 +111,9 @@ What we did:
         </blockquote>
         <div>The AI Agent gets the distribution of data and some sample results to determine that a 10K vote minimum would give the best results.  It's great seeing the results are grounded in reality and not just some hallucination.</div>
       </td>
-      <td align="center"><a href="https://youtube.com/shorts/UTqmeiC2xU8"><img src="https://github.com/user-attachments/assets/7e2a82a4-dc5c-4c1e-89fe-8d8061fb2af9"/></a></td>
+      <td align="center">
+        <a href="https://youtube.com/shorts/UTqmeiC2xU8"><img src="https://github.com/user-attachments/assets/05af6f5d-326c-4976-8719-20d4dcb6712c"/></a>
+      </td>
     </tr>
   </tbody>
 </table>
-
-
