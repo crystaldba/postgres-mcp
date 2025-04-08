@@ -19,6 +19,7 @@ Postgres Pro also provides comprehensive schema information to support SQL gener
 ## Contents
 
 - [Features](#features)
+- [Demo](#demo)
 - [Quick Start](#quick-start)
 - [Usage Examples](#usage-examples)
 - [MCP Server API](#mcp-server-api)
@@ -31,12 +32,14 @@ Postgres Pro also provides comprehensive schema information to support SQL gener
 
 Here is a demo of using Postgres Pro in Cursor to optimize and fix an AI-generated app. The sample app was generated in Replit but was incredibly slow/unusable because of the large IMDB dataset.
 
-You'll see the agent:
-- fixing performance - including ORM queries, indexing, and caching
-- fixing bugs that require connecting bugs to code
-- adding new features with single prompts
-[Full demo walkthrough](examples.md)
+**The AI agent will:**
+- fix performance - including ORM queries, indexing, and caching
+- fix bugs that require connecting data to code
+- add new features from single prompts
 
+**[View play-by-play of demo](examples.md)**
+
+https://github.com/user-attachments/assets/be498c43-b3a1-453f-b92d-307d44d06345
 
 ## Features
 
