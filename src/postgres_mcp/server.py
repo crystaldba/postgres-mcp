@@ -48,6 +48,7 @@ class AccessMode(str, Enum):
 # Global variables
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
+shutdown_in_progress = False
 
 
 async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
@@ -542,32 +543,26 @@ async def main():
         logger.warning("Signal handling not supported on Windows")
         pass
 
-    # Run the app with FastMCP's stdio method
-    try:
-        await mcp.run_stdio_async()
-    finally:
-        # Close the connection pool when exiting
-        await shutdown()
+    await mcp.run_stdio_async()
 
 
 async def shutdown(sig=None):
     """Clean shutdown of the server."""
+    global shutdown_in_progress
+
+    import os
+
+    if shutdown_in_progress:
+        logger.warning("Forcing immediate exit")
+
+        os._exit(1)  # Use immediate process termination instead of sys.exit
+
+    shutdown_in_progress = True
+
     if sig:
         logger.info(f"Received exit signal {sig.name}")
 
-    logger.info("Closing database connections...")
-    await db_connection.close()
-
-    # Give tasks a chance to complete
-    try:
-        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-        if tasks:
-            logger.info(f"Waiting for {len(tasks)} tasks to complete...")
-            await asyncio.gather(*tasks, return_exceptions=True)
-    except Exception as e:
-        logger.warning(f"Error during shutdown: {e}")
-
-    logger.info("Shutdown complete.")
+    os._exit(0)
 
 
 if __name__ == "__main__":
