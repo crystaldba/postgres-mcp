@@ -62,8 +62,7 @@ async def get_postgres_version(sql_driver: SqlDriver) -> int:
 
         return version
     except Exception as e:
-        logger.warning(f"Error determining PostgreSQL version: {e}")
-        raise e
+        raise ValueError("Error determining PostgreSQL version") from e
 
 
 async def check_postgres_version_requirement(sql_driver: SqlDriver, min_version: int, feature_name: str) -> tuple[bool, str]:

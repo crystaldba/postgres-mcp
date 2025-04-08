@@ -238,4 +238,4 @@ class ExplainPlanTool:
                 f"Error getting explain plan for query: {query_text} with error: {e}",
                 exc_info=True,
             )
-            return {"Plan": {"Total Cost": float("inf")}}
+            raise e

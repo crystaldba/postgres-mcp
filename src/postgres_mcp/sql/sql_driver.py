@@ -111,8 +111,7 @@ class DbConnPool:
             # Clean up failed pool
             await self.close()
 
-            logger.error(f"Connection attempt failed: {obfuscate_password(str(e))}")
-            raise
+            raise ValueError(f"Connection attempt failed: {obfuscate_password(str(e))}") from e
 
     async def close(self) -> None:
         """Close the connection pool."""

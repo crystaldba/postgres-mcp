@@ -395,8 +395,7 @@ class SqlBindParams:
 
             return modified_query
         except Exception as e:
-            logger.error(f"Error replacing parameters: {e}", exc_info=True)
-            return query  # Return original if replacement fails
+            raise ValueError("Error replacing parameters") from e
 
     def _get_bound_values(self, stats: dict[str, Any], is_lower: bool = True) -> Any:
         """Get appropriate bound values for range queries based on column statistics.
@@ -442,6 +441,7 @@ class SqlBindParams:
                         # For non-numeric, just use most common
                         return most_common
                 except (TypeError, ValueError):
+                    logger.warning(f"Error adapting most common value: {most_common}")
                     # If adaptation fails, just use the value
                     return most_common
 
@@ -786,6 +786,7 @@ class SqlBindParams:
             return self.extract_stmt_columns(stmt)
 
         except Exception:
+            logger.warning(f"Error extracting columns from query: {query}")
             return {}
 
     def extract_stmt_columns(self, stmt: SelectStmt) -> dict[str, set[str]]:
@@ -798,4 +799,5 @@ class SqlBindParams:
             return collector.columns
 
         except Exception:
+            logger.warning(f"Error extracting columns from query: {stmt}")
             return {}

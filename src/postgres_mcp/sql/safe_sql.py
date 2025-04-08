@@ -969,8 +969,7 @@ class SafeSqlDriver(SqlDriver):
                             )
                     self._validate_node(stmt)
             except Exception as e:
-                logger.error(f"Error validating query: {query}. Error: {e}")
-                raise e
+                raise ValueError(f"Error validating query: {query}") from e
 
         except pglast.parser.ParseError as e:
             raise ValueError("Failed to parse SQL statement") from e

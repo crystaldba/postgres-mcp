@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import signal
-import sys
 from enum import Enum
 from typing import Any
 from typing import List
@@ -525,13 +524,11 @@ async def main():
         await db_connection.pool_connect(database_url)
         logger.info("Successfully connected to database and initialized connection pool")
     except Exception as e:
-        print(
-            f"Warning: Could not connect to database: {obfuscate_password(str(e))}",
-            file=sys.stderr,
+        logger.warning(
+            f"Could not connect to database: {obfuscate_password(str(e))}",
         )
-        print(
+        logger.warning(
             "The MCP server will start but database operations will fail until a valid connection is established.",
-            file=sys.stderr,
         )
 
     # Set up proper shutdown handling
