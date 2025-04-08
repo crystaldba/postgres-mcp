@@ -54,22 +54,34 @@ Postgres Pro includes an expanding set of tools covering several areas:
 
 Before getting started, ensure you have:
 1. Access credentials for your database.
-2. Python 3.12 or higher *or* Docker.
+2. Docker *or* Python 3.12 or higher.
+
 #### Access Credentials
  You can confirm your access credentials are valid by using `psql` or a GUI tool such as [pgAdmin](https://www.pgadmin.org/).
 
 
-#### Python or Docker
+#### Docker or Python
 
 The choice to use Docker or Python is yours.
-We generally recommend using whichever is most familiar to you.
+We generally recommend Docker because Python users can encounter more environment-specific issues.
+However, it often makes sense to use whichever method you are most familiar with.
 
 
 ### Installation
 
 Choose one of the following methods to install Postgres Pro:
 
-#### Option 1: Using Python
+#### Option 1: Using Docker
+
+Pull the Postgres Pro MCP server Docker image.
+This image contains all necessary dependencies, providing a reliable way to run Postgres Pro in a variety of environments.
+
+```bash
+docker pull crystaldba/postgres-mcp
+```
+
+
+#### Option 2: Using Python
 
 If you have `pipx` installed you can install Postgres Pro with:
 
@@ -85,14 +97,6 @@ uv pip install postgres-mcp
 
 If you need to install `uv`, see the [uv installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
 
-#### Option 2: Using Docker
-
-Pull the Postgres Pro MCP server Docker image.
-This image contains all necessary dependencies, providing a reliable way to run Postgres Pro in a variety of environments.
-
-```bash
-docker pull crystaldba/postgres-mcp
-```
 
 ### Configure Your AI Assistant
 
@@ -109,44 +113,6 @@ The location of this file depends on your operating system:
 You can also use `Settings` menu item in Claude Desktop to locate the configuration file.
 
 You will now edit the `mcpServers` section of the configuration file.
-
-##### If you are using `pipx`
-
-```json
-{
-  "mcpServers": {
-    "postgres": {
-      "command": "postgres-mcp",
-      "args": [
-        "--access-mode=unrestricted"
-      ],
-      "env": {
-        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
-      }
-    }
-  }
-}
-```
-
-##### If you are using `uv`
-
-```json
-{
-  "mcpServers": {
-    "postgres": {
-      "command": "uv",
-      "args": [
-        "run",
-        "postgres-mcp",
-        "--access-mode=unrestricted"
-      ],
-      "env": {
-        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
-      }
-    }
-  }
-}
-```
 
 ##### If you are using Docker
 
@@ -178,11 +144,7 @@ The Postgres Pro Docker image will automatically remap the hostname `localhost` 
 - Linux: Uses `172.17.0.1` or the appropriate host address automatically
 
 
-##### Connection URI
-
-Replace `postgresql://...` with your [Postgres database connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS).
-
-You can also use `psql`-style connection parameters:
+##### If you are using `pipx`
 
 ```json
 {
@@ -190,16 +152,42 @@ You can also use `psql`-style connection parameters:
     "postgres": {
       "command": "postgres-mcp",
       "args": [
-        "-h", "localhost",
-        "-p", "5432",
-        "-U", "username",
-        "-d", "dbname",
         "--access-mode=unrestricted"
-      ]
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
+      }
     }
   }
 }
 ```
+
+
+##### If you are using `uv`
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "uv",
+      "args": [
+        "run",
+        "postgres-mcp",
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
+      }
+    }
+  }
+}
+```
+
+
+##### Connection URI
+
+Replace `postgresql://...` with your [Postgres database connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS).
+
 
 ##### Access Mode
 
