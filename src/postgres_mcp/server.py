@@ -562,7 +562,7 @@ async def shutdown(sig=None):
     if sig:
         logger.info(f"Received exit signal {sig.name}")
 
-    os._exit(0)
+    os._exit(128 + sig if sig is not None else 0)
 
 
 if __name__ == "__main__":
