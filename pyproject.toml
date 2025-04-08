@@ -12,6 +12,9 @@ dependencies = [
     "attrs>=25.3.0",
     "psycopg-pool>=3.2.6",
 ]
+license = "mit"
+license-files = ["LICENSE"]
+
 [[project.authors]]
 name = "Johann Schleier-Smith"
 email = "jssmith@crystal.cloud"
