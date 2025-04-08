@@ -36,9 +36,14 @@ Here is a demo of using Postgres Pro in Cursor to optimize and fix an AI-generat
 - fix bugs that require connecting data to code
 - add new features from single prompts
 
-**[Read the play-by-play](examples.md#Movie-Ratings-Website)**
+**Two ways to see demo**
 
-https://github.com/user-attachments/assets/be498c43-b3a1-453f-b92d-307d44d06345
+- [Read the play-by-play](examples.md#Movie-Ratings-Website)
+- Watch video below
+
+https://github.com/user-attachments/assets/75af8664-3137-4e22-a877-9de78afe43b7
+
+
 
 ## Features
 
