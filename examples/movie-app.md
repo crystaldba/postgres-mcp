@@ -10,16 +10,18 @@ We'll use the [IMDB dataset](https://developer.imdb.com/non-commercial-datasets/
 - **Postgres Pro** - to give Cursor a Postgres expert
 
 **What we did:**
-1) Create the initial app on Replit
-2) Fix query performance
-3) Fix empty movie details pages
-4) Improve the sort for top-rated movies
+1) Create the initial app on Replit - it's slow!
+2) Fixed performance - including ORM queries, indexing, and caching
+3) Fixed an empty movie details pages
+4) Improved the sort for top-rated movies
 
 **Full Video**
 
 *(play-by-play walkthrough is below)*
 
 https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
+
+---
 
 **Let's get started...**
 
