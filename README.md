@@ -157,6 +157,7 @@ You will now edit the `mcpServers` section of the configuration file.
       "command": "docker",
       "args": [
         "run",
+        "-i",
         "--rm",
         "-e",
         "DATABASE_URI",
@@ -296,7 +297,7 @@ Postgres Pro Tools:
 
 **Postgres MCP Servers**
 - [Query MCP](https://github.com/alexander-zuev/supabase-mcp-server). An MCP server for Supabase Postgres with a three-tier safety architecture and Supabase management API support.
-- [PG-MCP](https://github.com/stuzero/pg-mcp). An MCP server for PostgreSQL with flexible connection options, explain plans, extension context, and more.
+- [PG-MCP](https://github.com/stuzero/pg-mcp-server). An MCP server for PostgreSQL with flexible connection options, explain plans, extension context, and more.
 - [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres). A simple MCP Server implementation exposing schema information as MCP resources and executing read-only queries.
 - [Supabase Postgres MCP Server](https://github.com/supabase-community/supabase-mcp). This MCP Server provides Supabase management features and is actively maintained by the Supabase community.
 - [Nile MCP Server](https://github.com/niledatabase/nile-mcp-server). An MCP server providing access to the management API for the Nile's multi-tenant Postgres service.
@@ -465,7 +466,7 @@ We remain open to revising this decision in the future.
 Like the [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres), Postgres Pro takes Postgres connection information at startup.
 This is convenient for users who always connect to the same database but can be cumbersome when users switch databases.
 
-An alternative approach, taken by [PG-MCP](https://github.com/stuzero/pg-mcp), is provide connection details via MCP tool calls at the time of use.
+An alternative approach, taken by [PG-MCP](https://github.com/stuzero/pg-mcp-server), is provide connection details via MCP tool calls at the time of use.
 This is more convenient for users who switch databases, and allows a single MCP server to simultaneously support multiple end-users.
 
 There must be a better approach than either of these.
