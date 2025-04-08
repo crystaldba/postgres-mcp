@@ -10,12 +10,12 @@ Let's do a quick AI-coding session and take an idea from concept to launch!
 
 We'll use the [IMDB dataset](https://developer.imdb.com/non-commercial-datasets/) to build a movie ratings website.
 
-Our AI tools:
+**Our AI tools:**
 - **Replit** - for the initial prototype
 - **Cursor** - as our AI coding agent
 - **Postgres Pro** - to give Cursor a Postgres expert
 
-What we did:
+**What we did:**
 1) Create the initial app on Replit
 2) Fix query performance
 3) Fix empty movie details pages
