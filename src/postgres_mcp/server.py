@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
 from enum import Enum
@@ -10,7 +11,6 @@ from typing import List
 from typing import Union
 
 import mcp.types as types
-import psycopg
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
@@ -26,6 +26,7 @@ from .sql import SafeSqlDriver
 from .sql import SqlDriver
 from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
+from .top_queries import TopQueriesCalc
 
 mcp = FastMCP("postgres-mcp")
 
@@ -70,35 +71,6 @@ def format_text_response(text: Any) -> ResponseType:
 def format_error_response(error: str) -> ResponseType:
     """Format an error response."""
     return format_text_response(f"Error: {error}")
-
-
-@mcp.tool(description="List available and installed extensions")
-async def list_extensions() -> ResponseType:
-    """Get information about installed PostgreSQL extensions."""
-    try:
-        sql_driver = await get_sql_driver()
-        rows = await sql_driver.execute_query(
-            """
-            SELECT
-                pae.name AS extname,
-                CASE WHEN pe.extversion IS NOT NULL THEN true ELSE false END AS installed,
-                pe.extversion AS installed_version,
-                pae.default_version,
-                pae.comment
-            FROM
-                pg_available_extensions pae
-            LEFT JOIN
-                pg_extension pe
-                ON pae.name = pe.extname
-            ORDER BY
-                pae.name;
-            """
-        )
-        extensions = [row.cells for row in rows] if rows else []
-        return format_text_response(extensions)
-    except Exception as e:
-        logger.error(f"Error listing extensions: {e}")
-        return format_error_response(str(e))
 
 
 @mcp.tool(description="List all schemas in the database")
@@ -459,10 +431,21 @@ async def analyze_query_indexes(
         return format_error_response(str(e))
 
 
-@mcp.tool(description="Analyzes database health for specified components including cache hit rates, indexes, sequences, and more.")
+@mcp.tool(
+    description="Analyzes database health. Here are the available health checks:\n"
+    "- index - checks for invalid, duplicate, and bloated indexes\n"
+    "- connection - checks the number of connection and their utilization\n"
+    "- vacuum - checks vacuum health for transaction id wraparound\n"
+    "- sequence - checks sequences at risk of exceeding their maximum value\n"
+    "- replication - checks replication health including lag and slots\n"
+    "- buffer - checks for buffer cache hit rates for indexes and tables\n"
+    "- constraint - checks for invalid constraints\n"
+    "- all - runs all checks\n"
+    "You can optionally specify a single health check or a comma-separated list of health checks. The default is 'all' checks."
+)
 async def analyze_db_health(
     health_type: str = Field(
-        description=f"Valid values are: {', '.join(sorted([t.value for t in HealthType]))}.",
+        description=f"Optional. Valid values are: {', '.join(sorted([t.value for t in HealthType]))}.",
         default="all",
     ),
 ) -> ResponseType:
@@ -477,113 +460,27 @@ async def analyze_db_health(
     return format_text_response(result)
 
 
-@mcp.tool(
-    description="Installs a PostgreSQL extension if it's available but not already installed. "
-    "Requires appropriate database privileges (often superuser)."
-)
-async def install_extension(
-    extension_name: str = Field(description="Extension to install. e.g. pg_stat_statements"),
-) -> ResponseType:
-    """Installs a PostgreSQL extension if it's available but not already installed. Requires appropriate database privileges (often superuser)."""
-
-    try:
-        # First check if the extension exists in pg_available_extensions
-        sql_driver = await get_sql_driver()
-        check_rows = await SafeSqlDriver.execute_param_query(
-            sql_driver,
-            "SELECT name, default_version FROM pg_available_extensions WHERE name = {}",
-            [extension_name],
-        )
-
-        if not check_rows:
-            return format_text_response(
-                f"Error: Extension '{extension_name}' is not available in the PostgreSQL installation. "
-                "Please check if the extension is properly installed on the server."
-            )
-
-        # Check if extension is already installed
-        installed_rows = await SafeSqlDriver.execute_param_query(
-            sql_driver,
-            "SELECT extversion FROM pg_extension WHERE extname = {}",
-            [extension_name],
-        )
-
-        if installed_rows:
-            return format_text_response(f"Extension '{extension_name}' version {installed_rows[0].cells['extversion']} is already installed.")
-
-        # Attempt to create the extension
-        await sql_driver.execute_query(
-            f"CREATE EXTENSION {extension_name}",  # type: ignore
-            # NOTE: cannot escape because an escaped extension_name is invalid SQL
-            force_readonly=False,
-        )
-
-        return format_text_response(
-            f"Successfully installed '{extension_name}' extension.",
-        )
-    except psycopg.OperationalError as e:
-        error_msg = (
-            f"Error installing '{extension_name}': {e}\n\n"
-            "This is likely due to insufficient permissions. The following are common causes:\n"
-            "1. The database user lacks superuser privileges\n"
-            "2. The extension is not available in the PostgreSQL installation\n"
-            "3. The extension requires additional system-level dependencies\n\n"
-            "Please ensure you have the necessary permissions and the extension is available on your PostgreSQL server."
-        )
-        return format_error_response(error_msg)
-    except Exception as e:
-        error_msg = f"Unexpected error installing '{extension_name}': {e}\n\nPlease check the error message and ensure all prerequisites are met."
-        return format_error_response(error_msg)
-
-
-@mcp.tool(description=f"Reports the slowest SQL queries based on total execution time, using data from the '{PG_STAT_STATEMENTS}' extension.")
+@mcp.tool(description=f"Reports the slowest SQL queries based on execution time, using data from the '{PG_STAT_STATEMENTS}' extension.")
 async def get_top_queries(
     limit: int = Field(description="Number of slow queries to return", default=10),
+    sort_by: str = Field(
+        description="Sort criteria: 'total' for total execution time or 'mean' for mean execution time per call",
+        default="mean",
+    ),
 ) -> ResponseType:
-    """Reports the slowest SQL queries based on total execution time."""
+    """Reports the slowest SQL queries based on execution time.
+
+    This tool handles PostgreSQL version differences automatically:
+    - In PostgreSQL 13+: Uses total_exec_time/mean_exec_time columns
+    - In PostgreSQL 12 and older: Uses total_time/mean_time columns
+    """
     try:
         sql_driver = await get_sql_driver()
-
-        rows = await SafeSqlDriver.execute_param_query(
-            sql_driver,
-            "SELECT 1 FROM pg_extension WHERE extname = {}",
-            [PG_STAT_STATEMENTS],
-        )
-        extension_exists = len(rows) > 0 if rows else False
-
-        if extension_exists:
-            query = """
-                SELECT
-                    query,
-                    calls,
-                    total_exec_time,
-                    mean_exec_time,
-                    rows
-                FROM pg_stat_statements
-                ORDER BY total_exec_time DESC
-                LIMIT {};
-            """
-            slow_query_rows = await SafeSqlDriver.execute_param_query(
-                sql_driver,
-                query,
-                [limit],
-            )
-            slow_queries = [row.cells for row in slow_query_rows] if slow_query_rows else []
-            result_text = f"Top {len(slow_queries)} slowest queries by total execution time:\n"
-            result_text += str(slow_queries)
-            return format_text_response(result_text)
-        else:
-            message = (
-                f"The '{PG_STAT_STATEMENTS}' extension is required to report slow queries, but it is not currently installed.\n\n"
-                f"You can ask me to install 'pg_stat_statements' using the 'install_extension' tool.\n\n"
-                f"**Is it safe?** Installing '{PG_STAT_STATEMENTS}' is generally safe and a standard practice for performance monitoring. "
-                f"It adds performance overhead by tracking statistics, but this is usually negligible unless your server is under extreme load. "
-                f"It requires database privileges (often superuser) to install.\n\n"
-                f"**What does it do?** It records statistics (like execution time, number of calls, rows returned) "
-                f"for every query executed against the database.\n\n"
-                f"**How to undo?** If you later decide to remove it, you can ask me to run 'DROP EXTENSION {PG_STAT_STATEMENTS};'."
-            )
-            return format_text_response(message)
+        top_queries_tool = TopQueriesCalc(sql_driver=sql_driver)
+        if sort_by != "mean" and sort_by != "total":
+            return format_error_response("Invalid sort criteria. Please use 'mean' or 'total'.")
+        result = await top_queries_tool.get_top_queries(limit=limit, sort_by=sort_by)
+        return format_text_response(result)
     except Exception as e:
         logger.error(f"Error getting slow queries: {e}")
         return format_error_response(str(e))
@@ -592,7 +489,7 @@ async def get_top_queries(
 async def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="PostgreSQL MCP Server")
-    parser.add_argument("database_url", help="Database connection URL")
+    parser.add_argument("database_url", help="Database connection URL", nargs="?")
     parser.add_argument(
         "--access-mode",
         type=str,
@@ -615,7 +512,13 @@ async def main():
 
     logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
 
-    database_url = args.database_url
+    # Get database URL from environment variable or command line
+    database_url = os.environ.get("DATABASE_URI", args.database_url)
+
+    if not database_url:
+        raise ValueError(
+            "Error: No database URL provided. Please specify via 'DATABASE_URI' environment variable or command-line argument.",
+        )
 
     # Initialize database connection pool
     try:

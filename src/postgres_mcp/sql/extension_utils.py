@@ -9,6 +9,10 @@ from .sql_driver import SqlDriver
 
 logger = logging.getLogger(__name__)
 
+# Single global PostgreSQL version cache
+# TODO: If we support multiple connections in the future, this should be connection-specific
+_POSTGRES_VERSION = None
+
 
 class ExtensionStatus(TypedDict):
     """Status of an extension."""
@@ -18,6 +22,12 @@ class ExtensionStatus(TypedDict):
     name: str
     message: str
     default_version: str | None
+
+
+def reset_postgres_version_cache() -> None:
+    """Reset the PostgreSQL version cache. Primarily used for testing."""
+    global _POSTGRES_VERSION
+    _POSTGRES_VERSION = None
 
 
 async def get_postgres_version(sql_driver: SqlDriver) -> int:
@@ -31,6 +41,11 @@ async def get_postgres_version(sql_driver: SqlDriver) -> int:
         The major PostgreSQL version as an integer (e.g., 16 for PostgreSQL 16.2)
         Returns 0 if the version cannot be determined
     """
+    # Check if we have a cached version
+    global _POSTGRES_VERSION
+    if _POSTGRES_VERSION is not None:
+        return _POSTGRES_VERSION
+
     try:
         rows = await sql_driver.execute_query("SHOW server_version")
         if not rows:
@@ -40,10 +55,15 @@ async def get_postgres_version(sql_driver: SqlDriver) -> int:
         version_string = rows[0].cells["server_version"]
         # Extract the major version (before the first dot)
         major_version = version_string.split(".")[0]
-        return int(major_version)
+        version = int(major_version)
+
+        # Cache the version globally
+        _POSTGRES_VERSION = version
+
+        return version
     except Exception as e:
         logger.warning(f"Error determining PostgreSQL version: {e}")
-        return 0
+        raise e
 
 
 async def check_postgres_version_requirement(sql_driver: SqlDriver, min_version: int, feature_name: str) -> tuple[bool, str]:
@@ -135,14 +155,12 @@ async def check_extension(
                 if message_type == "markdown":
                     result["message"] = (
                         f"The **{extension_name}** extension is available but not installed.\n\n"
-                        f"You can install it by running: `CREATE EXTENSION {extension_name};`\n\n"
-                        f"Or use the 'install_extension' tool."
+                        f"You can install it by running: `CREATE EXTENSION {extension_name};`."
                     )
                 else:
                     result["message"] = (
                         f"The {extension_name} extension is available but not installed.\n"
-                        f"You can install it by running: CREATE EXTENSION {extension_name};\n"
-                        f"Or use the 'install_extension' tool."
+                        f"You can install it by running: CREATE EXTENSION {extension_name};"
                     )
         else:
             # Extension is not available
@@ -188,7 +206,7 @@ async def check_hypopg_installation_status(sql_driver: SqlDriver, message_type: 
         if message_type == "markdown":
             return False, (
                 "The **hypopg** extension is required to test hypothetical indexes, but it is not currently installed.\n\n"
-                "You can ask me to install 'hypopg' using the 'install_extension' tool.\n\n"
+                "You can ask me to install 'hypopg' using the 'execute_query' tool.\n\n"
                 "**Is it safe?** Installing 'hypopg' is generally safe and a standard practice for index testing. "
                 "It adds a virtual layer that simulates indexes without actually creating them in the database. "
                 "It requires database privileges (often superuser) to install.\n\n"
@@ -199,17 +217,19 @@ async def check_hypopg_installation_status(sql_driver: SqlDriver, message_type: 
         else:
             return False, (
                 "The hypopg extension is required to test hypothetical indexes, but it is not currently installed.\n"
-                "You can ask me to install it using the 'install_extension' tool.\n"
+                "You can ask me to install it using the 'execute_query' tool.\n"
                 "It is generally safe to install and allows testing indexes without creating them."
             )
 
+    pg_version = await get_postgres_version(sql_driver)
+    major_version_str = f"{pg_version}" if pg_version > 0 else "XX"
     # Extension is not available
     if message_type == "markdown":
         return False, (
             "The **hypopg** extension is not available on this PostgreSQL server.\n\n"
             "To install HypoPG:\n"
-            "1. For Debian/Ubuntu: `sudo apt-get install postgresql-hypopg`\n"
-            "2. For RHEL/CentOS: `sudo yum install postgresql-hypopg`\n"
+            f"1. For Debian/Ubuntu: `sudo apt-get install postgresql-{major_version_str}-hypopg`\n"
+            f"2. For RHEL/CentOS: `sudo yum install postgresql{major_version_str}-hypopg`\n"
             "3. For MacOS with Homebrew: `brew install hypopg`\n"
             "4. For other systems, build from source: `git clone https://github.com/HypoPG/hypopg`\n\n"
             "After installing the extension packages, connect to your database and run: `CREATE EXTENSION hypopg;`"
@@ -218,8 +238,8 @@ async def check_hypopg_installation_status(sql_driver: SqlDriver, message_type: 
         return False, (
             "The hypopg extension is not available on this PostgreSQL server.\n"
             "To install HypoPG:\n"
-            "1. For Debian/Ubuntu: sudo apt-get install postgresql-hypopg\n"
-            "2. For RHEL/CentOS: sudo yum install postgresql-hypopg\n"
+            f"1. For Debian/Ubuntu: sudo apt-get install postgresql-{major_version_str}-hypopg\n"
+            f"2. For RHEL/CentOS: sudo yum install postgresql{major_version_str}-hypopg\n"
             "3. For MacOS with Homebrew: brew install hypopg\n"
             "4. For other systems, build from source: git clone https://github.com/HypoPG/hypopg\n"
             "After installing the extension packages, connect to your database and run: CREATE EXTENSION hypopg;"
