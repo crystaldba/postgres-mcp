@@ -36,7 +36,7 @@ What we did:
         <p><b>Boom!</b> We have a fully functionaly website with ratings, search, browse, auth -- in under an hour.  What!!  So cool.</p>
         <p>But it's slooooow...</p>
     </td>
-      <td align="center"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-0-initial-app.png"/></td>
+      <td align="center"><img src="https://github.com/user-attachments/assets/2609dfcb-2ff3-45b9-89f1-6d991e65c461"/></td>
     </tr>
     <tr>
       <td align="left" valign="top">
@@ -66,7 +66,7 @@ What we did:
         </ol>
         <p>That was amazing! I was running in "yolo" mode in Cursor, so it did all that without my input. I had Postgres Pro in "restricted" mode (read-only), so I did not have to worry about unintended database changes.</p>
       </td>
-      <td align="center"><a href="https://youtu.be/qhcqZ6Lxg3c"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-1-go-0-to-1.png"/></a></td>
+      <td align="center"><a href="https://youtu.be/qhcqZ6Lxg3c"><img src="https://github.com/user-attachments/assets/3e9cdd1d-e93e-4e4a-a043-ffdc6f4feea6"/></a></td>
     </tr>
     <tr>
       <td align="left" valign="top">
@@ -90,7 +90,7 @@ What we did:
         to import them in a more reliable way.</p>
         <div><em>(it turned out my original script aborted on errors)</em></p>
       </td>
-      <td align="center"><a href="https://youtu.be/1yEPbP_Sve0"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-2-movie-details.png"/></a></td>
+      <td align="center"><a href="https://youtu.be/1yEPbP_Sve0"><img src="https://github.com/user-attachments/assets/78b9df86-c9ae-4cc1-98c8-1090bd0c8193"/></a></td>
     </tr>
     <tr>
       <td align="left" valign="top">
@@ -109,7 +109,9 @@ What we did:
         <div>The AI Agent pulls sample data via the Postgres MCP to determine that a 10K vote minimum would work.</div>
         <div>It gives me confidence seeing the results are grounded in reality and not just some hallucination.</div>
       </td>
-      <td align="center"><a href="https://youtube.com/shorts/UTqmeiC2xU8"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-3-top-rated-sort.png"/></a></td>
+      <td align="center"><a href="https://youtube.com/shorts/UTqmeiC2xU8"><img src="https://github.com/user-attachments/assets/7e2a82a4-dc5c-4c1e-89fe-8d8061fb2af9"/></a></td>
     </tr>
   </tbody>
 </table>
+
+
