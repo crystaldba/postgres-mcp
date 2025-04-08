@@ -33,10 +33,11 @@ What we did:
           <p>Create a web app based on flask, python and SQAlchemy ORM</p>
           <p>It's website that uses the schema from the public IMDB dataset . Assume I've imported the IMDB dataset as-is and add to that. I want people to be able to browse a mobile-friendly page for each movie, with all the IMDB data related to that movie. Additionally, people can rate each movie 1-5 and view top rated movies. The community and these ratings are one of the primary uses cases for the website.</p>
         </blockquote>
-        <p><b>Boom!</b> We have a fully functionaly website with ratings, search, browse, auth -- in under an hour.  What!!  So cool.</p>
-        <p>But it's slooooow...</p>
+        <p><b>Boom!</b> We have a fully functional website with ratings, search, browse, auth -- in under an hour.  What!!  So cool.</p>
+        <p><b>But it's slooooow...</b></br>
+        The AI agent created a bunch of ORM code and what looked like reasonable indexes, but clearly it got it wrong.</p>
     </td>
-      <td align="center"><img src="https://github.com/user-attachments/assets/2609dfcb-2ff3-45b9-89f1-6d991e65c461"/></td>
+      <td align="center"><a href="https://youtu.be/BYkfytHkoZ0"><img src="https://github.com/user-attachments/assets/2609dfcb-2ff3-45b9-89f1-6d991e65c461"/></a></td>
     </tr>
     <tr>
       <td align="left" valign="top">
@@ -45,7 +46,7 @@ What we did:
         Let's switch to Cursor w/ Postgres Pro to get the app ready for launch.</p>
         <p>Our prompt:</p>
         <blockquote>
-          <p>My app is slow!</p>
+          <div>My app is slow!</div>
           <div>- Look for opportunities to speed up by improving queries, indexes or caching.</div>
           <div>- For db changes use migration scripts I can apply later.</div>
         </blockquote>
@@ -67,7 +68,7 @@ What we did:
           <li>External API calls will be reduced by ~90%</li>
         </ul>
       </td>
-      <td align="center"><a href="https://youtu.be/qhcqZ6Lxg3c"><img src="https://github.com/user-attachments/assets/3e9cdd1d-e93e-4e4a-a043-ffdc6f4feea6"/></a></td>
+      <td align="center"><a href="https://youtu.be/BYkfytHkoZ0?si=6pue4Q0iAv9L4qER&t=75"><img src="https://github.com/user-attachments/assets/3e9cdd1d-e93e-4e4a-a043-ffdc6f4feea6"/></a></td>
     </tr>
     <tr>
       <td align="left" valign="top">
@@ -86,13 +87,12 @@ What we did:
           <li>It identified additional data in <code>title_basics</code>
           to create a new About section with genre, runtime, and release years.</li>
         </ol>
-        <p>Am I missing any data?</p>
-        <p>The AI Agent ran the sql queries via Postgres Pro, found the missing data, and wrote a script
-        to import them in a more reliable way.</p>
+        <blockquote>Let's ask: Am I missing any data?</blockquote>
+        <p>The AI Agent runs the sql queries and figures out we are indeed missing the cast/crew data.  It writes a script to import it in a more reliable way.</p>
         <div><em>(it turned out my original script aborted on errors)</em></p>
       </td>
       <td align="center">
-        <a href="https://youtu.be/1yEPbP_Sve0"><img src="https://github.com/user-attachments/assets/a5727fd5-3845-4110-998d-5af4f386ce0e"/></a>
+        <a href="https://youtu.be/BYkfytHkoZ0?si=Fptx4qdd2duJKA0i&t=222"><img src="https://github.com/user-attachments/assets/a5727fd5-3845-4110-998d-5af4f386ce0e"/></a>
       </td>
     </tr>
     <tr>
@@ -112,7 +112,7 @@ What we did:
         <div>The AI Agent gets the distribution of data and some sample results to determine that a 10K vote minimum would give the best results.  It's great seeing the results are grounded in reality and not just some hallucination.</div>
       </td>
       <td align="center">
-        <a href="https://youtube.com/shorts/UTqmeiC2xU8"><img src="https://github.com/user-attachments/assets/05af6f5d-326c-4976-8719-20d4dcb6712c"/></a>
+        <a href="https://youtu.be/BYkfytHkoZ0?si=OwGJYXwcOunRkLH9&t=368"><img src="https://github.com/user-attachments/assets/05af6f5d-326c-4976-8719-20d4dcb6712c"/></a>
       </td>
     </tr>
   </tbody>
