@@ -924,11 +924,14 @@ class DatabaseTuningAdvisor:
             # Extract columns
             columns = []
             for idx_elem in index_stmt.indexParams:
-                if hasattr(idx_elem, "name"):
+                if hasattr(idx_elem, "name") and idx_elem.name:
                     columns.append(idx_elem.name)
-                elif hasattr(idx_elem, "IndexElem"):
+                elif hasattr(idx_elem, "IndexElem") and idx_elem.IndexElem:
                     columns.append(idx_elem.IndexElem.name)
-
+                elif hasattr(idx_elem, "expr") and idx_elem.expr:
+                    # Convert the expression to a proper string representation
+                    expr_str = self._ast_expr_to_string(idx_elem.expr)
+                    columns.append(expr_str)
             # Extract index type
             index_type = "btree"  # default
             if hasattr(index_stmt, "accessMethod") and index_stmt.accessMethod:
@@ -948,6 +951,52 @@ class DatabaseTuningAdvisor:
         except Exception as e:
             self.dta_trace(f"Error extracting index info: {e}")
             raise ValueError("Error extracting index info") from e
+
+    def _ast_expr_to_string(self, expr) -> str:
+        """Convert an AST expression (like FuncCall) to a proper string representation.
+
+        For example, converts a FuncCall node representing lower(name) to "lower(name)"
+        """
+        try:
+            # Import FuncCall and ColumnRef for type checking
+            from pglast.ast import ColumnRef
+            from pglast.ast import FuncCall
+
+            # Check for FuncCall type directly
+            if isinstance(expr, FuncCall):
+                # Extract function name
+                if hasattr(expr, "funcname") and expr.funcname:
+                    func_name = ".".join([name.sval for name in expr.funcname if hasattr(name, "sval")])
+                else:
+                    func_name = "unknown_func"
+
+                # Extract arguments
+                args = []
+                if hasattr(expr, "args") and expr.args:
+                    for arg in expr.args:
+                        args.append(self._ast_expr_to_string(arg))
+
+                # Format as function call
+                return f"{func_name}({','.join(args)})"
+
+            # Check for ColumnRef type directly
+            elif isinstance(expr, ColumnRef):
+                if hasattr(expr, "fields") and expr.fields:
+                    return ".".join([field.sval for field in expr.fields if hasattr(field, "sval")])
+                return "unknown_column"
+
+            # Try to handle direct values
+            elif hasattr(expr, "sval"):  # String value
+                return expr.sval
+            elif hasattr(expr, "ival"):  # Integer value
+                return str(expr.ival)
+            elif hasattr(expr, "fval"):  # Float value
+                return expr.fval
+
+            # Fallback for other expression types
+            return str(expr)
+        except Exception as e:
+            raise ValueError("Error converting expression to string") from e
 
     def _is_same_index(self, index1: dict[str, Any], index2: dict[str, Any]) -> bool:
         """Check if two indexes are functionally equivalent."""

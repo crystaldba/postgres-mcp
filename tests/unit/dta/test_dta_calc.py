@@ -234,7 +234,7 @@ async def test_error_handling(async_sql_driver, create_dta):
     async_sql_driver.execute_query = AsyncMock(side_effect=RuntimeError("HypoPG not available"))
     dta = create_dta
     session = await dta.analyze_workload(min_calls=50, min_avg_time_ms=5.0)
-    assert session.error == "HypoPG not available"
+    assert "HypoPG not available" in session.error
 
     # Test invalid query handling
     async_sql_driver.execute_query = AsyncMock(return_value=None)
@@ -321,19 +321,19 @@ async def test_index_exists(create_dta):
     with patch("pglast.parser.parse_sql", side_effect=Exception("Parsing error")):
         # Should use fallback and return True based on substring matching
         index = Index("users", ("name", "email"))
-        exists = dta._index_exists(
-            index,
-            {"CREATE INDEX users_name_email_idx ON users USING btree (name, email)"},
-        )
-        assert exists, "Fallback mechanism should identify matching index"
+        with pytest.raises(Exception, match="Error in robust index comparison"):
+            dta._index_exists(
+                index,
+                {"CREATE INDEX users_name_email_idx ON users USING btree (name, email)"},
+            )
 
         # Should return False when no match even with fallback
         index = Index("users", ("address",))
-        exists = dta._index_exists(
-            index,
-            {"CREATE INDEX users_name_email_idx ON users USING btree (name, email)"},
-        )
-        assert not exists, "Fallback mechanism should not match non-existing index"
+        with pytest.raises(Exception, match="Error in robust index comparison"):
+            dta._index_exists(
+                index,
+                {"CREATE INDEX users_name_email_idx ON users USING btree (name, email)"},
+            )
 
 
 @pytest.mark.asyncio

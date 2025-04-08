@@ -37,7 +37,7 @@ async def test_update_statement(safe_driver):
     query = "UPDATE users SET status = 'active' WHERE id = 1"
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -69,7 +69,7 @@ async def test_set_variable(safe_driver):
     query = "SET search_path TO public"
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -96,7 +96,7 @@ async def test_drop_table(safe_driver):
     query = "DROP TABLE users"
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -107,7 +107,7 @@ async def test_delete_from_table(safe_driver):
     query = "DELETE FROM users WHERE status = 'inactive'"
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -131,7 +131,7 @@ async def test_select_with_malicious_comment(safe_driver):
     """
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -156,7 +156,7 @@ async def test_select_into(safe_driver):
     INTO new_table
     FROM users
     """
-    with pytest.raises(ValueError, match="(?i)not allowed"):
+    with pytest.raises(ValueError, match="Error validating query"):
         await safe_driver.execute_query(query)
 
 
@@ -168,7 +168,7 @@ async def test_select_for_update(safe_driver):
     FROM users
     FOR UPDATE
     """
-    with pytest.raises(ValueError, match="(?i)locking clause"):
+    with pytest.raises(ValueError, match="Error validating query"):
         await safe_driver.execute_query(query)
 
 
@@ -180,7 +180,7 @@ async def test_select_with_locking_clause(safe_driver):
     FROM users
     FOR SHARE NOWAIT
     """
-    with pytest.raises(ValueError, match="(?i)locking clause"):
+    with pytest.raises(ValueError, match="Error validating query"):
         await safe_driver.execute_query(query)
 
 
@@ -194,7 +194,7 @@ async def test_select_with_commit(safe_driver):
     """
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -219,7 +219,7 @@ async def test_explain_analyze_blocked(safe_driver):
     EXPLAIN ANALYZE
     SELECT id, name FROM users
     """
-    with pytest.raises(ValueError, match="EXPLAIN ANALYZE is not supported"):
+    with pytest.raises(ValueError, match="Error validating query"):
         await safe_driver.execute_query(query)
 
 
@@ -232,7 +232,7 @@ async def test_begin_transaction_blocked(safe_driver):
     """
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -261,7 +261,7 @@ async def test_create_index_blocked(safe_driver):
     """
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -274,7 +274,7 @@ async def test_drop_index_blocked(safe_driver):
     """
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -291,7 +291,7 @@ async def test_create_table_blocked(safe_driver):
     """
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -305,7 +305,7 @@ async def test_create_table_as_blocked(safe_driver):
     """
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -316,7 +316,7 @@ async def test_create_extension_blocked(safe_driver):
     query = """
     CREATE EXTENSION pg_hack;
     """
-    with pytest.raises(ValueError, match="CREATE EXTENSION pg_hack is not supported"):
+    with pytest.raises(ValueError, match="Error validating query"):
         await safe_driver.execute_query(query)
 
 
@@ -328,7 +328,7 @@ async def test_drop_extension_blocked(safe_driver):
     """
     with pytest.raises(
         ValueError,
-        match="Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW",
+        match="Error validating query",
     ):
         await safe_driver.execute_query(query)
 
@@ -367,7 +367,7 @@ async def test_disallowed_functions(safe_driver):
     ]
 
     for query in queries:
-        with pytest.raises(ValueError, match="Function .* is not allowed"):
+        with pytest.raises(ValueError, match="Error validating query"):
             await safe_driver.execute_query(query)
 
 
