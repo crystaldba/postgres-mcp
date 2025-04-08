@@ -21,6 +21,12 @@ What we did:
 3) Fix empty movie details pages
 4) Improve the sort for top-rated movies
 
+**Full Video**
+
+*(play-by-play walkthrough is below)*
+
+https://github.com/user-attachments/assets/be498c43-b3a1-453f-b92d-307d44d06345
+
 **Let's get started...**
 
 <table>
