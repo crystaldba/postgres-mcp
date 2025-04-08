@@ -1,9 +1,3 @@
-# Overview
-
-Here are a few demo examples of using [Postgres Pro](https://github.com/crystaldba/postgres-mcp) to build, test, and scale applications. Postgres Pro is an MCP server by [crystaldba.ai](crystaldba.ai) which gives apps like Cursor, Windsurf and others access to a Postgres expert using the [MCP protocol](https://modelcontextprotocol.io/introduction) from Anthropic.
-
-# Examples
-
 ## Movie Ratings Website
 
 Let's do a quick AI-coding session and take an idea from concept to launch!
@@ -124,6 +118,6 @@ https://github.com/user-attachments/assets/75af8664-3137-4e22-a877-9de78afe43b7
   </tbody>
 </table>
 
-## Read yo install?
+## Ready to install?
 
 Jump to the [Quick Start](README.md#Quick-Start) instructions

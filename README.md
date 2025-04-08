@@ -39,7 +39,7 @@ We origincally generated the app using Replit, but the SQLAlchemy code it wrote 
 
 **Two ways to see demo**
 
-- [Read the play-by-play](examples.md#Movie-Ratings-Website)
+- [Read the play-by-play](examples/movie-app.md)
 - Watch video below
 
 https://github.com/user-attachments/assets/75af8664-3137-4e22-a877-9de78afe43b7
