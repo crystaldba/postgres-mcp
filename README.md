@@ -17,6 +17,7 @@ Postgres Pro also provides comprehensive schema information to support SQL gener
 
 ## Contents
 
+- [Demo](#demo)
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [Usage Examples](#usage-examples)
