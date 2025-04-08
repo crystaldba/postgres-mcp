@@ -42,8 +42,7 @@ We organically generated the app using Replit, but the SQLAlchemy code it wrote 
 - [Read the play-by-play](examples/movie-app.md)
 - Watch video below
 
-https://github.com/user-attachments/assets/75af8664-3137-4e22-a877-9de78afe43b7
-
+https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
 
 
 ## Features
