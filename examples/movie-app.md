@@ -121,6 +121,10 @@ https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
   </tbody>
 </table>
 
-## Ready to install?
+## Want to learn more?
 
-Jump to the [Quick Start](README.md#Quick-Start) instructions
+- [Overview](../README.md#overview)
+- [Features](../README.md#features)
+- [Quick Start](../README.md#quick-start)
+- [Technical Notes](../README.md#technical-notes)
+- [Discord Server](https://discord.gg/4BEHC7ZM)
