@@ -1,6 +1,6 @@
 # Overview
 
-Here are a few examples of of using [Postgres Pro](https://github.com/crystaldba/postgres-mcp) to build, test, and scale applications. Postgres Pro is an MCP server by [crystaldba.ai](crystaldba.ai) which gives apps like Cursor, Windsurf and others access to a Postgres expert using the [MCP protocol](https://modelcontextprotocol.io/introduction) from Anthropic.
+Here are a few demo examples of using [Postgres Pro](https://github.com/crystaldba/postgres-mcp) to build, test, and scale applications. Postgres Pro is an MCP server by [crystaldba.ai](crystaldba.ai) which gives apps like Cursor, Windsurf and others access to a Postgres expert using the [MCP protocol](https://modelcontextprotocol.io/introduction) from Anthropic.
 
 # Examples
 
@@ -45,26 +45,27 @@ What we did:
         Let's switch to Cursor w/ Postgres Pro to get the app ready for launch.</p>
         <p>Our prompt:</p>
         <blockquote>
-          <p>My app is slow!  Look for opportunities with poor queries, bad indexes, or caching.</p>
-          <div>1. Look at code to figure out all the queries for all routes and models</div>
-          <div>2. Analyze the explain plans and identify what indexes might help</div>
-          <div>3. Test the indexes by using the explain plans with hypothetical indexes.</div>
-          <div>4. Compare your list to what is already created to finalize a list to both add and remove</div>
-          <div>5. Create a migration script using alembic but don't apply it yet</div>
-          <div>6. Make all code changes necessary for queries, indexes, and caching</div>
+          <p>My app is slow!</p>
+          <div>- Look for opportunities to speed up by improving queries, indexes or caching.</div>
+          <div>- For db changes use migration scripts I can apply later.</div>
         </blockquote>
-        <div><em>(7 minutes later...)</em></div>
         <p>Let's see what all the AI agent did.</p>
         <ol>
-          <li>Explored the schema and code to identify potential problem queries.</li>
-          <li>Used Postgres Pro to help identify solutions, calling tools like <code>explain_plan</code>, <code>get_top_queries</code>, <code>analyze_query_indexes</code>, <code>analyze_database_health</code>.</li>
-          <li>Added indexes to fix table scans and ILIKE queries</li>
-          <li>Remove unused and bloated indexes</li>
-          <li>Optimized complex sub-queries causing repeated database hits</li>
-          <li>Added caching for image loading and expensive queries</li>
-          <li>Created an alembic migration script to apply the changes.</li>
+          <li>Explored the schema and code to identify potential problem queries</li>
+          <li>Used Postgres Pro to diagnose by calling <code>get_top_queries</code>, <code>analyze_db_health</code>, and <code>analyze_query_indexes</code></li>
+          <li>Added multiple indexes to improve query performance</li>
+          <li>Remove unused and bloated indexes to reclaim space</li>
+          <li>Added caching for expensive queries and image loading</li>
+          <li>Created a migration script to apply the changes</li>
         </ol>
-        <p>That was amazing! I was running in "yolo" mode in Cursor, so it did all that without my input. I had Postgres Pro in "restricted" mode (read-only), so I did not have to worry about unintended database changes.</p>
+        <p>That was amazing! The agent was able to connect the dots between the database analysis and the code to create a comprehensive PR in 2.5 minutes.</p>
+        <div>It summarized the expected impact:</div>
+        <ul>
+          <li>Text searches will be 10-100x faster</li>
+          <li>Page loads will be 2-5x faster</li>
+          <li>Database load will be significantly reduced</li>
+          <li>External API calls will be reduced by ~90%</li>
+        </ul>
       </td>
       <td align="center"><a href="https://youtu.be/qhcqZ6Lxg3c"><img src="https://github.com/user-attachments/assets/3e9cdd1d-e93e-4e4a-a043-ffdc6f4feea6"/></a></td>
     </tr>
@@ -95,19 +96,18 @@ What we did:
     <tr>
       <td align="left" valign="top">
         <h4>4) Improve the sort for top-rated movies</h4>
-        <p>I haven't heard of movies like "Brothers", "Carraco", etc. in the top-rated page. Something is wrong:</p>
+        <p>The top-rated page is showing the classics like "Sisters of the Shrink 4" and "Zhuchok", etc. Something is wrong!</p>
         <blockquote>
           <div>How are the top-rated sorted?  It seems random.
           Do we have data in those tables?  Is the query it uses working?</div>
         </blockquote>
-        <div>The Agent queries Postgres and identifies we need to add a minimum on <code>num_votes</code></div>
+        <div>The Agent checks the data and code dentifies that the issue is there is no minimum on the <code>num_votes</code></div>
         <br/>
         <div>So I ask:</div>
         <blockquote>
           <div>help me find a good minimum of reviews</div>
         </blockquote>
-        <div>The AI Agent pulls sample data via the Postgres MCP to determine that a 10K vote minimum would work.</div>
-        <div>It gives me confidence seeing the results are grounded in reality and not just some hallucination.</div>
+        <div>The AI Agent gets the distribution of data and some sample results to determine that a 10K vote minimum would give the best results.  It's great seeing the results are grounded in reality and not just some hallucination.</div>
       </td>
       <td align="center"><a href="https://youtube.com/shorts/UTqmeiC2xU8"><img src="https://github.com/user-attachments/assets/7e2a82a4-dc5c-4c1e-89fe-8d8061fb2af9"/></a></td>
     </tr>
