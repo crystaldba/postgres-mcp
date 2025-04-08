@@ -29,12 +29,13 @@ Postgres Pro also provides comprehensive schema information to support SQL gener
 
 ## Demo
 
-Here is a demo of using Postgres Pro in Cursor to optimize and fix an AI-generated app. The sample app was generated in Replit but was incredibly slow/unusable because of the large IMDB dataset.
+Here is a demo of using Postgres Pro in Cursor to optimize and fix an AI-generated app.
+We origincally generated the app using Replit, but the SQLAlchemy code it wrote ran very slowly, making the application practically unusable.
 
-**The AI agent will:**
-- fix performance - including ORM queries, indexing, and caching
-- fix bugs that require connecting data to code
-- add new features from single prompts
+**We used the Cursor AI agent and Postgres Pro to:**
+- Fix performance - including ORM queries, indexing, and caching
+- Fix bugs that require connecting data to code
+- Add new features from single prompts
 
 **Two ways to see demo**
 
