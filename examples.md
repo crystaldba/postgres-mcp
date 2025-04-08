@@ -123,3 +123,7 @@ https://github.com/user-attachments/assets/be498c43-b3a1-453f-b92d-307d44d06345
     </tr>
   </tbody>
 </table>
+
+## Read yo install?
+
+Jump to the [Quick Start](README.md#Quick-Start) instructions
