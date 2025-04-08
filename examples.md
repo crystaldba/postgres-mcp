@@ -31,7 +31,7 @@ What we did:
         <p>We prompt Replit with:</p>
         <blockquote>
           <p>Create a web app based on flask, python and SQAlchemy ORM</p>
-          <p>It's website that uses the schema from the public IMDB dataset (<a href="https://developer.imdb.com/non-commercial-datasets/">https://developer.imdb.com/non-commercial-datasets/</a>). Assume I've imported the IMDB dataset as-is and add to that. I want people to be able to browse a mobile-friendly page for each movie, with all the IMDB data related to that movie. Additionally, people can rate each movie 1-5 and view top rated movies. The community and these ratings are one of the primary uses cases for the website.</p>
+          <p>It's website that uses the schema from the public IMDB dataset . Assume I've imported the IMDB dataset as-is and add to that. I want people to be able to browse a mobile-friendly page for each movie, with all the IMDB data related to that movie. Additionally, people can rate each movie 1-5 and view top rated movies. The community and these ratings are one of the primary uses cases for the website.</p>
         </blockquote>
         <p><b>Boom!</b> We have a fully functionaly website with ratings, search, browse, auth -- in under an hour.  What!!  So cool.</p>
         <p>But it's slooooow...</p>
@@ -41,7 +41,7 @@ What we did:
     <tr>
       <td align="left" valign="top">
         <h4>2) Fix query performance</h4>
-        <p>Our website looks decent, but the code is just too slow.<br/>
+        <p>Our website looks decent, but it's too slow to ship.<br/>
         Let's switch to Cursor w/ Postgres Pro to get the app ready for launch.</p>
         <p>Our prompt:</p>
         <blockquote>
@@ -64,7 +64,7 @@ What we did:
           <li>Added caching for image loading and expensive queries</li>
           <li>Created an alembic migration script to apply the changes.</li>
         </ol>
-        <p>That was amazing! I was running in "yolo mode" in Cursor, so it did all that without my input. I had Postgres Pro in "restricted" mode (read-only), so I did not have to worry about unintended database changes.</p>
+        <p>That was amazing! I was running in "yolo" mode in Cursor, so it did all that without my input. I had Postgres Pro in "restricted" mode (read-only), so I did not have to worry about unintended database changes.</p>
       </td>
       <td align="center"><a href="https://youtu.be/qhcqZ6Lxg3c"><img src="https://deploy-preview-152--elated-shockley-6a4090.netlify.app/demos/mc-1-go-0-to-1.png"/></a></td>
     </tr>
