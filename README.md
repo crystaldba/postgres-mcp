@@ -15,11 +15,9 @@ For example, it provides:
 
 Postgres Pro also provides comprehensive schema information to support SQL generation, restricted and filtered SQL execution for safety, and more.
 
-
 ## Contents
 
 - [Features](#features)
-- [Demo](#demo)
 - [Quick Start](#quick-start)
 - [Usage Examples](#usage-examples)
 - [MCP Server API](#mcp-server-api)
@@ -37,7 +35,7 @@ Here is a demo of using Postgres Pro in Cursor to optimize and fix an AI-generat
 - fix bugs that require connecting data to code
 - add new features from single prompts
 
-**[View play-by-play of demo](examples.md)**
+**[Read the play-by-play](examples.md#Movie-Ratings-Website)**
 
 https://github.com/user-attachments/assets/be498c43-b3a1-453f-b92d-307d44d06345
 
