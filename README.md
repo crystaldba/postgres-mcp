@@ -15,6 +15,24 @@ For example, it provides:
 
 Postgres Pro also provides comprehensive schema information to support SQL generation, restricted and filtered SQL execution for safety, and more.
 
+## Demo
+
+Here is a demo of using Postgres Pro in Cursor to fix SQLAlchemy ORM queries in an AI-generated app.
+We initially built the app using Replit, but the generated database code ran very slowly, making the application practically unusable.
+
+https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
+
+**We used the Cursor AI agent and Postgres Pro to:**
+- Fix performance - including ORM queries, indexing, and caching
+- Fix bugs that require connecting data to code
+- Add new features from single prompts
+
+**Two ways to see demo**
+
+- Watch video above
+- [Read the play-by-play](examples/movie-app.md)
+
+
 ## Contents
 
 - [Demo](#demo)
@@ -26,23 +44,6 @@ Postgres Pro also provides comprehensive schema information to support SQL gener
 - [Frequently Asked Questions](#frequently-asked-questions)
 - [Technical Notes](#technical-notes)
 - [Postgres Pro Development](#postgres-pro-development)
-
-## Demo
-
-Here is a demo of using Postgres Pro in Cursor to optimize and fix an AI-generated app.
-We initially generated the app using Replit, but the SQLAlchemy code it wrote ran very slowly, making the application practically unusable.
-
-**We used the Cursor AI agent and Postgres Pro to:**
-- Fix performance - including ORM queries, indexing, and caching
-- Fix bugs that require connecting data to code
-- Add new features from single prompts
-
-**Two ways to see demo**
-
-- [Read the play-by-play](examples/movie-app.md)
-- Watch video below
-
-https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
 
 
 ## Features
