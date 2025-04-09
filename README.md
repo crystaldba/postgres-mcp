@@ -23,14 +23,15 @@
 
 ## Overview
 
-*Postgres Pro* is an open source Model Context Protocol (MCP) server built to support you and your AI agents throughout the entire development process—from initial coding, through testing and deployment, and to production tuning and maintenance.
+**Postgres Pro** is an open source Model Context Protocol (MCP) server built to support you and your AI agents throughout the **entire development process**—from initial coding, through testing and deployment, and to production tuning and maintenance.
 
 Postgres Pro does much more than wrap a database connection.
 For example, it provides:
-- Index tuning based on modern industrial-strength algorithms similar to those found in commercial databases.
+- 🚀 **Industrial-stength index tuning** using algorithms similar to those found in commercial databases.
   It efficiently explores thousands of possible indexes to find the best solution for your workload.
-- Support for LLM-led indexing by providing "what if?" scenario analysis based on production data distributions and query patterns.
-- Standardized checklists for analyzing database health, ensuring trustworthy and repeatable results.
+- 🤖 **"What if?" scenario analysis** allowing AI agents to simulate changes based on production data distributions and query patterns.
+- 🔍 **Production Health Diagnostics** providing standardized, comprehensive health checks to identify potential issues before they impact performance
+- 🛡️ **Safe SQL Execution** - implements restricted execution, ensuring read-only and resource-limited execution to protect production databases
 
 Postgres Pro also provides comprehensive schema information to support SQL generation, restricted and filtered SQL execution for safety, and more.
 
