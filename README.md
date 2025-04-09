@@ -16,7 +16,7 @@
   <a href="#features">Features</a> •
   <a href="#technical-notes">Technical Notes</a> •
   <a href="#mcp-server-api">MCP API</a> •
-  <a href="#related-projects">Related Projects</a> •
+  <a href="#related-projects">Related Projects</a>
 </div>
 
 </div>
