@@ -28,8 +28,7 @@
 
 Postgres Pro does much more than wrap a database connection.
 For example, it provides:
-- 🚀 **Industrial-stength index tuning** using algorithms similar to those found in commercial databases.
-  It efficiently explores thousands of possible indexes to find the best solution for your workload.
+- 🚀 **Industrial-stength index tuning** it efficiently explores thousands of possible indexes to find the best solution for your workload, using algorithms similar to those found in commercial databases.
 - 🤖 **"What if?" scenario analysis** allowing AI agents to simulate changes based on production data distributions and query patterns.
 - 🔍 **Production Health Diagnostics** providing standardized, comprehensive health checks to identify potential issues before they impact performance
 - 🛡️ **Safe SQL Execution** - implements restricted execution, ensuring read-only and resource-limited execution to protect production databases
