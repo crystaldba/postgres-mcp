@@ -1,6 +1,30 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="Postgres Pro Logo" width="300" />
+
 # Postgres Pro MCP Server
 
-[ [Quick Start](#quick-start) | [Discord Server](https://discord.gg/4BEHC7ZM) ]
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Go Report Card](https://goreportcard.com/badge/github.com/FreePeak/db-mcp-server)](https://goreportcard.com/report/github.com/FreePeak/db-mcp-server)
+[![Go Reference](https://pkg.go.dev/badge/github.com/FreePeak/db-mcp-server.svg)](https://pkg.go.dev/github.com/FreePeak/db-mcp-server)
+[![Contributors](https://img.shields.io/github/contributors/FreePeak/db-mcp-server)](https://github.com/FreePeak/db-mcp-server/graphs/contributors)
+
+<h3>A powerful multi-database server implementing the Model Context Protocol (MCP) to provide AI assistants with structured access to databases.</h3>
+
+<div class="toc">
+  <a href="#overview">Overview</a> •
+  <a href="#demo">Demo</a> •
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#usage-examples">Usage Examples</a> •
+  <a href="#mcp-server-api">MCP Server API</a> •
+  <a href="#related-projects">Related Projects</a> •
+  <a href="#technical-notes">Technical Notes</a> •
+  <a href="#frequently-asked-questions">FAQ</a> •
+  <a href="#postgres-pro-development">Development</a> •
+</div>
+
+</div>
 
 ## Overview
 
@@ -31,20 +55,6 @@ https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
 
 - Watch video above
 - [Read the play-by-play](examples/movie-app.md)
-
-
-## Contents
-
-- [Overview](#overview)
-- [Demo](#demo)
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Usage Examples](#usage-examples)
-- [MCP Server API](#mcp-server-api)
-- [Related Projects](#related-projects)
-- [Frequently Asked Questions](#frequently-asked-questions)
-- [Technical Notes](#technical-notes)
-- [Postgres Pro Development](#postgres-pro-development)
 
 
 ## Features
