@@ -72,20 +72,21 @@ Features include:
 
 ## Demo
 
-Here is a demo of using Postgres Pro in Cursor to fix SQLAlchemy ORM queries in an AI-generated app.
-We initially built the app using Replit, but the generated database code ran very slowly, making the application practically unusable.
+*From Unusable to Lightning Fast*
+
+- **Challenge:** We generated a movie app using an AI assistant, but the SQLAlchemy ORM code ran painfully slowly
+- **Solution:** Using Postgres Pro with Cursor, we fixed the performance issues in minutes
+
+**We used the Cursor AI agent and Postgres Pro to:**
+- 🚀 Fix performance - including ORM queries, indexing, and caching
+- 🛠️ Fix bugs that require connecting data to code
+- 🧠 Add new features from single prompts
+
+See the video below or read the [play-by-play](examples/movie-app.md).
 
 https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
 
-**We used the Cursor AI agent and Postgres Pro to:**
-- Fix performance - including ORM queries, indexing, and caching
-- Fix bugs that require connecting data to code
-- Add new features from single prompts
 
-**Two ways to see demo**
-
-- Watch video above
-- [Read the play-by-play](examples/movie-app.md)
 
 
 ## Quick Start
