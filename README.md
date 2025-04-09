@@ -14,7 +14,6 @@
   <a href="#overview">Overview</a> •
   <a href="#demo">Demo</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#features">Features</a> •
   <a href="#technical-notes">Technical Notes</a> •
   <a href="#mcp-server-api">MCP API</a> •
   <a href="#related-projects">Related Projects</a>
