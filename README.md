@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="Postgres Pro Logo" width="300" />
+<img src="assets/postgres-pro.png" alt="Postgres Pro Logo" />
 
 # Postgres Pro MCP Server
 
