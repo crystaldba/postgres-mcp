@@ -7,7 +7,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/FreePeak/db-mcp-server.svg)](https://pkg.go.dev/github.com/FreePeak/db-mcp-server)
 [![Contributors](https://img.shields.io/github/contributors/FreePeak/db-mcp-server)](https://github.com/FreePeak/db-mcp-server/graphs/contributors)
 
-<h3>A powerful multi-database server implementing the Model Context Protocol (MCP) to provide AI assistants with structured access to databases.</h3>
+<h3>A Postgres MCP server with index-tuning, explain plans, health checks, and safe sql exection</h3>
 
 <div class="toc">
   <a href="#overview">Overview</a> •
