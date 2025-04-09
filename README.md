@@ -3,6 +3,7 @@
 <img src="assets/postgres-pro.png" alt="Postgres Pro Logo" width="600"/>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![PyPI - Version](https://img.shields.io/pypi/v/postgres-mcp)](https://pypi.org/project/postgres-mcp/)
 [![Discord](https://img.shields.io/discord/1336769798603931789?label=Discord)](https://discord.gg/4BEHC7ZM)
 [![Twitter Follow](https://img.shields.io/twitter/follow/auto_dba?style=flat)](https://x.com/auto_dba)
 [![Contributors](https://img.shields.io/github/contributors/crystaldba/postgres-mcp)](https://github.com/crystaldba/postgres-mcp/graphs/contributors)
