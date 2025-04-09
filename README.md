@@ -2,6 +2,8 @@
 
 <img src="assets/postgres-pro.png" alt="Postgres Pro Logo" width="600"/>
 
+[![Discord](https://img.shields.io/discord/996791218879086662?label=Discord)](https://discord.gg/4BEHC7ZM)
+[![Twitter Follow](https://img.shields.io/twitter/follow/auto_dba?style=flat)](https://x.com/auto_dba)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Go Report Card](https://goreportcard.com/badge/github.com/FreePeak/db-mcp-server)](https://goreportcard.com/report/github.com/FreePeak/db-mcp-server)
 [![Go Reference](https://pkg.go.dev/badge/github.com/FreePeak/db-mcp-server.svg)](https://pkg.go.dev/github.com/FreePeak/db-mcp-server)
