@@ -34,7 +34,7 @@ For example, it provides:
 - 🔍 **Production Health Diagnostics** providing standardized, comprehensive health checks to identify potential issues before they impact performance
 - 🛡️ **Safe SQL Execution** - implements restricted execution, ensuring read-only and resource-limited execution to protect production databases
 
-Postgres Pro also provides comprehensive schema information to support SQL generation, restricted and filtered SQL execution for safety, and more.
+Postgres Pro also provides comprehensive schema information to support SQL generation, explain plans, and more.
 
 ## Demo
 
