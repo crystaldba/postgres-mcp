@@ -7,19 +7,16 @@
 [![Twitter Follow](https://img.shields.io/twitter/follow/auto_dba?style=flat)](https://x.com/auto_dba)
 [![Contributors](https://img.shields.io/github/contributors/FreePeak/db-mcp-server)](https://github.com/FreePeak/db-mcp-server/graphs/contributors)
 
-<h3>A Postgres MCP server with index-tuning, explain plans, health checks, and safe sql exection</h3>
+<h3>A Postgres MCP server with index tuning, explain plans, health checks, and safe sql execution</h3>
 
 <div class="toc">
   <a href="#overview">Overview</a> •
   <a href="#demo">Demo</a> •
-  <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#usage-examples">Usage Examples</a> •
-  <a href="#mcp-server-api">MCP Server API</a> •
-  <a href="#related-projects">Related Projects</a> •
+  <a href="#features">Features</a> •
   <a href="#technical-notes">Technical Notes</a> •
-  <a href="#frequently-asked-questions">FAQ</a> •
-  <a href="#postgres-pro-development">Development</a> •
+  <a href="#mcp-server-api">MCP API</a> •
+  <a href="#related-projects">Related Projects</a> •
 </div>
 
 </div>
