@@ -53,25 +53,51 @@ https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
 - [Read the play-by-play](examples/movie-app.md)
 
 
-## Features
+## ✨ Features
+
+
+<table>
+  <tr>
+    <td width="50%">
+      <h3>🔍 Database Health</h3>
+      <ul>
+        <li>Detect unused/duplicate indexes</li>
+        <li>Monitor cache hit rates</li>
+        <li>Check connection utilization</li>
+        <li>Identify vacuum needs before problems occur</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h3>⚡ Index Tuning</h3>
+      <ul>
+        <li>Generate optimal indexes using proven algorithms</li>
+        <li>Validate AI-suggested indexes</li>
+        <li>Simulate performance impacts with hypothetical indexes</li>
+        <li>Balance performance gain vs storage costs</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h3>📊 Schema Intelligence</h3>
+      <ul>
+        <li>Detailed schema information for tables, views & more</li>
+        <li>Context-aware SQL generation</li>
+        <li>Optimal column selection recommendations</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h3>🔒 Protected Execution</h3>
+      <ul>
+        <li><b>Unrestricted Mode:</b> Full read/write for development</li>
+        <li><b>Restricted Mode:</b> Read-only with resource limits for production</li>
+        <li>Safe SQL parsing to prevent security issues</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 Postgres Pro includes an expanding set of tools covering several areas:
-
-- **Database Health**.
-  Check cache hit rates, monitor vacuum health, identify unused/duplicate indexes, and more.
-
-- **Index Tuning**.
-  Ensure your SQL queries run efficiently and return quickly.
-  Find tuning targets, validate AI-generated suggestions, or generate candidates using classical index optimization algorithms.
-  Simulate how Postgres will perform after adding indexes using the explain plans together with [hypothetical indexes](https://hypopg.readthedocs.io/).
-
-- **Schema Information**.
-  Help your AI Agent generate SQL reliably and successfully with detailed schema information of your database objects—including tables, views, sequences, stored procedures, and triggers.
-
-- **Protected SQL Execution**.
-  Work fast or safe, as you choose:
-  - *Unrestricted Mode:* Provide full read/write access for development environments. Let your AI agent modify data, change the schema, drop tables, whatever you need it to do.
-  - *Restricted Mode:* Be safe by limiting access in production environments by enforcing checks to ensure read-only operations and limits on resource consumption.
 
 
 ## Quick Start
