@@ -53,6 +53,18 @@ https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
 - [Read the play-by-play](examples/movie-app.md)
 
 
+## How It's Different
+
+| Postgres Pro | Other Postgres MCP Servers |
+|--------------|----------------------------|
+| ✅ Deterministic database health checks | ❌ Unrepeatable LLM-generated health queries |
+| ✅ Principled indexing search strategies | ❌ Gen-AI guesses at indexing improvements |
+| ✅ Workload analysis to find top problems | ❌ Inconsistent problem analysis |
+| ✅ Simulates performance improvements | ❌ Try it yourself and see if it works |
+
+Postgres Pro complements generative AI by adding deterministic tools and classical optimization algorithms
+The combination is both reliable and flexible.
+
 ## ✨ Features
 
 
@@ -96,8 +108,6 @@ https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
     </td>
   </tr>
 </table>
-
-Postgres Pro includes an expanding set of tools covering several areas:
 
 
 ## Quick Start
