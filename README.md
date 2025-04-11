@@ -35,6 +35,8 @@ For example, it provides:
 
 Postgres Pro also provides comprehensive schema information to support SQL generation, explain plans, and more.
 
+For additional background on why we built Postgres Pro, see [our launch blog post](https://www.crystaldba.ai/blog/post/announcing-postgres-mcp-server-pro).
+
 ## Demo
 
 Here is a demo of using Postgres Pro in Cursor to fix SQLAlchemy ORM queries in an AI-generated app.
