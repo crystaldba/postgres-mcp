@@ -14,7 +14,6 @@
   <a href="#overview">Overview</a> •
   <a href="#demo">Demo</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#features">Features</a> •
   <a href="#technical-notes">Technical Notes</a> •
   <a href="#mcp-server-api">MCP API</a> •
   <a href="#related-projects">Related Projects</a>
@@ -27,53 +26,69 @@
 **Postgres Pro** is an open source Model Context Protocol (MCP) server built to support you and your AI agents throughout the **entire development process**—from initial coding, through testing and deployment, and to production tuning and maintenance.
 
 Postgres Pro does much more than wrap a database connection.
-For example, it provides:
-- 🚀 **Industrial-stength index tuning** it efficiently explores thousands of possible indexes to find the best solution for your workload, using algorithms similar to those found in commercial databases.
-- 🤖 **"What if?" scenario analysis** allowing AI agents to simulate changes based on production data distributions and query patterns.
-- 🔍 **Production Health Diagnostics** providing standardized, comprehensive health checks to identify potential issues before they impact performance
-- 🛡️ **Safe SQL Execution** - implements restricted execution, ensuring read-only and resource-limited execution to protect production databases
 
-Postgres Pro also provides comprehensive schema information to support SQL generation, explain plans, and more.
+Features include:
+
+<table>
+  <tr>
+    <td width="50%">
+      <h4>🔍 Database Health</h4>
+      <ul>
+        <li>Detect unused/duplicate indexes</li>
+        <li>Monitor cache hit rates</li>
+        <li>Check connection utilization</li>
+        <li>Identify vacuum needs before problems occur</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h4>⚡ Index Tuning</h4>
+      <ul>
+        <li>Generate optimal indexes using proven algorithms</li>
+        <li>Validate AI-suggested indexes</li>
+        <li>Simulate performance impacts with hypothetical indexes</li>
+        <li>Balance performance gain vs storage costs</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <h4>📊 Schema Intelligence</h4>
+      <ul>
+        <li>Detailed schema information for tables, views & more</li>
+        <li>Context-aware SQL generation</li>
+        <li>Optimal column selection recommendations</li>
+      </ul>
+    </td>
+    <td width="50%">
+      <h4>🔒 Protected Execution</h4>
+      <ul>
+        <li><b>Unrestricted Mode:</b> Full read/write for development</li>
+        <li><b>Restricted Mode:</b> Read-only with resource limits for production</li>
+        <li>Safe SQL parsing to prevent security issues</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 For additional background on why we built Postgres Pro, see [our launch blog post](https://www.crystaldba.ai/blog/post/announcing-postgres-mcp-server-pro).
 
 ## Demo
 
-Here is a demo of using Postgres Pro in Cursor to fix SQLAlchemy ORM queries in an AI-generated app.
-We initially built the app using Replit, but the generated database code ran very slowly, making the application practically unusable.
+*From Unusable to Lightning Fast*
+
+- **Challenge:** We generated a movie app using an AI assistant, but the SQLAlchemy ORM code ran painfully slowly
+- **Solution:** Using Postgres Pro with Cursor, we fixed the performance issues in minutes
+
+**We used the Cursor AI agent and Postgres Pro to:**
+- 🚀 Fix performance - including ORM queries, indexing, and caching
+- 🛠️ Fix bugs that require connecting data to code
+- 🧠 Add new features from single prompts
+
+See the video below or read the [play-by-play](examples/movie-app.md).
 
 https://github.com/user-attachments/assets/24e05745-65e9-4998-b877-a368f1eadc13
 
-**We used the Cursor AI agent and Postgres Pro to:**
-- Fix performance - including ORM queries, indexing, and caching
-- Fix bugs that require connecting data to code
-- Add new features from single prompts
 
-**Two ways to see demo**
-
-- Watch video above
-- [Read the play-by-play](examples/movie-app.md)
-
-
-## Features
-
-Postgres Pro includes an expanding set of tools covering several areas:
-
-- **Database Health**.
-  Check cache hit rates, monitor vacuum health, identify unused/duplicate indexes, and more.
-
-- **Index Tuning**.
-  Ensure your SQL queries run efficiently and return quickly.
-  Find tuning targets, validate AI-generated suggestions, or generate candidates using classical index optimization algorithms.
-  Simulate how Postgres will perform after adding indexes using the explain plans together with [hypothetical indexes](https://hypopg.readthedocs.io/).
-
-- **Schema Information**.
-  Help your AI Agent generate SQL reliably and successfully with detailed schema information of your database objects—including tables, views, sequences, stored procedures, and triggers.
-
-- **Protected SQL Execution**.
-  Work fast or safe, as you choose:
-  - *Unrestricted Mode:* Provide full read/write access for development environments. Let your AI agent modify data, change the schema, drop tables, whatever you need it to do.
-  - *Restricted Mode:* Be safe by limiting access in production environments by enforcing checks to ensure read-only operations and limits on resource consumption.
 
 
 ## Quick Start
@@ -339,6 +354,17 @@ Postgres Pro incorporates health checks from PgHero.
 There are many MCP servers allow an AI agent to run queries against a Postgres database.
 Postgres Pro does that too, but also adds tools for understanding and improving the performance of your Postgres database.
 For example, it implements a version of the [Anytime Algorithm of Database Tuning Advisor for Microsoft SQL Server](https://www.microsoft.com/en-us/research/wp-content/uploads/2020/06/Anytime-Algorithm-of-Database-Tuning-Advisor-for-Microsoft-SQL-Server.pdf), a modern industrial-strength algorithm for automatic index tuning.
+
+| Postgres Pro | Other Postgres MCP Servers |
+|--------------|----------------------------|
+| ✅ Deterministic database health checks | ❌ Unrepeatable LLM-generated health queries |
+| ✅ Principled indexing search strategies | ❌ Gen-AI guesses at indexing improvements |
+| ✅ Workload analysis to find top problems | ❌ Inconsistent problem analysis |
+| ✅ Simulates performance improvements | ❌ Try it yourself and see if it works |
+
+Postgres Pro complements generative AI by adding deterministic tools and classical optimization algorithms
+The combination is both reliable and flexible.
+
 
 *Why are MCP tools needed when the LLM can reason, generate SQL, etc?*
 LLMs are invaluable for tasks that involve ambiguity, reasoning, or natural language.
