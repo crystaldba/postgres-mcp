@@ -70,6 +70,8 @@ Features include:
   </tr>
 </table>
 
+For additional background on why we built Postgres Pro, see [our launch blog post](https://www.crystaldba.ai/blog/post/announcing-postgres-mcp-server-pro).
+
 ## Demo
 
 *From Unusable to Lightning Fast*
