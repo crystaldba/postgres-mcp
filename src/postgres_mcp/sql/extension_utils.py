@@ -1,8 +1,8 @@
 """Utilities for working with PostgreSQL extensions."""
 
 import logging
+from dataclasses import dataclass
 from typing import Literal
-from typing import TypedDict
 
 from .safe_sql import SafeSqlDriver
 from .sql_driver import SqlDriver
@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 _POSTGRES_VERSION = None
 
 
-class ExtensionStatus(TypedDict):
+@dataclass
+class ExtensionStatus:
     """Status of an extension."""
 
     is_installed: bool
@@ -118,25 +119,25 @@ async def check_extension(
     )
 
     # Initialize result
-    result: ExtensionStatus = {
-        "is_installed": False,
-        "is_available": False,
-        "name": extension_name,
-        "message": "",
-        "default_version": None,
-    }
+    result = ExtensionStatus(
+        is_installed=False,
+        is_available=False,
+        name=extension_name,
+        message="",
+        default_version=None,
+    )
 
     if installed_result and len(installed_result) > 0:
         # Extension is installed
         version = installed_result[0].cells.get("extversion", "unknown")
-        result["is_installed"] = True
-        result["is_available"] = True
+        result.is_installed = True
+        result.is_available = True
 
         if include_messages:
             if message_type == "markdown":
-                result["message"] = f"The **{extension_name}** extension (version {version}) is already installed."
+                result.message = f"The **{extension_name}** extension (version {version}) is already installed."
             else:
-                result["message"] = f"The {extension_name} extension (version {version}) is already installed."
+                result.message = f"The {extension_name} extension (version {version}) is already installed."
     else:
         # Check if the extension is available but not installed
         available_result = await SafeSqlDriver.execute_param_query(
@@ -147,17 +148,17 @@ async def check_extension(
 
         if available_result and len(available_result) > 0:
             # Extension is available but not installed
-            result["is_available"] = True
-            result["default_version"] = available_result[0].cells.get("default_version")
+            result.is_available = True
+            result.default_version = available_result[0].cells.get("default_version")
 
             if include_messages:
                 if message_type == "markdown":
-                    result["message"] = (
+                    result.message = (
                         f"The **{extension_name}** extension is available but not installed.\n\n"
                         f"You can install it by running: `CREATE EXTENSION {extension_name};`."
                     )
                 else:
-                    result["message"] = (
+                    result.message = (
                         f"The {extension_name} extension is available but not installed.\n"
                         f"You can install it by running: CREATE EXTENSION {extension_name};"
                     )
@@ -165,14 +166,14 @@ async def check_extension(
             # Extension is not available
             if include_messages:
                 if message_type == "markdown":
-                    result["message"] = (
+                    result.message = (
                         f"The **{extension_name}** extension is not available on this PostgreSQL server.\n\n"
                         f"To install it, you need to:\n"
                         f"1. Install the extension package on the server\n"
                         f"2. Run: `CREATE EXTENSION {extension_name};`"
                     )
                 else:
-                    result["message"] = (
+                    result.message = (
                         f"The {extension_name} extension is not available on this PostgreSQL server.\n"
                         f"To install it, you need to:\n"
                         f"1. Install the extension package on the server\n"
@@ -195,13 +196,13 @@ async def check_hypopg_installation_status(sql_driver: SqlDriver, message_type: 
     """
     status = await check_extension(sql_driver, "hypopg", include_messages=False)
 
-    if status["is_installed"]:
+    if status.is_installed:
         if message_type == "markdown":
             return True, "The **hypopg** extension is already installed."
         else:
             return True, "The hypopg extension is already installed."
 
-    if status["is_available"]:
+    if status.is_available:
         if message_type == "markdown":
             return False, (
                 "The **hypopg** extension is required to test hypothetical indexes, but it is not currently installed.\n\n"

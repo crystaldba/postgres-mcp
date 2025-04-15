@@ -5,7 +5,7 @@ import logging
 import os
 import signal
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from typing import List
 from typing import Union
 
@@ -460,26 +460,29 @@ async def analyze_db_health(
     return format_text_response(result)
 
 
-@mcp.tool(description=f"Reports the slowest SQL queries based on execution time, using data from the '{PG_STAT_STATEMENTS}' extension.")
+@mcp.tool(
+    name="get_top_queries",
+    description=f"Reports the slowest or most resource-intensive queries using data from the '{PG_STAT_STATEMENTS}' extension.",
+)
 async def get_top_queries(
-    limit: int = Field(description="Number of slow queries to return", default=10),
     sort_by: str = Field(
-        description="Sort criteria: 'total' for total execution time or 'mean' for mean execution time per call",
-        default="mean",
+        description="Ranking criteria: 'total_time' for total execution time or 'mean_time' for mean execution time per call, or 'resources' "
+          "for resource-intensive queries",
+        default="resources",
     ),
+    limit: int = Field(description="Number of queries to return when ranking based on mean_time or total_time", default=10),
 ) -> ResponseType:
-    """Reports the slowest SQL queries based on execution time.
-
-    This tool handles PostgreSQL version differences automatically:
-    - In PostgreSQL 13+: Uses total_exec_time/mean_exec_time columns
-    - In PostgreSQL 12 and older: Uses total_time/mean_time columns
-    """
     try:
         sql_driver = await get_sql_driver()
         top_queries_tool = TopQueriesCalc(sql_driver=sql_driver)
-        if sort_by != "mean" and sort_by != "total":
-            return format_error_response("Invalid sort criteria. Please use 'mean' or 'total'.")
-        result = await top_queries_tool.get_top_queries(limit=limit, sort_by=sort_by)
+
+        if sort_by == "resources":
+            result = await top_queries_tool.get_top_resource_queries()
+            return format_text_response(result)
+        elif sort_by == "mean" or sort_by == "total":
+            result = await top_queries_tool.get_top_queries_by_time(limit=limit, sort_by=sort_by)
+        else:
+            return format_error_response("Invalid sort criteria. Please use 'resources' or 'mean_time' or 'total_time'.")
         return format_text_response(result)
     except Exception as e:
         logger.error(f"Error getting slow queries: {e}")
