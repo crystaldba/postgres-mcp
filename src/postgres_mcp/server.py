@@ -5,7 +5,7 @@ import logging
 import os
 import signal
 from enum import Enum
-from typing import Any, Literal
+from typing import Any
 from typing import List
 from typing import Union
 
@@ -467,7 +467,7 @@ async def analyze_db_health(
 async def get_top_queries(
     sort_by: str = Field(
         description="Ranking criteria: 'total_time' for total execution time or 'mean_time' for mean execution time per call, or 'resources' "
-          "for resource-intensive queries",
+        "for resource-intensive queries",
         default="resources",
     ),
     limit: int = Field(description="Number of queries to return when ranking based on mean_time or total_time", default=10),

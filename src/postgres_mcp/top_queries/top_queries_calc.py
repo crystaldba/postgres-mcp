@@ -1,9 +1,8 @@
-from typing import Literal
-from typing import Union
-from typing import LiteralString
-from typing import cast
-
 import logging
+from typing import Literal
+from typing import LiteralString
+from typing import Union
+from typing import cast
 
 from ..sql import SafeSqlDriver
 from ..sql import SqlDriver
@@ -135,7 +134,6 @@ class TopQueriesCalc:
                 # Return installation instructions if the extension is not installed
                 return install_pg_stat_statements_message
 
-
             # Check PostgreSQL version to determine column names
             pg_version = await get_postgres_version(self.sql_driver)
             logger.debug(f"PostgreSQL version: {pg_version}")
@@ -150,8 +148,9 @@ class TopQueriesCalc:
                 total_time_col = "total_time"
                 mean_time_col = "mean_time"
 
-
-            query = cast(LiteralString, f"""
+            query = cast(
+                LiteralString,
+                f"""
                 WITH resource_fractions AS (
                     SELECT
                         query,
@@ -195,7 +194,8 @@ class TopQueriesCalc:
                     OR shared_blks_dirtied_frac > {frac_threshold}
                     OR total_wal_bytes_frac > {frac_threshold}
                 ORDER BY total_exec_time DESC
-            """)
+            """,
+            )
 
             logger.debug(f"Executing query: {query}")
             slow_query_rows = await SafeSqlDriver.execute_param_query(
