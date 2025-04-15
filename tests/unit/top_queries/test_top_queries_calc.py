@@ -7,6 +7,7 @@ import pytest
 import postgres_mcp.top_queries.top_queries_calc as top_queries_module
 from postgres_mcp.sql import SqlDriver
 from postgres_mcp.top_queries import TopQueriesCalc
+from postgres_mcp.sql.extension_utils import ExtensionStatus
 
 
 class MockSqlRowResult:
@@ -84,13 +85,13 @@ def mock_pg13_driver():
 def mock_extension_installed():
     """Mock check_extension to report extension is installed."""
     with patch.object(top_queries_module, "check_extension", autospec=True) as mock_check:
-        mock_check.return_value = {
-            "is_installed": True,
-            "is_available": True,
-            "name": "pg_stat_statements",
-            "message": "Extension is installed",
-            "default_version": "1.0",
-        }
+        mock_check.return_value = ExtensionStatus(
+            is_installed=True,
+            is_available=True,
+            name="pg_stat_statements",
+            message="Extension is installed",
+            default_version="1.0",
+        )
         yield mock_check
 
 
@@ -98,13 +99,13 @@ def mock_extension_installed():
 def mock_extension_not_installed():
     """Mock check_extension to report extension is not installed."""
     with patch.object(top_queries_module, "check_extension", autospec=True) as mock_check:
-        mock_check.return_value = {
-            "is_installed": False,
-            "is_available": True,
-            "name": "pg_stat_statements",
-            "message": "Extension not installed",
-            "default_version": None,
-        }
+        mock_check.return_value = ExtensionStatus(
+            is_installed=False,
+            is_available=True,
+            name="pg_stat_statements",
+            message="Extension not installed",
+            default_version=None,
+        )
         yield mock_check
 
 
