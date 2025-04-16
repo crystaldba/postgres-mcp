@@ -480,7 +480,8 @@ async def get_top_queries(
             result = await top_queries_tool.get_top_resource_queries()
             return format_text_response(result)
         elif sort_by == "mean_time" or sort_by == "total_time":
-            result = await top_queries_tool.get_top_queries_by_time(limit=limit, sort_by=sort_by)
+            # Map the sort_by values to what get_top_queries_by_time expects
+            result = await top_queries_tool.get_top_queries_by_time(limit=limit, sort_by="mean" if sort_by == "mean_time" else "total")
         else:
             return format_error_response("Invalid sort criteria. Please use 'resources' or 'mean_time' or 'total_time'.")
         return format_text_response(result)

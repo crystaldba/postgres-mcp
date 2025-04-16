@@ -6,8 +6,8 @@ import pytest
 
 import postgres_mcp.top_queries.top_queries_calc as top_queries_module
 from postgres_mcp.sql import SqlDriver
-from postgres_mcp.top_queries import TopQueriesCalc
 from postgres_mcp.sql.extension_utils import ExtensionStatus
+from postgres_mcp.top_queries import TopQueriesCalc
 
 
 class MockSqlRowResult:
