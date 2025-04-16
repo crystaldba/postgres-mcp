@@ -188,7 +188,7 @@ class TopQueriesCalc:
                     wal_bytes
                 FROM resource_fractions
                 WHERE
-                    OR total_exec_time_frac > {frac_threshold}
+                    total_exec_time_frac > {frac_threshold}
                     OR shared_blks_accessed_frac > {frac_threshold}
                     OR shared_blks_read_frac > {frac_threshold}
                     OR shared_blks_dirtied_frac > {frac_threshold}
