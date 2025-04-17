@@ -7,7 +7,7 @@
 replace_localhost() {
     local input_str="$1"
     local docker_host=""
-    
+
     # Try to determine Docker host address
     if ping -c 1 -w 1 host.docker.internal >/dev/null 2>&1; then
         docker_host="host.docker.internal"
@@ -19,7 +19,7 @@ replace_localhost() {
         echo "WARNING: Cannot determine Docker host IP. Using original address." >&2
         return 1
     fi
-    
+
     # Replace localhost with Docker host
     if [[ -n "$docker_host" ]]; then
         local new_str="${input_str/localhost/$docker_host}"
@@ -27,7 +27,7 @@ replace_localhost() {
         echo "$new_str"
         return 0
     fi
-    
+
     # No replacement made
     echo "$input_str"
     return 1
@@ -52,6 +52,32 @@ for arg in "$@"; do
         processed_args+=("$arg")
     fi
 done
+
+# Check if SSE transport is specified and --sse-host is not already set
+has_sse=false
+has_sse_host=false
+
+for arg in "${processed_args[@]}"; do
+    if [[ "$arg" == "--transport" ]]; then
+        # Check next argument for "sse"
+        for next_arg in "${processed_args[@]}"; do
+            if [[ "$next_arg" == "sse" ]]; then
+                has_sse=true
+                break
+            fi
+        done
+    elif [[ "$arg" == "--transport=sse" ]]; then
+        has_sse=true
+    elif [[ "$arg" == "--sse-host"* ]]; then
+        has_sse_host=true
+    fi
+done
+
+# Add --sse-host if needed
+if [[ "$has_sse" == true ]] && [[ "$has_sse_host" == false ]]; then
+    echo "SSE transport detected, adding --sse-host=0.0.0.0" >&2
+    processed_args+=("--sse-host=0.0.0.0")
+fi
 
 echo "----------------" >&2
 echo "Executing command:" >&2

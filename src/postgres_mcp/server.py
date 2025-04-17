@@ -27,6 +27,7 @@ from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
 from .top_queries import TopQueriesCalc
 
+# Initialize FastMCP with default settings
 mcp = FastMCP("postgres-mcp")
 
 # Constants
@@ -501,6 +502,25 @@ async def main():
         default=AccessMode.UNRESTRICTED.value,
         help="Set SQL access mode: unrestricted (unrestricted) or restricted (read-only with protections)",
     )
+    parser.add_argument(
+        "--transport",
+        type=str,
+        choices=["stdio", "sse"],
+        default="stdio",
+        help="Select MCP transport: stdio (default) or sse",
+    )
+    parser.add_argument(
+        "--sse-host",
+        type=str,
+        default="localhost",
+        help="Host to bind SSE server to (default: localhost)",
+    )
+    parser.add_argument(
+        "--sse-port",
+        type=int,
+        default=8000,
+        help="Port for SSE server (default: 8000)",
+    )
 
     args = parser.parse_args()
 
@@ -547,7 +567,14 @@ async def main():
         logger.warning("Signal handling not supported on Windows")
         pass
 
-    await mcp.run_stdio_async()
+    # Run the server with the selected transport (always async)
+    if args.transport == "stdio":
+        await mcp.run_stdio_async()
+    else:
+        # Update FastMCP settings for SSE transport
+        mcp.settings.host = args.sse_host
+        mcp.settings.port = args.sse_port
+        await mcp.run_sse_async()
 
 
 async def shutdown(sig=None):

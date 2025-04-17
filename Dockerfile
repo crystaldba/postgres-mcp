@@ -50,6 +50,9 @@ RUN apt-get update && apt-get install -y \
 COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
+# Expose the SSE port
+EXPOSE 8000
+
 # Run the postgres-mcp server
 # Users can pass a database URI or individual connection arguments:
 #   docker run -it --rm postgres-mcp postgres://user:pass@host:port/dbname

@@ -249,6 +249,30 @@ Many MCP clients have similar configuration files to Claude Desktop, and you can
 - If you are using Windsurf, you can navigate to from the `Command Palette` to `Open Windsurf Settings Page` to access the configuration file.
 - If you are using Goose run `goose configure`, then select `Add Extension`.
 
+## SSE Transport
+
+Postgres Pro supports the SSE transport, which allows you to connect to the server using a web browser.
+To use the SSE transport, you need to start the server with the `--transport sse` flag.
+
+```bash
+docker run -p 8000:8000 -e DATABASE_URL=postgresql://username:password@localhost:5432/dbname crystaldba/postgres-mcp --transport sse
+```
+
+Then update your MCP client configuration to call the the MCP server.
+For example, in Windsurf's `mcp_config.json` you can put:
+
+```json
+{
+    "mcpServers": {
+        "postgres": {
+            "type": "sse",
+            "serverUrl": "http://localhost:8000/sse"
+        }
+    }
+}
+```
+
+
 ## Postgres Extension Installation (Optional)
 
 To enable index tuning and comprehensive performance analysis you need to load the `pg_statements` and `hypopg` extensions on your database.
