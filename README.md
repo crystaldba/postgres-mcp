@@ -8,7 +8,7 @@
 [![Twitter Follow](https://img.shields.io/twitter/follow/auto_dba?style=flat)](https://x.com/auto_dba)
 [![Contributors](https://img.shields.io/github/contributors/crystaldba/postgres-mcp)](https://github.com/crystaldba/postgres-mcp/graphs/contributors)
 
-<h3>A Postgres MCP server with index tuning, explain plans, health checks, and safe sql execution</h3>
+<h3>A Postgres MCP server with index tuning, explain plans, health checks, and safe sql execution.</h3>
 
 <div class="toc">
   <a href="#overview">Overview</a> •
@@ -25,20 +25,13 @@
 
 **Postgres Pro** is an open source Model Context Protocol (MCP) server built to support you and your AI agents throughout the **entire development process**—from initial coding, through testing and deployment, and to production tuning and maintenance.
 
-Postgres Pro does much more than wrap a database connection.
+Postgres Pro does much more than wrap a database connection. Features include:
 
-Features include:
-
-- **🔍 Database Health** 
-    - monitor index health, connection utilization, buffer cache, vacuum health, trasaction id wraparound, invalid constraints, and more.
-- **⚡ Index Tuning** 
-    - explore thousands of possible indexes to find the best solution for your workload, using algorithms similar to those found in commercial databases.
-- **🤖 Query Plans** 
-    - validate and test performance impacts by checking explain plans and simulating the impact of hypothetical indexes.
-- **📊 Schema Intelligence** 
-    - context-aware SQL generation based on detailed schema understanding of the tables, views, indexes, sequences, etc. 
-- **🛡️ Safe SQL Execution**
-    - Configurable access control to support both development and production environments, including support for read-only access and safe SQL parsing to prevent security issues.
+- **🔍 Database Health** - monitor index health, connection utilization, buffer cache, vacuum health, trasaction id wraparound, invalid constraints, and more.
+- **⚡ Index Tuning** - explore thousands of possible indexes to find the best solution for your workload, using algorithms similar to those found in commercial databases.
+- **🤖 Query Plans** - validate and test performance impacts by checking explain plans and simulating the impact of hypothetical indexes.
+- **📊 Schema Intelligence** - context-aware SQL generation based on detailed understanding of the schema including tables, views, indexes and sequences. 
+- **🛡️ Safe SQL Execution** - configurable access control, including support for read-only mode and safe SQL parsing, making it usable for both development and production.
 
 For additional background on why we built Postgres Pro, see [our launch blog post](https://www.crystaldba.ai/blog/post/announcing-postgres-mcp-server-pro).
 
