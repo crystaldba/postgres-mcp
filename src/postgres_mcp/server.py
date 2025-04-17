@@ -21,7 +21,7 @@ from .artifacts import ErrorResult
 from .artifacts import ExplainPlanArtifact
 from .database_health import DatabaseHealthTool
 from .database_health import HealthType
-from .dta import MAX_NUM_DTA_QUERIES_LIMIT
+from .dta import MAX_NUM_INDEX_TUNING_QUERIES
 from .dta import DTATool
 from .dta.llm_opt import LLMOptimizerTool
 from .explain import ExplainPlanTool
@@ -432,8 +432,8 @@ async def analyze_query_indexes(
     """Analyze a list of SQL queries and recommend optimal indexes."""
     if len(queries) == 0:
         return format_error_response("Please provide a non-empty list of queries to analyze.")
-    if len(queries) > MAX_NUM_DTA_QUERIES_LIMIT:
-        return format_error_response(f"Please provide a list of up to {MAX_NUM_DTA_QUERIES_LIMIT} queries to analyze.")
+    if len(queries) > MAX_NUM_INDEX_TUNING_QUERIES:
+        return format_error_response(f"Please provide a list of up to {MAX_NUM_INDEX_TUNING_QUERIES} queries to analyze.")
 
     try:
         sql_driver = await get_sql_driver()
