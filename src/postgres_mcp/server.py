@@ -7,11 +7,15 @@ import signal
 from enum import Enum
 from typing import Any
 from typing import List
+from typing import Literal
 from typing import Union
 
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
+from pydantic import validate_call
+
+from postgres_mcp.dta.dta_calc import DatabaseTuningAdvisor
 
 from .artifacts import ErrorResult
 from .artifacts import ExplainPlanArtifact
@@ -19,6 +23,7 @@ from .database_health import DatabaseHealthTool
 from .database_health import HealthType
 from .dta import MAX_NUM_DTA_QUERIES_LIMIT
 from .dta import DTATool
+from .dta.llm_opt import LLMOptimizerTool
 from .explain import ExplainPlanTool
 from .sql import DbConnPool
 from .sql import SafeSqlDriver
@@ -397,13 +402,19 @@ async def execute_sql(
 
 
 @mcp.tool(description="Analyze frequently executed queries in the database and recommend optimal indexes")
+@validate_call
 async def analyze_workload_indexes(
     max_index_size_mb: int = Field(description="Max index size in MB", default=10000),
+    method: Literal["dta", "llm"] = Field(description="Method to use for analysis", default="dta"),
 ) -> ResponseType:
     """Analyze frequently executed queries in the database and recommend optimal indexes."""
     try:
         sql_driver = await get_sql_driver()
-        dta_tool = DTATool(sql_driver)
+        if method == "dta":
+            index_tuning = DatabaseTuningAdvisor(sql_driver)
+        else:
+            index_tuning = LLMOptimizerTool(sql_driver)
+        dta_tool = DTATool(sql_driver, index_tuning)
         result = await dta_tool.analyze_workload(max_index_size_mb=max_index_size_mb)
         return format_text_response(result)
     except Exception as e:
@@ -412,9 +423,11 @@ async def analyze_workload_indexes(
 
 
 @mcp.tool(description="Analyze a list of (up to 10) SQL queries and recommend optimal indexes")
+@validate_call
 async def analyze_query_indexes(
     queries: list[str] = Field(description="List of Query strings to analyze"),
     max_index_size_mb: int = Field(description="Max index size in MB", default=10000),
+    method: Literal["dta", "llm"] = Field(description="Method to use for analysis", default="dta"),
 ) -> ResponseType:
     """Analyze a list of SQL queries and recommend optimal indexes."""
     if len(queries) == 0:
@@ -424,7 +437,11 @@ async def analyze_query_indexes(
 
     try:
         sql_driver = await get_sql_driver()
-        dta_tool = DTATool(sql_driver)
+        if method == "dta":
+            index_tuning = DatabaseTuningAdvisor(sql_driver)
+        else:
+            index_tuning = LLMOptimizerTool(sql_driver)
+        dta_tool = DTATool(sql_driver, index_tuning)
         result = await dta_tool.analyze_queries(queries=queries, max_index_size_mb=max_index_size_mb)
         return format_text_response(result)
     except Exception as e:

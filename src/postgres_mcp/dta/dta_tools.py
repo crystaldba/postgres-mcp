@@ -10,17 +10,26 @@ import humanize
 from ..artifacts import ExplainPlanArtifact
 from ..artifacts import calculate_improvement_multiple
 from ..sql import SqlDriver
-from .dta_calc import DatabaseTuningAdvisor
 from .dta_calc import DTASession
 from .dta_calc import IndexConfig
+from .dta_calc import IndexTuningBase
 
 logger = logging.getLogger(__name__)
+
+# @dataclass
+# class IndexOptimizationParameters:
+#     """Parameters for index optimization."""
+
+#     min_calls: int = 50
+#     min_avg_time_ms: float = 5.0
+#     limit: int = 100
+#     max_index_size_mb: int = 10000
 
 
 class DTATool:
     """Database Tuning Advisor tool for recommending indexes."""
 
-    def __init__(self, sql_driver: SqlDriver):
+    def __init__(self, sql_driver: SqlDriver, index_tuning: IndexTuningBase):
         """
         Initialize the DTA tool.
 
@@ -28,11 +37,7 @@ class DTATool:
             conn: The PostgreSQL connection object
         """
         self.sql_driver = sql_driver
-        self.dta = None
-
-    async def do_init(self):
-        """Initialize the DatabaseTuningAdvisor if not already initialized."""
-        self.dta = DatabaseTuningAdvisor(self.sql_driver)
+        self.index_tuning = index_tuning
 
     async def _create_recommendations_response(self, session: DTASession) -> Dict[str, Any]:
         """
@@ -140,18 +145,18 @@ class DTATool:
                 unique_queries.append(q)
 
         # Get before and after plans for each query
-        if unique_queries and self.dta:
+        if unique_queries and self.index_tuning:
             for query in unique_queries:
                 # Get plan with no indexes
-                before_plan = await self.dta.get_explain_plan_with_indexes(query, frozenset())
+                before_plan = await self.index_tuning.get_explain_plan_with_indexes(query, frozenset())
 
                 # Get plan with all recommended indexes
                 index_configs = frozenset(IndexConfig(rec.table, rec.columns, rec.using) for rec in session.recommendations)
-                after_plan = await self.dta.get_explain_plan_with_indexes(query, index_configs)
+                after_plan = await self.index_tuning.get_explain_plan_with_indexes(query, index_configs)
 
                 # Extract costs from plans
-                base_cost = self.dta.extract_cost_from_json_plan(before_plan)
-                new_cost = self.dta.extract_cost_from_json_plan(after_plan)
+                base_cost = self.index_tuning.extract_cost_from_json_plan(before_plan)
+                new_cost = self.index_tuning.extract_cost_from_json_plan(after_plan)
 
                 # Calculate improvement multiple
                 improvement_multiple = "∞"  # Default for cases where new_cost is zero
@@ -195,11 +200,7 @@ class DTATool:
             Dict with recommendations or dict with error
         """
         try:
-            await self.do_init()
-            if self.dta is None:
-                return {"error": "DatabaseTuningAdvisor not initialized"}
-
-            session = await self.dta.analyze_workload(
+            session = await self.index_tuning.analyze_workload(
                 query_list=query_list,
                 min_calls=min_calls,
                 min_avg_time_ms=min_avg_time_ms,

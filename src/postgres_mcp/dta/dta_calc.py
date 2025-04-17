@@ -1,11 +1,14 @@
 import json
 import logging
 import time
+from abc import ABC
+from abc import abstractmethod
 from dataclasses import dataclass
 from dataclasses import field
 from itertools import combinations
 from typing import Any
 from typing import Iterable
+from typing import override
 
 import humanize
 from pglast import parse_sql
@@ -131,17 +134,17 @@ class DTASession:
     dta_traces: list[str] = field(default_factory=list)
 
 
-class DatabaseTuningAdvisor:
+class IndexTuningBase(ABC):
     def __init__(
         self,
         sql_driver: SqlDriver,
-        budget_mb: int = -1,  # no limit by default
-        max_runtime_seconds: int = 30,  # 30 seconds
-        max_index_width: int = 3,
-        min_column_usage: int = 1,  # skip columns used in fewer than this many queries
-        seed_columns_count: int = 3,  # how many single-col seeds to pick
-        pareto_alpha: float = 2.0,
-        min_time_improvement: float = 0.1,
+        # budget_mb: int = -1,  # no limit by default
+        # max_runtime_seconds: int = 30,  # 30 seconds
+        # max_index_width: int = 3,
+        # min_column_usage: int = 1,  # skip columns used in fewer than this many queries
+        # seed_columns_count: int = 3,  # how many single-col seeds to pick
+        # pareto_alpha: float = 2.0,
+        # min_time_improvement: float = 0.1,
     ):
         """
         :param sql_driver: Griptape SqlDriver
@@ -154,14 +157,14 @@ class DatabaseTuningAdvisor:
         :param min_time_improvement: stop when relative improvement falls below this threshold
         """
         self.sql_driver = sql_driver
-        self.budget_mb = budget_mb
-        self.max_runtime_seconds = max_runtime_seconds
-        self.max_index_width = max_index_width
-        self.min_column_usage = min_column_usage
-        self.seed_columns_count = seed_columns_count
-        self._analysis_start_time = 0.0
-        self.pareto_alpha = pareto_alpha
-        self.min_time_improvement = min_time_improvement
+        # self.budget_mb = budget_mb
+        # self.max_runtime_seconds = max_runtime_seconds
+        # self.max_index_width = max_index_width
+        # self.min_column_usage = min_column_usage
+        # self.seed_columns_count = seed_columns_count
+        # self._analysis_start_time = 0.0
+        # self.pareto_alpha = pareto_alpha
+        # self.min_time_improvement = min_time_improvement
 
         # Add memoization caches
         self.cost_cache: dict[frozenset[IndexConfig], float] = {}
@@ -346,6 +349,338 @@ class DatabaseTuningAdvisor:
         """Convert query info to weight based on query frequency."""
         return query_info.get("calls", 1.0) * query_info.get("avg_exec_time", 1.0)
 
+    async def get_explain_plan_with_indexes(self, query_text: str, indexes: frozenset[IndexConfig]) -> dict[str, Any]:
+        """
+        Get the explain plan for a query with a specific set of indexes.
+        Results are memoized to avoid redundant explain operations.
+
+        Args:
+            query_text: The SQL query to explain
+            indexes: A frozenset of IndexConfig objects representing the indexes to enable
+
+        Returns:
+            The explain plan as a dictionary
+        """
+        # Create a cache key from the query and indexes
+        cache_key = (query_text, indexes)
+
+        # Return cached result if available
+        existing_plan = self._explain_plans_cache.get(cache_key)
+        if existing_plan:
+            return existing_plan
+
+        # Generate the plan using the static method
+        explain_plan_tool = ExplainPlanTool(self.sql_driver)
+        plan = await explain_plan_tool.generate_explain_plan_with_hypothetical_indexes(query_text, indexes, False, self)
+
+        # Cache the result
+        self._explain_plans_cache[cache_key] = plan
+        return plan
+
+    def _get_workload_from_file(self, file_path: str) -> list[dict[str, Any]]:
+        """Load queries from an SQL file."""
+        try:
+            with open(file_path) as f:
+                content = f.read()
+
+            # Split the file content by semicolons to get individual queries
+            query_texts = [q.strip() for q in content.split(";") if q.strip()]
+            queries = []
+
+            for i, text in enumerate(query_texts):
+                queries.append(
+                    {
+                        "queryid": i,
+                        "query": text,
+                    }
+                )
+
+            return queries
+        except Exception as e:
+            raise ValueError(f"Error loading queries from file {file_path}") from e
+
+    async def _get_query_stats(self, min_calls: int, min_avg_time_ms: float, limit: int) -> list[dict[str, Any]]:
+        """Get query statistics from pg_stat_statements"""
+
+        # Reference to original implementation
+        return await self._get_query_stats_direct(min_calls, min_avg_time_ms, limit)
+
+    async def _get_query_stats_direct(self, min_calls: int = 50, min_avg_time_ms: float = 5.0, limit: int = 100) -> list[dict[str, Any]]:
+        """Direct implementation of query stats collection."""
+        query = """
+        SELECT queryid, query, calls, total_exec_time/calls as avg_exec_time
+        FROM pg_stat_statements
+        WHERE calls >= {}
+        AND total_exec_time/calls >= {}
+        ORDER BY total_exec_time DESC
+        LIMIT {}
+        """
+        result = await SafeSqlDriver.execute_param_query(
+            self.sql_driver,
+            query,
+            [min_calls, min_avg_time_ms, limit],
+        )
+        return [dict(row.cells) for row in result] if result else []
+
+    def _is_analyzable_stmt(self, stmt: Any) -> bool:
+        """Check if a statement can be analyzed for index recommendations."""
+        # It should be a SelectStmt
+        if not isinstance(stmt, SelectStmt):
+            return False
+
+        visitor = TableAliasVisitor()
+        visitor(stmt)
+
+        # Skip queries that only access system tables
+        if all(table.startswith("pg_") or table.startswith("aurora_") for table in visitor.tables):
+            return False
+        return True
+
+    def _index_exists(self, index: Index, existing_defs: set[str]) -> bool:
+        """Check if an index with the same table, columns, and type already exists in the database.
+
+        Uses pglast to parse index definitions and compare their structure rather than
+        doing simple string matching.
+        """
+        from pglast import parser
+
+        try:
+            # Parse the candidate index
+            candidate_stmt = parser.parse_sql(index.definition)[0]
+            candidate_node = candidate_stmt.stmt
+
+            # Extract key information from candidate index
+            candidate_info = self._extract_index_info(candidate_node)
+
+            # If we couldn't parse the candidate index, fall back to string comparison
+            if not candidate_info:
+                return index.definition in existing_defs
+
+            # Check each existing index
+            for existing_def in existing_defs:
+                try:
+                    # Skip if it's obviously not an index
+                    if not ("CREATE INDEX" in existing_def.upper() or "CREATE UNIQUE INDEX" in existing_def.upper()):
+                        continue
+
+                    # Parse the existing index
+                    existing_stmt = parser.parse_sql(existing_def)[0]
+                    existing_node = existing_stmt.stmt
+
+                    # Extract key information
+                    existing_info = self._extract_index_info(existing_node)
+
+                    # Compare the key components
+                    if existing_info and self._is_same_index(candidate_info, existing_info):
+                        return True
+                except Exception as e:
+                    raise ValueError("Error parsing existing index") from e
+
+            return False
+        except Exception as e:
+            raise ValueError("Error in robust index comparison") from e
+
+    def _extract_index_info(self, node) -> dict[str, Any] | None:
+        """Extract key information from a parsed index node."""
+        try:
+            # Handle differences in node structure between pglast versions
+            if hasattr(node, "IndexStmt"):
+                index_stmt = node.IndexStmt
+            else:
+                index_stmt = node
+
+            # Extract table name
+            if hasattr(index_stmt.relation, "relname"):
+                table_name = index_stmt.relation.relname
+            else:
+                # Extract from RangeVar
+                table_name = index_stmt.relation.RangeVar.relname
+
+            # Extract columns
+            columns = []
+            for idx_elem in index_stmt.indexParams:
+                if hasattr(idx_elem, "name") and idx_elem.name:
+                    columns.append(idx_elem.name)
+                elif hasattr(idx_elem, "IndexElem") and idx_elem.IndexElem:
+                    columns.append(idx_elem.IndexElem.name)
+                elif hasattr(idx_elem, "expr") and idx_elem.expr:
+                    # Convert the expression to a proper string representation
+                    expr_str = self._ast_expr_to_string(idx_elem.expr)
+                    columns.append(expr_str)
+            # Extract index type
+            index_type = "btree"  # default
+            if hasattr(index_stmt, "accessMethod") and index_stmt.accessMethod:
+                index_type = index_stmt.accessMethod
+
+            # Check if unique
+            is_unique = False
+            if hasattr(index_stmt, "unique"):
+                is_unique = index_stmt.unique
+
+            return {
+                "table": table_name.lower(),
+                "columns": [col.lower() for col in columns],
+                "type": index_type.lower(),
+                "unique": is_unique,
+            }
+        except Exception as e:
+            self.dta_trace(f"Error extracting index info: {e}")
+            raise ValueError("Error extracting index info") from e
+
+    def _ast_expr_to_string(self, expr) -> str:
+        """Convert an AST expression (like FuncCall) to a proper string representation.
+
+        For example, converts a FuncCall node representing lower(name) to "lower(name)"
+        """
+        try:
+            # Import FuncCall and ColumnRef for type checking
+            from pglast.ast import ColumnRef
+            from pglast.ast import FuncCall
+
+            # Check for FuncCall type directly
+            if isinstance(expr, FuncCall):
+                # Extract function name
+                if hasattr(expr, "funcname") and expr.funcname:
+                    func_name = ".".join([name.sval for name in expr.funcname if hasattr(name, "sval")])
+                else:
+                    func_name = "unknown_func"
+
+                # Extract arguments
+                args = []
+                if hasattr(expr, "args") and expr.args:
+                    for arg in expr.args:
+                        args.append(self._ast_expr_to_string(arg))
+
+                # Format as function call
+                return f"{func_name}({','.join(args)})"
+
+            # Check for ColumnRef type directly
+            elif isinstance(expr, ColumnRef):
+                if hasattr(expr, "fields") and expr.fields:
+                    return ".".join([field.sval for field in expr.fields if hasattr(field, "sval")])
+                return "unknown_column"
+
+            # Try to handle direct values
+            elif hasattr(expr, "sval"):  # String value
+                return expr.sval
+            elif hasattr(expr, "ival"):  # Integer value
+                return str(expr.ival)
+            elif hasattr(expr, "fval"):  # Float value
+                return expr.fval
+
+            # Fallback for other expression types
+            return str(expr)
+        except Exception as e:
+            raise ValueError("Error converting expression to string") from e
+
+    def _is_same_index(self, index1: dict[str, Any], index2: dict[str, Any]) -> bool:
+        """Check if two indexes are functionally equivalent."""
+        if not index1 or not index2:
+            return False
+
+        # Same table?
+        if index1["table"] != index2["table"]:
+            return False
+
+        # Same index type?
+        if index1["type"] != index2["type"]:
+            return False
+
+        # Same columns (order matters for most index types)?
+        if index1["columns"] != index2["columns"]:
+            # For hash indexes, order doesn't matter
+            if index1["type"] == "hash" and set(index1["columns"]) == set(index2["columns"]):
+                return True
+            return False
+
+        # If one is unique and the other is not, they're different
+        # Except when a primary key (which is unique) exists and we're considering a non-unique index on same column
+        if index1["unique"] and not index2["unique"]:
+            return False
+
+        # Same core definition
+        return True
+
+    def dta_trace(self, message: Any, exc_info: bool = False):
+        """Convenience function to log DTA thinking process."""
+
+        # Always log to debug
+        if exc_info:
+            logger.debug(message, exc_info=True)
+        else:
+            logger.debug(message)
+
+        self._dta_traces.append(message)
+
+    @staticmethod
+    def extract_cost_from_json_plan(plan_data: dict[str, Any]) -> float:
+        """Extract total cost from JSON EXPLAIN plan data."""
+        try:
+            if not plan_data:
+                return float("inf")
+
+            # Parse JSON plan
+            top_plan = plan_data.get("Plan")
+            if not top_plan:
+                logger.error("No top plan found in plan data: %s", plan_data)
+                return float("inf")
+
+            # Extract total cost from top plan
+            total_cost = top_plan.get("Total Cost")
+            if total_cost is None:
+                logger.error("Total Cost not found in top plan: %s", top_plan)
+                return float("inf")
+
+            return float(total_cost)
+        except (IndexError, KeyError, ValueError, json.JSONDecodeError) as e:
+            raise ValueError("Error extracting cost from plan") from e
+
+    @abstractmethod
+    async def _generate_recommendations(self, query_weights: list[tuple[str, SelectStmt, float]]) -> list[IndexRecommendation]:
+        """Generate index tuning queries."""
+        pass
+
+
+class DatabaseTuningAdvisor(IndexTuningBase):
+    def __init__(
+        self,
+        sql_driver: SqlDriver,
+        budget_mb: int = -1,  # no limit by default
+        max_runtime_seconds: int = 30,  # 30 seconds
+        max_index_width: int = 3,
+        min_column_usage: int = 1,  # skip columns used in fewer than this many queries
+        seed_columns_count: int = 3,  # how many single-col seeds to pick
+        pareto_alpha: float = 2.0,
+        min_time_improvement: float = 0.1,
+    ):
+        """
+        :param sql_driver: Griptape SqlDriver
+        :param budget_mb: Storage budget
+        :param max_runtime_seconds: Time limit for entire analysis (anytime approach)
+        :param max_index_width: Maximum columns in an index
+        :param min_column_usage: skip columns that appear in fewer than X queries
+        :param seed_columns_count: how many top single-column indexes to pick as seeds
+        :param pareto_alpha: stop when relative improvement falls below this threshold
+        :param min_time_improvement: stop when relative improvement falls below this threshold
+        """
+        super().__init__(sql_driver)
+        self.budget_mb = budget_mb
+        self.max_runtime_seconds = max_runtime_seconds
+        self.max_index_width = max_index_width
+        self.min_column_usage = min_column_usage
+        self.seed_columns_count = seed_columns_count
+        self._analysis_start_time = 0.0
+        self.pareto_alpha = pareto_alpha
+        self.min_time_improvement = min_time_improvement
+
+    def _check_time(self) -> bool:
+        """Return True if we have exceeded max_runtime_seconds."""
+        if self.max_runtime_seconds <= 0:
+            return False
+        elapsed = time.time() - self._analysis_start_time
+        return elapsed > self.max_runtime_seconds
+
+    @override
     async def _generate_recommendations(self, query_weights: list[tuple[str, SelectStmt, float]]) -> list[IndexRecommendation]:
         """Generate index recommendations using a hybrid 'seed + greedy' approach with a time cutoff."""
         if query_weights is None or len(query_weights) == 0:
@@ -795,260 +1130,6 @@ class DatabaseTuningAdvisor:
     #     chosen = [x[0] for x in improvements[: self.seed_columns_count] if x[1] > 0]
     #     return {IndexConfig(idx.table, tuple(idx.columns), idx.using, idx.potential_problematic_reason) for idx in chosen}
 
-    def _get_workload_from_file(self, file_path: str) -> list[dict[str, Any]]:
-        """Load queries from an SQL file."""
-        try:
-            with open(file_path) as f:
-                content = f.read()
-
-            # Split the file content by semicolons to get individual queries
-            query_texts = [q.strip() for q in content.split(";") if q.strip()]
-            queries = []
-
-            for i, text in enumerate(query_texts):
-                queries.append(
-                    {
-                        "queryid": i,
-                        "query": text,
-                    }
-                )
-
-            return queries
-        except Exception as e:
-            raise ValueError(f"Error loading queries from file {file_path}") from e
-
-    async def _get_query_stats(self, min_calls: int, min_avg_time_ms: float, limit: int) -> list[dict[str, Any]]:
-        """Get query statistics from pg_stat_statements"""
-
-        # Reference to original implementation
-        return await self._get_query_stats_direct(min_calls, min_avg_time_ms, limit)
-
-    async def _get_query_stats_direct(self, min_calls: int = 50, min_avg_time_ms: float = 5.0, limit: int = 100) -> list[dict[str, Any]]:
-        """Direct implementation of query stats collection."""
-        query = """
-        SELECT queryid, query, calls, total_exec_time/calls as avg_exec_time
-        FROM pg_stat_statements
-        WHERE calls >= {}
-        AND total_exec_time/calls >= {}
-        ORDER BY total_exec_time DESC
-        LIMIT {}
-        """
-        result = await SafeSqlDriver.execute_param_query(
-            self.sql_driver,
-            query,
-            [min_calls, min_avg_time_ms, limit],
-        )
-        return [dict(row.cells) for row in result] if result else []
-
-    def _check_time(self) -> bool:
-        """Return True if we have exceeded max_runtime_seconds."""
-        if self.max_runtime_seconds <= 0:
-            return False
-        elapsed = time.time() - self._analysis_start_time
-        return elapsed > self.max_runtime_seconds
-
-    def _is_analyzable_stmt(self, stmt: Any) -> bool:
-        """Check if a statement can be analyzed for index recommendations."""
-        # It should be a SelectStmt
-        if not isinstance(stmt, SelectStmt):
-            return False
-
-        visitor = TableAliasVisitor()
-        visitor(stmt)
-
-        # Skip queries that only access system tables
-        if all(table.startswith("pg_") or table.startswith("aurora_") for table in visitor.tables):
-            return False
-        return True
-
-    def _index_exists(self, index: Index, existing_defs: set[str]) -> bool:
-        """Check if an index with the same table, columns, and type already exists in the database.
-
-        Uses pglast to parse index definitions and compare their structure rather than
-        doing simple string matching.
-        """
-        from pglast import parser
-
-        try:
-            # Parse the candidate index
-            candidate_stmt = parser.parse_sql(index.definition)[0]
-            candidate_node = candidate_stmt.stmt
-
-            # Extract key information from candidate index
-            candidate_info = self._extract_index_info(candidate_node)
-
-            # If we couldn't parse the candidate index, fall back to string comparison
-            if not candidate_info:
-                return index.definition in existing_defs
-
-            # Check each existing index
-            for existing_def in existing_defs:
-                try:
-                    # Skip if it's obviously not an index
-                    if not ("CREATE INDEX" in existing_def.upper() or "CREATE UNIQUE INDEX" in existing_def.upper()):
-                        continue
-
-                    # Parse the existing index
-                    existing_stmt = parser.parse_sql(existing_def)[0]
-                    existing_node = existing_stmt.stmt
-
-                    # Extract key information
-                    existing_info = self._extract_index_info(existing_node)
-
-                    # Compare the key components
-                    if existing_info and self._is_same_index(candidate_info, existing_info):
-                        return True
-                except Exception as e:
-                    raise ValueError("Error parsing existing index") from e
-
-            return False
-        except Exception as e:
-            raise ValueError("Error in robust index comparison") from e
-
-    def _extract_index_info(self, node) -> dict[str, Any] | None:
-        """Extract key information from a parsed index node."""
-        try:
-            # Handle differences in node structure between pglast versions
-            if hasattr(node, "IndexStmt"):
-                index_stmt = node.IndexStmt
-            else:
-                index_stmt = node
-
-            # Extract table name
-            if hasattr(index_stmt.relation, "relname"):
-                table_name = index_stmt.relation.relname
-            else:
-                # Extract from RangeVar
-                table_name = index_stmt.relation.RangeVar.relname
-
-            # Extract columns
-            columns = []
-            for idx_elem in index_stmt.indexParams:
-                if hasattr(idx_elem, "name") and idx_elem.name:
-                    columns.append(idx_elem.name)
-                elif hasattr(idx_elem, "IndexElem") and idx_elem.IndexElem:
-                    columns.append(idx_elem.IndexElem.name)
-                elif hasattr(idx_elem, "expr") and idx_elem.expr:
-                    # Convert the expression to a proper string representation
-                    expr_str = self._ast_expr_to_string(idx_elem.expr)
-                    columns.append(expr_str)
-            # Extract index type
-            index_type = "btree"  # default
-            if hasattr(index_stmt, "accessMethod") and index_stmt.accessMethod:
-                index_type = index_stmt.accessMethod
-
-            # Check if unique
-            is_unique = False
-            if hasattr(index_stmt, "unique"):
-                is_unique = index_stmt.unique
-
-            return {
-                "table": table_name.lower(),
-                "columns": [col.lower() for col in columns],
-                "type": index_type.lower(),
-                "unique": is_unique,
-            }
-        except Exception as e:
-            self.dta_trace(f"Error extracting index info: {e}")
-            raise ValueError("Error extracting index info") from e
-
-    def _ast_expr_to_string(self, expr) -> str:
-        """Convert an AST expression (like FuncCall) to a proper string representation.
-
-        For example, converts a FuncCall node representing lower(name) to "lower(name)"
-        """
-        try:
-            # Import FuncCall and ColumnRef for type checking
-            from pglast.ast import ColumnRef
-            from pglast.ast import FuncCall
-
-            # Check for FuncCall type directly
-            if isinstance(expr, FuncCall):
-                # Extract function name
-                if hasattr(expr, "funcname") and expr.funcname:
-                    func_name = ".".join([name.sval for name in expr.funcname if hasattr(name, "sval")])
-                else:
-                    func_name = "unknown_func"
-
-                # Extract arguments
-                args = []
-                if hasattr(expr, "args") and expr.args:
-                    for arg in expr.args:
-                        args.append(self._ast_expr_to_string(arg))
-
-                # Format as function call
-                return f"{func_name}({','.join(args)})"
-
-            # Check for ColumnRef type directly
-            elif isinstance(expr, ColumnRef):
-                if hasattr(expr, "fields") and expr.fields:
-                    return ".".join([field.sval for field in expr.fields if hasattr(field, "sval")])
-                return "unknown_column"
-
-            # Try to handle direct values
-            elif hasattr(expr, "sval"):  # String value
-                return expr.sval
-            elif hasattr(expr, "ival"):  # Integer value
-                return str(expr.ival)
-            elif hasattr(expr, "fval"):  # Float value
-                return expr.fval
-
-            # Fallback for other expression types
-            return str(expr)
-        except Exception as e:
-            raise ValueError("Error converting expression to string") from e
-
-    def _is_same_index(self, index1: dict[str, Any], index2: dict[str, Any]) -> bool:
-        """Check if two indexes are functionally equivalent."""
-        if not index1 or not index2:
-            return False
-
-        # Same table?
-        if index1["table"] != index2["table"]:
-            return False
-
-        # Same index type?
-        if index1["type"] != index2["type"]:
-            return False
-
-        # Same columns (order matters for most index types)?
-        if index1["columns"] != index2["columns"]:
-            # For hash indexes, order doesn't matter
-            if index1["type"] == "hash" and set(index1["columns"]) == set(index2["columns"]):
-                return True
-            return False
-
-        # If one is unique and the other is not, they're different
-        # Except when a primary key (which is unique) exists and we're considering a non-unique index on same column
-        if index1["unique"] and not index2["unique"]:
-            return False
-
-        # Same core definition
-        return True
-
-    @staticmethod
-    def extract_cost_from_json_plan(plan_data: dict[str, Any]) -> float:
-        """Extract total cost from JSON EXPLAIN plan data."""
-        try:
-            if not plan_data:
-                return float("inf")
-
-            # Parse JSON plan
-            top_plan = plan_data.get("Plan")
-            if not top_plan:
-                logger.error("No top plan found in plan data: %s", plan_data)
-                return float("inf")
-
-            # Extract total cost from top plan
-            total_cost = top_plan.get("Total Cost")
-            if total_cost is None:
-                logger.error("Total Cost not found in top plan: %s", top_plan)
-                return float("inf")
-
-            return float(total_cost)
-        except (IndexError, KeyError, ValueError, json.JSONDecodeError) as e:
-            raise ValueError("Error extracting cost from plan") from e
-
     async def _get_existing_indexes(self) -> list[dict[str, Any]]:
         """Get existing indexes"""
         query = """
@@ -1237,45 +1318,6 @@ class DatabaseTuningAdvisor:
     def _pp_list(lst) -> str:
         """Pretty print a list."""
         return ("\n  - " if len(lst) > 0 else "") + "\n  - ".join([str(item) for item in lst])
-
-    async def get_explain_plan_with_indexes(self, query_text: str, indexes: frozenset[IndexConfig]) -> dict[str, Any]:
-        """
-        Get the explain plan for a query with a specific set of indexes.
-        Results are memoized to avoid redundant explain operations.
-
-        Args:
-            query_text: The SQL query to explain
-            indexes: A frozenset of IndexConfig objects representing the indexes to enable
-
-        Returns:
-            The explain plan as a dictionary
-        """
-        # Create a cache key from the query and indexes
-        cache_key = (query_text, indexes)
-
-        # Return cached result if available
-        existing_plan = self._explain_plans_cache.get(cache_key)
-        if existing_plan:
-            return existing_plan
-
-        # Generate the plan using the static method
-        explain_plan_tool = ExplainPlanTool(self.sql_driver)
-        plan = await explain_plan_tool.generate_explain_plan_with_hypothetical_indexes(query_text, indexes, False, self)
-
-        # Cache the result
-        self._explain_plans_cache[cache_key] = plan
-        return plan
-
-    def dta_trace(self, message: Any, exc_info: bool = False):
-        """Convenience function to log DTA thinking process."""
-
-        # Always log to debug
-        if exc_info:
-            logger.debug(message, exc_info=True)
-        else:
-            logger.debug(message)
-
-        self._dta_traces.append(message)
 
 
 # --- Visitor Classes ---
