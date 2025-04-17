@@ -38,14 +38,13 @@ For additional background on why we built Postgres Pro, see [our launch blog pos
 ## Demo
 
 *From Unusable to Lightning Fast*
-
-- **Challenge:** We generated a movie app using an AI assistant, but the SQLAlchemy ORM code ran painfully slowly
+- **Challenge:** We generated a movie app using an AI assistant, but the SQLAlchemy ORM code ran painfully slow
 - **Solution:** Using Postgres Pro with Cursor, we fixed the performance issues in minutes
 
-**We used the Cursor AI agent and Postgres Pro to:**
-- 🚀 Fix performance - including ORM queries, indexing, and caching
-- 🛠️ Fix bugs that require connecting data to code
-- 🧠 Add new features from single prompts
+What we did:
+- 🚀 Fixed performance - including ORM queries, indexing, and caching
+- 🛠️ Fixed a broken page - by prompting the agent to explore the data, fix queries, and add related content.
+- 🧠 Improved the top-rated movies - by letting the agent explore the data and fix an ORM query
 
 See the video below or read the [play-by-play](examples/movie-app.md).
 
