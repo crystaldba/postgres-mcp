@@ -84,7 +84,7 @@ Features include:
 
 See the video below or read the [play-by-play](examples/movie-app.md).
 
-https://github.com/user-attachments/assets/0f6d298b-7f31-4264-b39e-5c49cfb3f057
+https://github.com/user-attachments/assets/f1998e39-3c0b-41bf-b852-fa85c0d918c9
 
 
 ## Quick Start
