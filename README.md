@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/postgres-pro.png" alt="Postgres Pro Logo" width="600"/>
+<img src="assets/postgres-mcp-pro.png" alt="Postgres MCP Pro Logo" width="600"/>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![PyPI - Version](https://img.shields.io/pypi/v/postgres-mcp)](https://pypi.org/project/postgres-mcp/)
