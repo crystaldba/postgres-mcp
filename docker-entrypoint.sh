@@ -53,6 +53,15 @@ for arg in "$@"; do
     fi
 done
 
+# Check and replace localhost in DATABASE_URI if it exists
+if [[ -n "$DATABASE_URI" && "$DATABASE_URI" == *"postgres"*"://"*"localhost"* ]]; then
+    echo "Found localhost in DATABASE_URI: $DATABASE_URI" >&2
+    new_uri=$(replace_localhost "$DATABASE_URI")
+    if [[ $? -eq 0 ]]; then
+        export DATABASE_URI="$new_uri"
+    fi
+fi
+
 # Check if SSE transport is specified and --sse-host is not already set
 has_sse=false
 has_sse_host=false

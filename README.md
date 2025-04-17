@@ -255,7 +255,7 @@ Postgres Pro supports the SSE transport, which allows you to connect to the serv
 To use the SSE transport, you need to start the server with the `--transport sse` flag.
 
 ```bash
-docker run -p 8000:8000 -e DATABASE_URL=postgresql://username:password@localhost:5432/dbname crystaldba/postgres-mcp --transport sse
+docker run -p 8000:8000 -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname crystaldba/postgres-mcp --transport sse
 ```
 
 Then update your MCP client configuration to call the the MCP server.
