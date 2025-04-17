@@ -278,7 +278,7 @@ For example, in Windsurf's `mcp_config.json` you can put:
 }
 ```
 
-In Cursor or Cline, the format is slightly different:
+In in Cursor's `mcp.json` or Cline's `cline_mcp_settings.json`, the format is slightly different:
 
 ```json
 {
