@@ -29,46 +29,16 @@ Postgres Pro does much more than wrap a database connection.
 
 Features include:
 
-<table>
-  <tr>
-    <td width="50%">
-      <h4>🔍 Database Health</h4>
-      <ul>
-        <li>Detect unused/duplicate indexes</li>
-        <li>Monitor cache hit rates</li>
-        <li>Check connection utilization</li>
-        <li>Identify vacuum needs before problems occur</li>
-      </ul>
-    </td>
-    <td width="50%">
-      <h4>⚡ Index Tuning</h4>
-      <ul>
-        <li>Generate optimal indexes using proven algorithms</li>
-        <li>Validate AI-suggested indexes</li>
-        <li>Simulate performance impacts with hypothetical indexes</li>
-        <li>Balance performance gain vs storage costs</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h4>📊 Schema Intelligence</h4>
-      <ul>
-        <li>Detailed schema information for tables, views & more</li>
-        <li>Context-aware SQL generation</li>
-        <li>Optimal column selection recommendations</li>
-      </ul>
-    </td>
-    <td width="50%">
-      <h4>🔒 Protected Execution</h4>
-      <ul>
-        <li><b>Unrestricted Mode:</b> Full read/write for development</li>
-        <li><b>Restricted Mode:</b> Read-only with resource limits for production</li>
-        <li>Safe SQL parsing to prevent security issues</li>
-      </ul>
-    </td>
-  </tr>
-</table>
+- **🔍 Database Health** 
+    - monitor index health, connection utilization, buffer cache, vacuum health, trasaction id wraparound, invalid constraints, and more.
+- **⚡ Index Tuning** 
+    - explore thousands of possible indexes to find the best solution for your workload, using algorithms similar to those found in commercial databases.
+- **🤖 Query Plans** 
+    - validate and test performance impacts by checking explain plans and simulating the impact of hypothetical indexes.
+- **📊 Schema Intelligence** 
+    - context-aware SQL generation based on detailed schema understanding of the tables, views, indexes, sequences, etc. 
+- **🛡️ Safe SQL Execution**
+    - Configurable access control to support both development and production environments, including support for read-only access and safe SQL parsing to prevent security issues.
 
 For additional background on why we built Postgres Pro, see [our launch blog post](https://www.crystaldba.ai/blog/post/announcing-postgres-mcp-server-pro).
 
