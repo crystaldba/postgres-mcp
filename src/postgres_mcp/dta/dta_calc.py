@@ -67,21 +67,10 @@ class DatabaseTuningAdvisor(IndexTuningBase):
         return elapsed > self.max_runtime_seconds
 
     @override
-    async def _generate_recommendations(self, query_weights: list[tuple[str, SelectStmt, float]]) -> list[IndexRecommendation]:
+    async def _generate_recommendations(
+        self, query_weights: list[tuple[str, SelectStmt, float]], existing_defs: set[str]
+    ) -> list[IndexRecommendation]:
         """Generate index recommendations using a hybrid 'seed + greedy' approach with a time cutoff."""
-        if query_weights is None or len(query_weights) == 0:
-            self.dta_trace("No query provided")
-            return []
-
-        # Gather queries as strings
-        workload_queries = [q for q, _, _ in query_weights]
-
-        self.dta_trace(f"Workload queries ({len(workload_queries)}): {self._pp_list(workload_queries)}")
-
-        # get existing indexes
-        existing_defs = {idx["definition"] for idx in await self._get_existing_indexes()}
-
-        logger.debug(f"Existing indexes ({len(existing_defs)}): {self._pp_list(existing_defs)}")
 
         # generate initial candidates
         all_candidates = await self.generate_candidates(query_weights, existing_defs)
@@ -161,7 +150,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                     progressive_recommendation_cost=progressive_cost,
                     individual_base_cost=individual_base_cost,
                     individual_recommendation_cost=individual_cost,
-                    queries=workload_queries,
+                    queries=[q for q, _, _ in query_weights],
                     definition=index_config.definition,
                 )
                 progressive_base_cost = progressive_cost
@@ -516,22 +505,6 @@ class DatabaseTuningAdvisor(IndexTuningBase):
     #     chosen = [x[0] for x in improvements[: self.seed_columns_count] if x[1] > 0]
     #     return {IndexConfig(idx.table, tuple(idx.columns), idx.using, idx.potential_problematic_reason) for idx in chosen}
 
-    async def _get_existing_indexes(self) -> list[dict[str, Any]]:
-        """Get existing indexes"""
-        query = """
-        SELECT schemaname as schema,
-               tablename as table,
-               indexname as name,
-               indexdef as definition
-        FROM pg_indexes
-        WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-        ORDER BY schemaname, tablename, indexname
-        """
-        result = await self.sql_driver.execute_query(query)
-        if result is not None:
-            return [dict(row.cells) for row in result]
-        return []
-
     async def _estimate_index_size(self, table: str, columns: list[str]) -> int:
         # Create a hashable key for the cache
         cache_key = (table, frozenset(columns))
@@ -697,16 +670,6 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                 filtered_candidates.append(candidate)
 
         return filtered_candidates
-
-    # --- Debugging ---
-
-    @staticmethod
-    def _pp_list(lst) -> str:
-        """Pretty print a list."""
-        return ("\n  - " if len(lst) > 0 else "") + "\n  - ".join([str(item) for item in lst])
-
-
-# --- Visitor Classes ---
 
 
 class ConditionColumnCollector(ColumnCollector):

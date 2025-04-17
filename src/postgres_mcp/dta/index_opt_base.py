@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 MAX_NUM_INDEX_TUNING_QUERIES = 10
 
 
+def _pp_list(lst) -> str:
+    """Pretty print a list."""
+    return ("\n  - " if len(lst) > 0 else "") + "\n  - ".join([str(item) for item in lst])
+
+
 @dataclass
 class Index:
     """Represents a database index with size estimation and definition."""
@@ -291,10 +296,24 @@ class IndexTuningBase(ABC):
 
             query_weights = self._covert_workload_to_query_weights(session.workload)
 
-            # Generate and evaluate index recommendations
-            session.recommendations = await self._generate_recommendations(query_weights)
-            # Reset HypoPG only once at the end
-            await self.sql_driver.execute_query("SELECT hypopg_reset();")
+            if query_weights is None or len(query_weights) == 0:
+                self.dta_trace("No query provided")
+                session.recommendations = []
+            else:
+                # Gather queries as strings
+                workload_queries = [q for q, _, _ in query_weights]
+
+                self.dta_trace(f"Workload queries ({len(workload_queries)}): {_pp_list(workload_queries)}")
+
+                # get existing indexes
+                existing_defs = {idx["definition"] for idx in await self._get_existing_indexes()}
+
+                logger.debug(f"Existing indexes ({len(existing_defs)}): {_pp_list(existing_defs)}")
+
+                # Generate and evaluate index recommendations
+                session.recommendations = await self._generate_recommendations(query_weights, existing_defs)
+                # Reset HypoPG only once at the end
+                await self.sql_driver.execute_query("SELECT hypopg_reset();")
 
         except Exception as e:
             logger.error(f"Error in workload analysis: {e}", exc_info=True)
@@ -302,6 +321,22 @@ class IndexTuningBase(ABC):
 
         session.dta_traces = self._dta_traces
         return session
+
+    async def _get_existing_indexes(self) -> list[dict[str, Any]]:
+        """Get existing indexes"""
+        query = """
+        SELECT schemaname as schema,
+               tablename as table,
+               indexname as name,
+               indexdef as definition
+        FROM pg_indexes
+        WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY schemaname, tablename, indexname
+        """
+        result = await self.sql_driver.execute_query(query)
+        if result is not None:
+            return [dict(row.cells) for row in result]
+        return []
 
     async def _validate_and_parse_workload(self, workload: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Validate the workload to ensure it is analyzable."""
@@ -625,6 +660,8 @@ class IndexTuningBase(ABC):
             raise ValueError("Error extracting cost from plan") from e
 
     @abstractmethod
-    async def _generate_recommendations(self, query_weights: list[tuple[str, SelectStmt, float]]) -> list[IndexRecommendation]:
+    async def _generate_recommendations(
+        self, query_weights: list[tuple[str, SelectStmt, float]], existing_defs: set[str]
+    ) -> list[IndexRecommendation]:
         """Generate index tuning queries."""
         pass

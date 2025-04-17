@@ -12,6 +12,8 @@ class LLMOptimizerTool(IndexTuningBase):
         self.sql_driver = sql_driver
 
     @override
-    async def _generate_recommendations(self, query_weights: list[tuple[str, SelectStmt, float]]) -> list[IndexRecommendation]:
+    async def _generate_recommendations(
+        self, query_weights: list[tuple[str, SelectStmt, float]], existing_defs: set[str]
+    ) -> list[IndexRecommendation]:
         """Generate index tuning queries."""
         raise NotImplementedError("LLMOptimizerTool.analyze_queries is not implemented")
