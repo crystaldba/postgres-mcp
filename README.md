@@ -261,24 +261,11 @@ For example, with Docker run:
 ```bash
 docker run -p 8000:8000 \
   -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
-  crystaldba/postgres-mcp --transport=sse
+  crystaldba/postgres-mcp --access-mode=unrestricted --transport=sse
 ```
 
 Then update your MCP client configuration to call the the MCP server.
-For example, in Windsurf's `mcp_config.json` you can put:
-
-```json
-{
-    "mcpServers": {
-        "postgres": {
-            "type": "sse",
-            "serverUrl": "http://localhost:8000/sse"
-        }
-    }
-}
-```
-
-In in Cursor's `mcp.json` or Cline's `cline_mcp_settings.json`, the format is slightly different:
+For example, in Cursor's `mcp.json` or Cline's `cline_mcp_settings.json` you can put:
 
 ```json
 {
@@ -286,6 +273,19 @@ In in Cursor's `mcp.json` or Cline's `cline_mcp_settings.json`, the format is sl
         "postgres": {
             "type": "sse",
             "url": "http://localhost:8000/sse"
+        }
+    }
+}
+```
+
+For Windsurf, the format in `mcp_config.json` is slightly different:
+
+```json
+{
+    "mcpServers": {
+        "postgres": {
+            "type": "sse",
+            "serverUrl": "http://localhost:8000/sse"
         }
     }
 }
