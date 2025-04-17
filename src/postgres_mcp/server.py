@@ -571,7 +571,7 @@ async def main():
     if args.transport == "stdio":
         await mcp.run_stdio_async()
     else:
-        # Update FastMCP settings for SSE transport
+        # Update FastMCP settings based on command line arguments
         mcp.settings.host = args.sse_host
         mcp.settings.port = args.sse_port
         await mcp.run_sse_async()
