@@ -16,7 +16,8 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#technical-notes">Technical Notes</a> •
   <a href="#mcp-server-api">MCP API</a> •
-  <a href="#related-projects">Related Projects</a>
+  <a href="#related-projects">Related Projects</a> •
+  <a href="#frequently-asked-questions">FAQ</a>
 </div>
 
 </div>
