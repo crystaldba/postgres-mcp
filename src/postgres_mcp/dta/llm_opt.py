@@ -1,16 +1,36 @@
 from typing import override
 
-from pglast.ast import SelectStmt
+from pydantic import BaseModel
+
+import instructor
+from openai import OpenAI
+
+from pglast.ast import SelectStmt, Node, TableRef
 
 from ..sql import IndexConfig
 from ..sql import SqlDriver
 from .index_opt_base import IndexRecommendation
 from .index_opt_base import IndexTuningBase
 
+class Index(BaseModel):
+    table_name: str
+    columns: tuple[str, ...]
+
+class IndexingAlternative(BaseModel):
+    alternatives: list[set[Index]]
+
+    def to_list(self) -> list[set[IndexConfig]]:
+        return [set(IndexConfig(table=index.table_name, columns=index.columns) for index in indexes) for indexes in self.alternatives]
 
 class LLMOptimizerTool(IndexTuningBase):
-    def __init__(self, sql_driver: SqlDriver):
+    def __init__(self,
+                 sql_driver: SqlDriver,
+                 include_plans: bool = False,
+                 max_no_progress_attempts: int = 5,
+                 ):
         self.sql_driver = sql_driver
+        self.include_plans = include_plans
+        self.max_no_progress_attempts = max_no_progress_attempts
 
     @override
     async def _generate_recommendations(
@@ -19,15 +39,21 @@ class LLMOptimizerTool(IndexTuningBase):
         """Generate index tuning queries using optimization by LLM."""
 
         workload_queries = [q for q, _, _ in query_weights]
-        best_recommendations: list[IndexRecommendation] = []
+
+
+        # find existing existing indexes
+        tables = set()
+        for _, stmt, _ in query_weights:
+            stme
 
         # get the current cost
         original_cost = await self._evaluate_configuration_cost(query_weights, frozenset())
         best_cost = original_cost
-        best_index_config: set[IndexConfig] = set()
+        best_index_config: set[IndexConfig] = existing_index_defs
 
-        max_no_progress_attempts = 5
-        attempts_remaining = max_no_progress_attempts
+        best_recommendations: list[IndexRecommendation] = []
+
+        attempts_remaining = self.max_no_progress_attempts
         while attempts_remaining > 0:
             attempts_remaining -= 1
 
@@ -37,7 +63,7 @@ class LLMOptimizerTool(IndexTuningBase):
 
             # Evaluate test indexes and track which configuration gives minimum cost
             test_index_costs = [
-                (await self._evaluate_configuration_cost(query_weights, frozenset(indexes)), set(indexes)) for indexes in test_indexes
+                (await self._evaluate_configuration_cost(query_weights, frozenset(indexes)), indexes) for indexes in test_indexes
             ]
 
             # Find minimum cost and corresponding index configuration
@@ -50,29 +76,71 @@ class LLMOptimizerTool(IndexTuningBase):
 
         return (best_index_config, best_cost)
 
-    async def _evaluate_configuration_cost(self, weighted_workload: list[tuple[str, SelectStmt, float]], indexes: frozenset[IndexConfig]) -> float:
-        """Evaluate cost of this index configuration."""
-        total_cost = 0.0
-        valid_queries = 0
-        for query_text, _stmt, weight in weighted_workload:
-            try:
-                # Get the explain plan using our memoized helper
-                plan_data = await self.get_explain_plan_with_indexes(query_text, indexes)
 
-                # Extract cost from the plan data
-                cost = self.extract_cost_from_json_plan(plan_data)
-                total_cost += cost * weight
-                valid_queries += 1
-            except Exception as e:
-                raise ValueError(f"Error executing explain for query: {query_text}") from e
+    def get_tables(self, workload_queries: list[SelectStmt]) -> set[tuple[str, str]]:
 
-        if valid_queries == 0:
-            return float("inf")
+        tables: set[tuple[str, str]] = set()
 
-        return total_cost / valid_queries
+        def walk_node(node: Node) -> None:
+            if isinstance(node, TableRef):
+                tables.add((node.schemaname, node.relname))
+
+            # Recursively validate all attributes that might be nodes
+            for attr_name in node.__slots__:
+                # Skip private attributes and methods
+                if attr_name.startswith("_"):
+                    continue
+
+                try:
+                    attr = getattr(node, attr_name)
+                except AttributeError:
+                    # Skip attributes that don't exist (this is normal in pglast)
+                    continue
+
+                # Handle lists of nodes
+                if isinstance(attr, list):
+                    for item in attr:
+                        if isinstance(item, Node):
+                            walk_node(item)
+
+                # Handle tuples of nodes
+                elif isinstance(attr, tuple):
+                    for item in attr:
+                        if isinstance(item, Node):
+                            walk_node(item)
+
+                # Handle single nodes
+                elif isinstance(attr, Node):
+                    walk_node(attr)
+
+        for stmt in workload_queries:
+            walk_node(stmt)
+
+        return tables
 
     async def _get_candidate_indexes(
         self, workload_queries: list[str], existing_index_defs: set[str], best_recommendations: list[IndexRecommendation]
-    ) -> list[list[IndexConfig]]:
+    ) -> list[set[IndexConfig]]:
         """Get candidate indexes from the workload queries and existing index definitions."""
-        return [[]]
+
+        client = instructor.from_openai(OpenAI())
+
+        workload_queries_str = "\n".join(workload_queries)
+        # existing_index_defs_str = "\n".join(existing_index_defs)
+        best_recommendations_str = "\n".join(best_recommendations)
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            response_model=IndexingAlternative,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that generates index recommendations for a given workload."},
+                {"role": "user", "content":
+                    f"Here are the queries we are optimizing: {workload_queries}\n"
+                    # "Here are the existing indexes on the tables: {existing_index_defs}\n"
+                    "Here are the best recommendations so far: {best_recommendations}\n\n"
+                    "Generate a list of possible indexes that would best improve the performance of the queries."},
+            ],
+        )
+
+        return response.to_list()
+

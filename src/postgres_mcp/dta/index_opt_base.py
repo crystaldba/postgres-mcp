@@ -276,7 +276,7 @@ class IndexTuningBase(ABC):
                 self.dta_trace(f"Workload queries ({len(workload_queries)}): {_pp_list(workload_queries)}")
 
                 # get existing indexes
-                existing_defs = {idx["definition"] for idx in await self._get_existing_indexes()}
+                existing_defs = {idx["definition"] for idx in await self._get_existing_indexes(workload_queries)}
 
                 logger.debug(f"Existing indexes ({len(existing_defs)}): {_pp_list(existing_defs)}")
 
