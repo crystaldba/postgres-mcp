@@ -1,8 +1,6 @@
 import logging
 import time
 from itertools import combinations
-from typing import Any
-from typing import Iterable
 from typing import override
 
 import humanize
@@ -17,8 +15,8 @@ from ..sql import SafeSqlDriver
 from ..sql import SqlDriver
 from ..sql import TableAliasVisitor
 from .index_opt_base import Index
-from .index_opt_base import IndexRecommendation
 from .index_opt_base import IndexTuningBase
+from .index_opt_base import candidate_str
 
 logger = logging.getLogger(__name__)
 
@@ -68,14 +66,14 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
     @override
     async def _generate_recommendations(
-        self, query_weights: list[tuple[str, SelectStmt, float]], existing_defs: set[str]
-    ) -> list[IndexRecommendation]:
+        self, query_weights: list[tuple[str, SelectStmt, float]], existing_index_defs: set[str]
+    ) -> tuple[set[IndexConfig], float]:
         """Generate index recommendations using a hybrid 'seed + greedy' approach with a time cutoff."""
 
         # generate initial candidates
-        all_candidates = await self.generate_candidates(query_weights, existing_defs)
+        all_candidates = await self.generate_candidates(query_weights, existing_index_defs)
 
-        self.dta_trace(f"All candidates ({len(all_candidates)}): {self.candidate_str(all_candidates)}")
+        self.dta_trace(f"All candidates ({len(all_candidates)}): {candidate_str(all_candidates)}")
 
         # TODO: Remove this once we have a better way to generate seeds
         # # produce seeds if desired
@@ -94,7 +92,6 @@ class DatabaseTuningAdvisor(IndexTuningBase):
         ]
 
         best_config: tuple[set[IndexConfig], float] = (set(), float("inf"))
-        recommendations: list[IndexRecommendation] = []
 
         # Evaluate each seed
         for seed in seeds_list:
@@ -119,48 +116,8 @@ class DatabaseTuningAdvisor(IndexTuningBase):
             if final_cost < best_config[1]:
                 best_config = (final_indexes, final_cost)
 
-        # build final recommendations from best_config
-        total_size = 0
-        budget_bytes = self.budget_mb * 1024 * 1024
-        individual_base_cost = await self._evaluate_configuration_cost(query_weights, frozenset()) or 1.0
-        progressive_base_cost = individual_base_cost
-        indexes_so_far = []
-        for index_config in best_config[0]:
-            indexes_so_far.append(index_config)
-            # Calculate the cost with only this index
-            progressive_cost = await self._evaluate_configuration_cost(
-                query_weights,
-                frozenset(indexes_so_far),  # Indexes so far
-            )
-            individual_cost = await self._evaluate_configuration_cost(
-                query_weights,
-                frozenset([index_config]),  # Only this index
-            )
-
-            size = await self._estimate_index_size(index_config.table, list(index_config.columns))
-            if budget_bytes < 0 or total_size + size <= budget_bytes:
-                self.dta_trace(f"Adding index: {self.candidate_str([index_config])}")
-                rec = IndexRecommendation(
-                    table=index_config.table,
-                    columns=index_config.columns,
-                    using=index_config.using,
-                    potential_problematic_reason=index_config.potential_problematic_reason,
-                    estimated_size_bytes=size,
-                    progressive_base_cost=progressive_base_cost,
-                    progressive_recommendation_cost=progressive_cost,
-                    individual_base_cost=individual_base_cost,
-                    individual_recommendation_cost=individual_cost,
-                    queries=[q for q, _, _ in query_weights],
-                    definition=index_config.definition,
-                )
-                progressive_base_cost = progressive_cost
-                recommendations.append(rec)
-                total_size += size
-            else:
-                self.dta_trace(f"Skipping index: {self.candidate_str([index_config])} because it exceeds budget")
-
         # Sort recs by benefit desc
-        return recommendations
+        return best_config
 
     async def generate_candidates(self, workload: list[tuple[str, SelectStmt, float]], existing_defs: set[str]) -> list[Index]:
         """Generates index candidates from queries, with batch creation."""
@@ -225,52 +182,6 @@ class DatabaseTuningAdvisor(IndexTuningBase):
             await self.sql_driver.execute_query("SELECT hypopg_reset();")
         return condition_filtered
 
-    def candidate_str(self, indexes: Iterable[Index] | Iterable[IndexConfig]) -> str:
-        return ", ".join(f"{idx.table}({','.join(idx.columns)})" for idx in indexes) if indexes else "(no indexes)"
-
-    async def _evaluate_configuration_cost(
-        self,
-        weighted_workload: list[tuple[str, SelectStmt, float]],
-        indexes: frozenset[IndexConfig],
-    ) -> float:
-        """Evaluate total cost with selective enabling and caching."""
-        # Use indexes as cache key
-        if indexes in self.cost_cache:
-            self.dta_trace(f"  - Using cached cost for configuration: {self.candidate_str(indexes)}")
-            return self.cost_cache[indexes]
-
-        self.dta_trace(f"  - Evaluating cost for configuration: {self.candidate_str(indexes)}")
-
-        total_cost = 0.0
-        valid_queries = 0
-
-        try:
-            # Calculate cost for all queries with this configuration
-            for query_text, _stmt, weight in weighted_workload:
-                try:
-                    # Get the explain plan using our memoized helper
-                    plan_data = await self.get_explain_plan_with_indexes(query_text, indexes)
-
-                    # Extract cost from the plan data
-                    cost = self.extract_cost_from_json_plan(plan_data)
-                    total_cost += cost * weight
-                    valid_queries += 1
-                except Exception as e:
-                    raise ValueError(f"Error executing explain for query: {query_text}") from e
-
-            if valid_queries == 0:
-                self.dta_trace("    + no valid queries found for cost evaluation")
-                return float("inf")
-
-            avg_cost = total_cost / valid_queries
-            self.cost_cache[indexes] = avg_cost
-            self.dta_trace(f"    + config cost: {avg_cost:.2f} (from {valid_queries} queries)")
-            return avg_cost
-
-        except Exception as e:
-            self.dta_trace(f"    + error evaluating configuration: {e}")
-            raise ValueError("Error evaluating configuration") from e
-
     async def _enumerate_greedy(
         self,
         queries: list[tuple[str, SelectStmt, float]],
@@ -333,7 +244,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
             best_time_improvement = 0
 
             for candidate in candidate_indexes:
-                self.dta_trace(f"Evaluating candidate: {self.candidate_str([candidate])}")
+                self.dta_trace(f"Evaluating candidate: {candidate_str([candidate])}")
                 # Calculate additional size from this index
                 index_size = await self._estimate_index_size(candidate.table, list(candidate.columns))
                 self.dta_trace(f"    + Index size: {humanize.naturalsize(index_size)}")
@@ -344,7 +255,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                 # Check budget constraint
                 if self.budget_mb > 0 and (test_space - base_relation_size) > self.budget_mb * 1024 * 1024:
                     self.dta_trace(
-                        f"  - Skipping candidate: {self.candidate_str([candidate])} because total "
+                        f"  - Skipping candidate: {candidate_str([candidate])} because total "
                         f"index size ({humanize.naturalsize(test_space - base_relation_size)}) exceeds "
                         f"budget ({humanize.naturalsize(self.budget_mb * 1024 * 1024)})"
                     )
@@ -359,7 +270,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
                 # Skip if time improvement is below threshold
                 if time_improvement < min_time_improvement:
-                    self.dta_trace(f"  - Skipping candidate: {self.candidate_str([candidate])} because time improvement is below threshold")
+                    self.dta_trace(f"  - Skipping candidate: {candidate_str([candidate])} because time improvement is below threshold")
                     continue
 
                 # Calculate objective for this configuration
@@ -367,16 +278,14 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
                 # Select the index with the best time improvement that meets our threshold
                 if test_objective < best_objective and time_improvement > best_time_improvement:
-                    self.dta_trace(f"  - Updating best candidate: {self.candidate_str([candidate])}")
+                    self.dta_trace(f"  - Updating best candidate: {candidate_str([candidate])}")
                     best_index = candidate
                     best_time = test_time
                     best_space = test_space
                     best_objective = test_objective
                     best_time_improvement = time_improvement
                 else:
-                    self.dta_trace(
-                        f"  - Skipping candidate: {self.candidate_str([candidate])} because it doesn't have the best objective improvement"
-                    )
+                    self.dta_trace(f"  - Skipping candidate: {candidate_str([candidate])} because it doesn't have the best objective improvement")
 
             # If no improvement or no valid candidates, stop
             if best_index is None:
@@ -390,7 +299,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
             # Log this step
             self.dta_trace(
-                f"  - Selected index: {self.candidate_str([best_index])}"
+                f"  - Selected index: {candidate_str([best_index])}"
                 f"\n    + Time improvement: {time_improvement:.2%}"
                 f"\n    + Space increase: {space_increase:.2%}"
                 f"\n    + New objective: {best_objective:.4f} (improvement: {objective_improvement:.4f})"
@@ -504,45 +413,6 @@ class DatabaseTuningAdvisor(IndexTuningBase):
     #     improvements.sort(key=lambda x: x[1], reverse=True)
     #     chosen = [x[0] for x in improvements[: self.seed_columns_count] if x[1] > 0]
     #     return {IndexConfig(idx.table, tuple(idx.columns), idx.using, idx.potential_problematic_reason) for idx in chosen}
-
-    async def _estimate_index_size(self, table: str, columns: list[str]) -> int:
-        # Create a hashable key for the cache
-        cache_key = (table, frozenset(columns))
-
-        # Check if we already have a cached result
-        if cache_key in self._size_estimate_cache:
-            return self._size_estimate_cache[cache_key]
-
-        try:
-            # Use parameterized query instead of f-string for security
-            stats_query = """
-            SELECT COALESCE(SUM(avg_width), 0) AS total_width,
-                   COALESCE(SUM(n_distinct), 0) AS total_distinct
-            FROM pg_stats
-            WHERE tablename = {} AND attname = ANY({})
-            """
-            result = await SafeSqlDriver.execute_param_query(
-                self.sql_driver,
-                stats_query,
-                [table, columns],
-            )
-            if result and result[0].cells:
-                size_estimate = self._estimate_index_size_internal(dict(result[0].cells))
-
-                # Cache the result
-                self._size_estimate_cache[cache_key] = size_estimate
-                return size_estimate
-            return 0
-        except Exception as e:
-            raise ValueError("Error estimating index size") from e
-
-    def _estimate_index_size_internal(self, stats: dict[str, Any]) -> int:
-        width = (stats["total_width"] or 0) + 8  # 8 bytes for the heap TID
-        ndistinct = stats["total_distinct"] or 1.0
-        ndistinct = ndistinct if ndistinct > 0 else 1.0
-        # simplistic formula
-        size_estimate = int(width * ndistinct * 2.0)
-        return size_estimate
 
     def _filter_candidates_by_query_conditions(self, workload: list[tuple[str, SelectStmt, float]], candidates: list[Index]) -> list[Index]:
         """Filter out index candidates that contain columns not used in query conditions."""

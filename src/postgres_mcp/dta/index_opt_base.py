@@ -6,6 +6,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
+from typing import Iterable
 
 from pglast import parse_sql
 from pglast.ast import SelectStmt
@@ -128,6 +129,9 @@ class DTASession:
     dta_traces: list[str] = field(default_factory=list)
 
 
+def candidate_str(indexes: Iterable[Index] | Iterable[IndexConfig]) -> str:
+    return ", ".join(f"{idx.table}({','.join(idx.columns)})" for idx in indexes) if indexes else "(no indexes)"
+
 class IndexTuningBase(ABC):
     def __init__(
         self,
@@ -170,40 +174,6 @@ class IndexTuningBase(ABC):
 
         # Add trace accumulator
         self._dta_traces: list[str] = []
-
-    async def _run_prechecks(self, session: DTASession) -> DTASession | None:
-        """
-        Run pre-checks before analysis and return a session with error if any check fails.
-
-        Args:
-            session: The current DTASession object
-
-        Returns:
-            The DTASession with error information if any check fails, None if all checks pass
-        """
-        # Pre-check 1: Check HypoPG with more granular feedback
-        # Use our new utility function to check HypoPG status
-        is_hypopg_installed, hypopg_message = await check_hypopg_installation_status(self.sql_driver)
-
-        # If hypopg is not installed or not available, add error to session
-        if not is_hypopg_installed:
-            session.error = hypopg_message
-            return session
-
-        # Pre-check 2: Check if ANALYZE has been run at least once
-        result = await self.sql_driver.execute_query("SELECT s.last_analyze FROM pg_stat_user_tables s ORDER BY s.last_analyze LIMIT 1;")
-        if not result or not any(row.cells.get("last_analyze") is not None for row in result):
-            error_message = (
-                "Statistics are not up-to-date. The database needs to be analyzed first. "
-                "Please run 'ANALYZE;' on your database before using the tuning advisor. "
-                "Without up-to-date statistics, the index recommendations may be inaccurate."
-            )
-            session.error = error_message
-            logger.error(error_message)
-            return session
-
-        # All checks passed
-        return None
 
     async def analyze_workload(
         self,
@@ -311,7 +281,9 @@ class IndexTuningBase(ABC):
                 logger.debug(f"Existing indexes ({len(existing_defs)}): {_pp_list(existing_defs)}")
 
                 # Generate and evaluate index recommendations
-                session.recommendations = await self._generate_recommendations(query_weights, existing_defs)
+                recommendations = await self._generate_recommendations(query_weights, existing_defs)
+                session.recommendations = await self._format_recommendations(query_weights, recommendations)
+
                 # Reset HypoPG only once at the end
                 await self.sql_driver.execute_query("SELECT hypopg_reset();")
 
@@ -321,6 +293,40 @@ class IndexTuningBase(ABC):
 
         session.dta_traces = self._dta_traces
         return session
+
+    async def _run_prechecks(self, session: DTASession) -> DTASession | None:
+        """
+        Run pre-checks before analysis and return a session with error if any check fails.
+
+        Args:
+            session: The current DTASession object
+
+        Returns:
+            The DTASession with error information if any check fails, None if all checks pass
+        """
+        # Pre-check 1: Check HypoPG with more granular feedback
+        # Use our new utility function to check HypoPG status
+        is_hypopg_installed, hypopg_message = await check_hypopg_installation_status(self.sql_driver)
+
+        # If hypopg is not installed or not available, add error to session
+        if not is_hypopg_installed:
+            session.error = hypopg_message
+            return session
+
+        # Pre-check 2: Check if ANALYZE has been run at least once
+        result = await self.sql_driver.execute_query("SELECT s.last_analyze FROM pg_stat_user_tables s ORDER BY s.last_analyze LIMIT 1;")
+        if not result or not any(row.cells.get("last_analyze") is not None for row in result):
+            error_message = (
+                "Statistics are not up-to-date. The database needs to be analyzed first. "
+                "Please run 'ANALYZE;' on your database before using the tuning advisor. "
+                "Without up-to-date statistics, the index recommendations may be inaccurate."
+            )
+            session.error = error_message
+            logger.error(error_message)
+            return session
+
+        # All checks passed
+        return None
 
     async def _get_existing_indexes(self) -> list[dict[str, Any]]:
         """Get existing indexes"""
@@ -636,6 +642,135 @@ class IndexTuningBase(ABC):
 
         self._dta_traces.append(message)
 
+    async def _evaluate_configuration_cost(
+        self,
+        weighted_workload: list[tuple[str, SelectStmt, float]],
+        indexes: frozenset[IndexConfig],
+    ) -> float:
+        """Evaluate total cost with selective enabling and caching."""
+        # Use indexes as cache key
+        if indexes in self.cost_cache:
+            self.dta_trace(f"  - Using cached cost for configuration: {candidate_str(indexes)}")
+            return self.cost_cache[indexes]
+
+        self.dta_trace(f"  - Evaluating cost for configuration: {candidate_str(indexes)}")
+
+        total_cost = 0.0
+        valid_queries = 0
+
+        try:
+            # Calculate cost for all queries with this configuration
+            for query_text, _stmt, weight in weighted_workload:
+                try:
+                    # Get the explain plan using our memoized helper
+                    plan_data = await self.get_explain_plan_with_indexes(query_text, indexes)
+
+                    # Extract cost from the plan data
+                    cost = self.extract_cost_from_json_plan(plan_data)
+                    total_cost += cost * weight
+                    valid_queries += 1
+                except Exception as e:
+                    raise ValueError(f"Error executing explain for query: {query_text}") from e
+
+            if valid_queries == 0:
+                self.dta_trace("    + no valid queries found for cost evaluation")
+                return float("inf")
+
+            avg_cost = total_cost / valid_queries
+            self.cost_cache[indexes] = avg_cost
+            self.dta_trace(f"    + config cost: {avg_cost:.2f} (from {valid_queries} queries)")
+            return avg_cost
+
+        except Exception as e:
+            self.dta_trace(f"    + error evaluating configuration: {e}")
+            raise ValueError("Error evaluating configuration") from e
+
+    async def _estimate_index_size(self, table: str, columns: list[str]) -> int:
+        # Create a hashable key for the cache
+        cache_key = (table, frozenset(columns))
+
+        # Check if we already have a cached result
+        if cache_key in self._size_estimate_cache:
+            return self._size_estimate_cache[cache_key]
+
+        try:
+            # Use parameterized query instead of f-string for security
+            stats_query = """
+            SELECT COALESCE(SUM(avg_width), 0) AS total_width,
+                   COALESCE(SUM(n_distinct), 0) AS total_distinct
+            FROM pg_stats
+            WHERE tablename = {} AND attname = ANY({})
+            """
+            result = await SafeSqlDriver.execute_param_query(
+                self.sql_driver,
+                stats_query,
+                [table, columns],
+            )
+            if result and result[0].cells:
+                size_estimate = self._estimate_index_size_internal(dict(result[0].cells))
+
+                # Cache the result
+                self._size_estimate_cache[cache_key] = size_estimate
+                return size_estimate
+            return 0
+        except Exception as e:
+            raise ValueError("Error estimating index size") from e
+
+    def _estimate_index_size_internal(self, stats: dict[str, Any]) -> int:
+        width = (stats["total_width"] or 0) + 8  # 8 bytes for the heap TID
+        ndistinct = stats["total_distinct"] or 1.0
+        ndistinct = ndistinct if ndistinct > 0 else 1.0
+        # simplistic formula
+        size_estimate = int(width * ndistinct * 2.0)
+        return size_estimate
+
+    async def _format_recommendations(
+        self, query_weights: list[tuple[str, SelectStmt, float]], best_config: tuple[set[IndexConfig], float]
+    ) -> list[IndexRecommendation]:
+        """Format recommendations into a list of IndexRecommendation objects."""
+        # build final recommendations from best_config
+        recommendations: list[IndexRecommendation] = []
+        total_size = 0
+        budget_bytes = self.budget_mb * 1024 * 1024
+        individual_base_cost = await self._evaluate_configuration_cost(query_weights, frozenset()) or 1.0
+        progressive_base_cost = individual_base_cost
+        indexes_so_far = []
+        for index_config in best_config[0]:
+            indexes_so_far.append(index_config)
+            # Calculate the cost with only this index
+            progressive_cost = await self._evaluate_configuration_cost(
+                query_weights,
+                frozenset(indexes_so_far),  # Indexes so far
+            )
+            individual_cost = await self._evaluate_configuration_cost(
+                query_weights,
+                frozenset([index_config]),  # Only this index
+            )
+
+            size = await self._estimate_index_size(index_config.table, list(index_config.columns))
+            if budget_bytes < 0 or total_size + size <= budget_bytes:
+                self.dta_trace(f"Adding index: {candidate_str([index_config])}")
+                rec = IndexRecommendation(
+                    table=index_config.table,
+                    columns=index_config.columns,
+                    using=index_config.using,
+                    potential_problematic_reason=index_config.potential_problematic_reason,
+                    estimated_size_bytes=size,
+                    progressive_base_cost=progressive_base_cost,
+                    progressive_recommendation_cost=progressive_cost,
+                    individual_base_cost=individual_base_cost,
+                    individual_recommendation_cost=individual_cost,
+                    queries=[q for q, _, _ in query_weights],
+                    definition=index_config.definition,
+                )
+                progressive_base_cost = progressive_cost
+                recommendations.append(rec)
+                total_size += size
+            else:
+                self.dta_trace(f"Skipping index: {candidate_str([index_config])} because it exceeds budget")
+
+        return recommendations
+
     @staticmethod
     def extract_cost_from_json_plan(plan_data: dict[str, Any]) -> float:
         """Extract total cost from JSON EXPLAIN plan data."""
@@ -661,7 +796,7 @@ class IndexTuningBase(ABC):
 
     @abstractmethod
     async def _generate_recommendations(
-        self, query_weights: list[tuple[str, SelectStmt, float]], existing_defs: set[str]
-    ) -> list[IndexRecommendation]:
+        self, query_weights: list[tuple[str, SelectStmt, float]], existing_index_defs: set[str]
+    ) -> tuple[set[IndexConfig], float]:
         """Generate index tuning queries."""
         pass

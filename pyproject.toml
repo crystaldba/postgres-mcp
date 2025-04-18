@@ -11,6 +11,7 @@ dependencies = [
     "pglast==7.2.0",
     "attrs>=25.3.0",
     "psycopg-pool>=3.2.6",
+    "litellm>=1.66.3",
 ]
 license = "mit"
 license-files = ["LICENSE"]
