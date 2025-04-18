@@ -30,10 +30,10 @@ Postgres MCP Pro does much more than wrap a database connection.
 
 Features include:
 
-- **🔍 Database Health** - monitor missing/duplicate indexes, connection utilization, buffer cache, vacuum health, sequences, and more.
+- **🔍 Database Health** - analyze index health, connection utilization, buffer cache, vacuum health, sequence limits, replication lag, and more.
 - **⚡ Index Tuning** - explore thousands of possible indexes to find the best solution for your workload, using industrial-strength algorithms.
-- **🤖 Query Plans** - validate and test performance impacts by checking explain plans and simulating the impact of hypothetical indexes.
-- **📊 Schema Intelligence** - context-aware SQL generation based on detailed understanding of the database schema.
+- **📈 Query Plans** - validate and optimize performance by reviewing EXPLAIN plans and simulating the impact of hypothetical indexes.
+- **🧠 Schema Intelligence** - context-aware SQL generation based on detailed understanding of the database schema.
 - **🛡️ Safe SQL Execution** - configurable access control, including support for read-only mode and safe SQL parsing, making it usable for both development and production.
 
 Postgres MCP Pro supports both the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio) and [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) transports, for flexibility in different environments.
