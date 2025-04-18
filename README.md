@@ -43,13 +43,13 @@ For additional background on why we built Postgres MCP Pro, see [our launch blog
 ## Demo
 
 *From Unusable to Lightning Fast*
-- **Challenge:** We generated a movie app using an AI assistant, but the SQLAlchemy ORM code ran painfully slow
-- **Solution:** Using Postgres MCP Pro with Cursor, we fixed the performance issues in minutes
+- **Challenge:** We generated a movie app using an AI assistant, but the SQLAlchemy ORM code ran painfully slow.
+- **Solution:** Using Postgres MCP Pro with Cursor, we fixed the performance issues in minutes.
 
 What we did:
 - 🚀 Fixed performance - including ORM queries, indexing, and caching
 - 🛠️ Fixed a broken page - by prompting the agent to explore the data, fix queries, and add related content.
-- 🧠 Improved the top-rated movies - by letting the agent explore the data and fix an ORM query
+- 🧠 Improved the top movies - by exploring the data and fixing the ORM query to surface more relevant results.
 
 See the video below or read the [play-by-play](examples/movie-app.md).
 
