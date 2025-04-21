@@ -8,7 +8,7 @@
 [![Twitter Follow](https://img.shields.io/twitter/follow/auto_dba?style=flat)](https://x.com/auto_dba)
 [![Contributors](https://img.shields.io/github/contributors/crystaldba/postgres-mcp)](https://github.com/crystaldba/postgres-mcp/graphs/contributors)
 
-<h3>A Postgres MCP server with index tuning, explain plans, health checks, and safe sql execution</h3>
+<h3>A Postgres MCP server with index tuning, explain plans, health checks, and safe sql execution.</h3>
 
 <div class="toc">
   <a href="#overview">Overview</a> •
@@ -16,7 +16,8 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#technical-notes">Technical Notes</a> •
   <a href="#mcp-server-api">MCP API</a> •
-  <a href="#related-projects">Related Projects</a>
+  <a href="#related-projects">Related Projects</a> •
+  <a href="#frequently-asked-questions">FAQ</a>
 </div>
 
 </div>
@@ -29,46 +30,11 @@ Postgres MCP Pro does much more than wrap a database connection.
 
 Features include:
 
-<table>
-  <tr>
-    <td width="50%">
-      <h4>🔍 Database Health</h4>
-      <ul>
-        <li>Detect unused/duplicate indexes</li>
-        <li>Monitor cache hit rates</li>
-        <li>Check connection utilization</li>
-        <li>Identify vacuum needs before problems occur</li>
-      </ul>
-    </td>
-    <td width="50%">
-      <h4>⚡ Index Tuning</h4>
-      <ul>
-        <li>Generate optimal indexes using proven algorithms</li>
-        <li>Validate AI-suggested indexes</li>
-        <li>Simulate performance impacts with hypothetical indexes</li>
-        <li>Balance performance gain vs storage costs</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <h4>📊 Schema Intelligence</h4>
-      <ul>
-        <li>Detailed schema information for tables, views & more</li>
-        <li>Context-aware SQL generation</li>
-        <li>Optimal column selection recommendations</li>
-      </ul>
-    </td>
-    <td width="50%">
-      <h4>🔒 Protected Execution</h4>
-      <ul>
-        <li><b>Unrestricted Mode:</b> Full read/write for development</li>
-        <li><b>Restricted Mode:</b> Read-only with resource limits for production</li>
-        <li>Safe SQL parsing to prevent security issues</li>
-      </ul>
-    </td>
-  </tr>
-</table>
+- **🔍 Database Health** - analyze index health, connection utilization, buffer cache, vacuum health, sequence limits, replication lag, and more.
+- **⚡ Index Tuning** - explore thousands of possible indexes to find the best solution for your workload, using industrial-strength algorithms.
+- **📈 Query Plans** - validate and optimize performance by reviewing EXPLAIN plans and simulating the impact of hypothetical indexes.
+- **🧠 Schema Intelligence** - context-aware SQL generation based on detailed understanding of the database schema.
+- **🛡️ Safe SQL Execution** - configurable access control, including support for read-only mode and safe SQL parsing, making it usable for both development and production.
 
 Postgres MCP Pro supports both the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio) and [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) transports, for flexibility in different environments.
 
@@ -77,14 +43,13 @@ For additional background on why we built Postgres MCP Pro, see [our launch blog
 ## Demo
 
 *From Unusable to Lightning Fast*
+- **Challenge:** We generated a movie app using an AI assistant, but the SQLAlchemy ORM code ran painfully slow.
+- **Solution:** Using Postgres MCP Pro with Cursor, we fixed the performance issues in minutes.
 
-- **Challenge:** We generated a movie app using an AI assistant, but the SQLAlchemy ORM code ran painfully slowly
-- **Solution:** Using Postgres MCP Pro with Cursor, we fixed the performance issues in minutes
-
-**We used the Cursor AI agent and Postgres MCP Pro to:**
-- 🚀 Fix performance - including ORM queries, indexing, and caching
-- 🛠️ Fix bugs that require connecting data to code
-- 🧠 Add new features from single prompts
+What we did:
+- 🚀 Fixed performance - including ORM queries, indexing, and caching
+- 🛠️ Fixed a broken page - by prompting the agent to explore the data, fix queries, and add related content.
+- 🧠 Improved the top movies - by exploring the data and fixing the ORM query to surface more relevant results.
 
 See the video below or read the [play-by-play](examples/movie-app.md).
 
