@@ -132,37 +132,16 @@ class DTASession:
 def candidate_str(indexes: Iterable[Index] | Iterable[IndexConfig]) -> str:
     return ", ".join(f"{idx.table}({','.join(idx.columns)})" for idx in indexes) if indexes else "(no indexes)"
 
+
 class IndexTuningBase(ABC):
     def __init__(
         self,
         sql_driver: SqlDriver,
-        # budget_mb: int = -1,  # no limit by default
-        # max_runtime_seconds: int = 30,  # 30 seconds
-        # max_index_width: int = 3,
-        # min_column_usage: int = 1,  # skip columns used in fewer than this many queries
-        # seed_columns_count: int = 3,  # how many single-col seeds to pick
-        # pareto_alpha: float = 2.0,
-        # min_time_improvement: float = 0.1,
     ):
         """
         :param sql_driver: Griptape SqlDriver
-        :param budget_mb: Storage budget
-        :param max_runtime_seconds: Time limit for entire analysis (anytime approach)
-        :param max_index_width: Maximum columns in an index
-        :param min_column_usage: skip columns that appear in fewer than X queries
-        :param seed_columns_count: how many top single-column indexes to pick as seeds
-        :param pareto_alpha: stop when relative improvement falls below this threshold
-        :param min_time_improvement: stop when relative improvement falls below this threshold
         """
         self.sql_driver = sql_driver
-        # self.budget_mb = budget_mb
-        # self.max_runtime_seconds = max_runtime_seconds
-        # self.max_index_width = max_index_width
-        # self.min_column_usage = min_column_usage
-        # self.seed_columns_count = seed_columns_count
-        # self._analysis_start_time = 0.0
-        # self.pareto_alpha = pareto_alpha
-        # self.min_time_improvement = min_time_improvement
 
         # Add memoization caches
         self.cost_cache: dict[frozenset[IndexConfig], float] = {}
@@ -276,7 +255,7 @@ class IndexTuningBase(ABC):
                 self.dta_trace(f"Workload queries ({len(workload_queries)}): {_pp_list(workload_queries)}")
 
                 # get existing indexes
-                existing_defs = {idx["definition"] for idx in await self._get_existing_indexes(workload_queries)}
+                existing_defs = {idx["definition"] for idx in await self._get_existing_indexes()}
 
                 logger.debug(f"Existing indexes ({len(existing_defs)}): {_pp_list(existing_defs)}")
 
@@ -793,6 +772,59 @@ class IndexTuningBase(ABC):
             return float(total_cost)
         except (IndexError, KeyError, ValueError, json.JSONDecodeError) as e:
             raise ValueError("Error extracting cost from plan") from e
+
+    async def _get_table_size(self, table: str) -> int:
+        """
+        Get the total size of a table including indexes and toast tables.
+        Uses memoization to avoid repeated database queries.
+
+        Args:
+            table: The name of the table
+
+        Returns:
+            Size of the table in bytes
+        """
+        # Check if we have a cached result
+        if table in self._table_size_cache:
+            return self._table_size_cache[table]
+
+        # Try to get table size from the database using proper quoting
+        try:
+            # Use the proper way to calculate table size with quoted identifiers
+            query = "SELECT pg_total_relation_size(quote_ident({})) as rel_size"
+            result = await SafeSqlDriver.execute_param_query(self.sql_driver, query, [table])
+
+            if result and len(result) > 0 and len(result[0].cells) > 0:
+                size = int(result[0].cells["rel_size"])
+                # Cache the result
+                self._table_size_cache[table] = size
+                return size
+            else:
+                # If query fails, use our estimation method
+                size = await self._estimate_table_size(table)
+                self._table_size_cache[table] = size
+                return size
+        except Exception as e:
+            logger.warning(f"Error getting table size for {table}: {e}")
+            # Use estimation method
+            size = await self._estimate_table_size(table)
+            self._table_size_cache[table] = size
+            return size
+
+    async def _estimate_table_size(self, table: str) -> int:
+        """Estimate the size of a table if we can't get it from the database."""
+        try:
+            # Try a simple query to get row count and then estimate size
+            result = await SafeSqlDriver.execute_param_query(self.sql_driver, "SELECT count(*) as row_count FROM {}", [table])
+            if result and len(result) > 0 and len(result[0].cells) > 0:
+                row_count = int(result[0].cells["row_count"])
+                # Rough estimate: assume 1KB per row
+                return row_count * 1024
+        except Exception as e:
+            logger.warning(f"Error estimating table size for {table}: {e}")
+
+        # Default size if we can't estimate
+        return 10 * 1024 * 1024  # 10MB default
 
     @abstractmethod
     async def _generate_recommendations(

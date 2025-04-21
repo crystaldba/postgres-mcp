@@ -338,59 +338,6 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
         return current_indexes, current_time
 
-    async def _get_table_size(self, table: str) -> int:
-        """
-        Get the total size of a table including indexes and toast tables.
-        Uses memoization to avoid repeated database queries.
-
-        Args:
-            table: The name of the table
-
-        Returns:
-            Size of the table in bytes
-        """
-        # Check if we have a cached result
-        if table in self._table_size_cache:
-            return self._table_size_cache[table]
-
-        # Try to get table size from the database using proper quoting
-        try:
-            # Use the proper way to calculate table size with quoted identifiers
-            query = "SELECT pg_total_relation_size(quote_ident({})) as rel_size"
-            result = await SafeSqlDriver.execute_param_query(self.sql_driver, query, [table])
-
-            if result and len(result) > 0 and len(result[0].cells) > 0:
-                size = int(result[0].cells["rel_size"])
-                # Cache the result
-                self._table_size_cache[table] = size
-                return size
-            else:
-                # If query fails, use our estimation method
-                size = await self._estimate_table_size(table)
-                self._table_size_cache[table] = size
-                return size
-        except Exception as e:
-            logger.warning(f"Error getting table size for {table}: {e}")
-            # Use estimation method
-            size = await self._estimate_table_size(table)
-            self._table_size_cache[table] = size
-            return size
-
-    async def _estimate_table_size(self, table: str) -> int:
-        """Estimate the size of a table if we can't get it from the database."""
-        try:
-            # Try a simple query to get row count and then estimate size
-            result = await SafeSqlDriver.execute_param_query(self.sql_driver, "SELECT count(*) as row_count FROM {}", [table])
-            if result and len(result) > 0 and len(result[0].cells) > 0:
-                row_count = int(result[0].cells["row_count"])
-                # Rough estimate: assume 1KB per row
-                return row_count * 1024
-        except Exception as e:
-            logger.warning(f"Error estimating table size for {table}: {e}")
-
-        # Default size if we can't estimate
-        return 10 * 1024 * 1024  # 10MB default
-
     # def _quick_pass_seeds(self, weighted_workload: list[tuple[str, SelectStmt, float]], all_candidates: list[Index]) -> set[IndexConfig]:
     #     """Identify top single-column seed indexes efficiently."""
     #     single_col = [c for c in all_candidates if len(c.columns) == 1]
