@@ -1,6 +1,7 @@
 import logging
 import time
 from itertools import combinations
+from typing import Any
 from typing import override
 
 import humanize
@@ -10,13 +11,13 @@ from pglast.ast import Node
 from pglast.ast import SelectStmt
 
 from ..sql import ColumnCollector
-from ..sql import IndexConfig
 from ..sql import SafeSqlDriver
 from ..sql import SqlDriver
 from ..sql import TableAliasVisitor
-from .index_opt_base import Index
+from .index_opt_base import IndexRecommendation
 from .index_opt_base import IndexTuningBase
 from .index_opt_base import candidate_str
+from .index_opt_base import pp_list
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
         min_time_improvement: float = 0.1,
     ):
         """
-        :param sql_driver: Griptape SqlDriver
+        :param sql_driver: Database access
         :param budget_mb: Storage budget
         :param max_runtime_seconds: Time limit for entire analysis (anytime approach)
         :param max_index_width: Maximum columns in an index
@@ -65,10 +66,13 @@ class DatabaseTuningAdvisor(IndexTuningBase):
         return elapsed > self.max_runtime_seconds
 
     @override
-    async def _generate_recommendations(
-        self, query_weights: list[tuple[str, SelectStmt, float]], existing_index_defs: set[str]
-    ) -> tuple[set[IndexConfig], float]:
+    async def _generate_recommendations(self, query_weights: list[tuple[str, SelectStmt, float]]) -> tuple[set[IndexRecommendation], float]:
         """Generate index recommendations using a hybrid 'seed + greedy' approach with a time cutoff."""
+
+        # Get existing indexes
+        existing_index_defs: set[str] = {idx["definition"] for idx in await self._get_existing_indexes()}
+
+        logger.debug(f"Existing indexes ({len(existing_index_defs)}): {pp_list(list(existing_index_defs))}")
 
         # generate initial candidates
         all_candidates = await self.generate_candidates(query_weights, existing_index_defs)
@@ -91,7 +95,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
             set(),
         ]
 
-        best_config: tuple[set[IndexConfig], float] = (set(), float("inf"))
+        best_config: tuple[set[IndexRecommendation], float] = (set(), float("inf"))
 
         # Evaluate each seed
         for seed in seeds_list:
@@ -102,11 +106,10 @@ class DatabaseTuningAdvisor(IndexTuningBase):
             current_cost = await self._evaluate_configuration_cost(query_weights, frozenset(seed))
             candidate_indexes = set(
                 {
-                    IndexConfig(
+                    IndexRecommendation(
                         c.table,
                         tuple(c.columns),
                         c.using,
-                        c.potential_problematic_reason,
                     )
                     for c in all_candidates
                 }
@@ -119,7 +122,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
         # Sort recs by benefit desc
         return best_config
 
-    async def generate_candidates(self, workload: list[tuple[str, SelectStmt, float]], existing_defs: set[str]) -> list[Index]:
+    async def generate_candidates(self, workload: list[tuple[str, SelectStmt, float]], existing_defs: set[str]) -> list[IndexRecommendation]:
         """Generates index candidates from queries, with batch creation."""
         table_columns_usage = {}  # table -> {col -> usage_count}
         # Extract columns from all queries
@@ -145,7 +148,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
             col_list = list(cols)
             for width in range(1, min(self.max_index_width, len(cols)) + 1):
                 for combo in combinations(col_list, width):
-                    candidates.append(Index(table=table, columns=tuple(combo)))
+                    candidates.append(IndexRecommendation(table=table, columns=tuple(combo)))
 
         # filter out duplicates with existing indexes
         filtered_candidates = [c for c in candidates if not self._index_exists(c, existing_defs)]
@@ -177,7 +180,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                 index_map = {r.cells["index_name"]: r.cells["index_size"] for r in result}
                 for idx in condition_filtered:
                     if idx.name in index_map:
-                        idx.estimated_size = index_map[idx.name]
+                        idx.estimated_size_bytes = index_map[idx.name]
 
             await self.sql_driver.execute_query("SELECT hypopg_reset();")
         return condition_filtered
@@ -185,10 +188,10 @@ class DatabaseTuningAdvisor(IndexTuningBase):
     async def _enumerate_greedy(
         self,
         queries: list[tuple[str, SelectStmt, float]],
-        current_indexes: set[IndexConfig],
+        current_indexes: set[IndexRecommendation],
         current_cost: float,
-        candidate_indexes: set[IndexConfig],
-    ) -> tuple[set[IndexConfig], float]:
+        candidate_indexes: set[IndexRecommendation],
+    ) -> tuple[set[IndexRecommendation], float]:
         """
         Pareto optimal greedy approach using cost/benefit analysis:
         - Cost: Size of base relation plus size of indexes (in bytes)
@@ -262,7 +265,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                     continue
 
                 # Calculate new time (cost) with this index
-                test_time = await self._evaluate_configuration_cost(queries, frozenset(current_indexes | {candidate}))
+                test_time = await self._evaluate_configuration_cost(queries, frozenset(idx.index_definition for idx in current_indexes | {candidate}))
                 self.dta_trace(f"    + Eval cost (time): {test_time}")
 
                 # Calculate relative time improvement
@@ -338,30 +341,9 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
         return current_indexes, current_time
 
-    # def _quick_pass_seeds(self, weighted_workload: list[tuple[str, SelectStmt, float]], all_candidates: list[Index]) -> set[IndexConfig]:
-    #     """Identify top single-column seed indexes efficiently."""
-    #     single_col = [c for c in all_candidates if len(c.columns) == 1]
-    #     # For each candidate, let's check the cost improvement
-    #     # We'll do a naive approach: cost(workload) w/o indexes vs. with just that index.
-    #     base_cost = await self._evaluate_configuration_cost(weighted_workload, frozenset())
-    #     if base_cost <= 0:
-    #         return set()
-
-    #     # measure improvement
-    #     improvements = []
-    #     for c in single_col:
-    #         if self._check_time():
-    #             break
-    #         cfg_set = frozenset({IndexConfig(c.table, tuple(c.columns), c.using, c.potential_problematic_reason)})
-    #         new_cost = await self._evaluate_configuration_cost(weighted_workload, cfg_set)
-    #         improvement = base_cost - new_cost if new_cost < base_cost else 0
-    #         improvements.append((c, improvement))
-    #     # pick top seed_columns_count
-    #     improvements.sort(key=lambda x: x[1], reverse=True)
-    #     chosen = [x[0] for x in improvements[: self.seed_columns_count] if x[1] > 0]
-    #     return {IndexConfig(idx.table, tuple(idx.columns), idx.using, idx.potential_problematic_reason) for idx in chosen}
-
-    def _filter_candidates_by_query_conditions(self, workload: list[tuple[str, SelectStmt, float]], candidates: list[Index]) -> list[Index]:
+    def _filter_candidates_by_query_conditions(
+        self, workload: list[tuple[str, SelectStmt, float]], candidates: list[IndexRecommendation]
+    ) -> list[IndexRecommendation]:
         """Filter out index candidates that contain columns not used in query conditions."""
         if not workload or not candidates:
             return candidates
@@ -399,7 +381,7 @@ class DatabaseTuningAdvisor(IndexTuningBase):
 
         return filtered_candidates
 
-    async def _filter_long_text_columns(self, candidates: list[Index], max_text_length: int = 100) -> list[Index]:
+    async def _filter_long_text_columns(self, candidates: list[IndexRecommendation], max_text_length: int = 100) -> list[IndexRecommendation]:
         """Filter out indexes that contain long text columns based on catalog information.
 
         Args:
@@ -487,6 +469,188 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                 filtered_candidates.append(candidate)
 
         return filtered_candidates
+
+    async def _get_existing_indexes(self) -> list[dict[str, Any]]:
+        """Get all existing indexes"""
+        # TODO: we should get the indexes that are relevant to the query
+        query = """
+        SELECT schemaname as schema,
+               tablename as table,
+               indexname as name,
+               indexdef as definition
+        FROM pg_indexes
+        WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY schemaname, tablename, indexname
+        """
+        result = await self.sql_driver.execute_query(query)
+        if result is not None:
+            return [dict(row.cells) for row in result]
+        return []
+
+    def _index_exists(self, index: IndexRecommendation, existing_defs: set[str]) -> bool:
+        """Check if an index with the same table, columns, and type already exists in the database.
+
+        Uses pglast to parse index definitions and compare their structure rather than
+        doing simple string matching.
+        """
+        from pglast import parser
+
+        try:
+            # Parse the candidate index
+            candidate_stmt = parser.parse_sql(index.definition)[0]
+            candidate_node = candidate_stmt.stmt
+
+            # Extract key information from candidate index
+            candidate_info = self._extract_index_info(candidate_node)
+
+            # If we couldn't parse the candidate index, fall back to string comparison
+            if not candidate_info:
+                return index.definition in existing_defs
+
+            # Check each existing index
+            for existing_def in existing_defs:
+                try:
+                    # Skip if it's obviously not an index
+                    if not ("CREATE INDEX" in existing_def.upper() or "CREATE UNIQUE INDEX" in existing_def.upper()):
+                        continue
+
+                    # Parse the existing index
+                    existing_stmt = parser.parse_sql(existing_def)[0]
+                    existing_node = existing_stmt.stmt
+
+                    # Extract key information
+                    existing_info = self._extract_index_info(existing_node)
+
+                    # Compare the key components
+                    if existing_info and self._is_same_index(candidate_info, existing_info):
+                        return True
+                except Exception as e:
+                    raise ValueError("Error parsing existing index") from e
+
+            return False
+        except Exception as e:
+            raise ValueError("Error in robust index comparison") from e
+
+    def _extract_index_info(self, node) -> dict[str, Any] | None:
+        """Extract key information from a parsed index node."""
+        try:
+            # Handle differences in node structure between pglast versions
+            if hasattr(node, "IndexStmt"):
+                index_stmt = node.IndexStmt
+            else:
+                index_stmt = node
+
+            # Extract table name
+            if hasattr(index_stmt.relation, "relname"):
+                table_name = index_stmt.relation.relname
+            else:
+                # Extract from RangeVar
+                table_name = index_stmt.relation.RangeVar.relname
+
+            # Extract columns
+            columns = []
+            for idx_elem in index_stmt.indexParams:
+                if hasattr(idx_elem, "name") and idx_elem.name:
+                    columns.append(idx_elem.name)
+                elif hasattr(idx_elem, "IndexElem") and idx_elem.IndexElem:
+                    columns.append(idx_elem.IndexElem.name)
+                elif hasattr(idx_elem, "expr") and idx_elem.expr:
+                    # Convert the expression to a proper string representation
+                    expr_str = self._ast_expr_to_string(idx_elem.expr)
+                    columns.append(expr_str)
+            # Extract index type
+            index_type = "btree"  # default
+            if hasattr(index_stmt, "accessMethod") and index_stmt.accessMethod:
+                index_type = index_stmt.accessMethod
+
+            # Check if unique
+            is_unique = False
+            if hasattr(index_stmt, "unique"):
+                is_unique = index_stmt.unique
+
+            return {
+                "table": table_name.lower(),
+                "columns": [col.lower() for col in columns],
+                "type": index_type.lower(),
+                "unique": is_unique,
+            }
+        except Exception as e:
+            self.dta_trace(f"Error extracting index info: {e}")
+            raise ValueError("Error extracting index info") from e
+
+    def _ast_expr_to_string(self, expr) -> str:
+        """Convert an AST expression (like FuncCall) to a proper string representation.
+
+        For example, converts a FuncCall node representing lower(name) to "lower(name)"
+        """
+        try:
+            # Import FuncCall and ColumnRef for type checking
+            from pglast.ast import ColumnRef
+            from pglast.ast import FuncCall
+
+            # Check for FuncCall type directly
+            if isinstance(expr, FuncCall):
+                # Extract function name
+                if hasattr(expr, "funcname") and expr.funcname:
+                    func_name = ".".join([name.sval for name in expr.funcname if hasattr(name, "sval")])
+                else:
+                    func_name = "unknown_func"
+
+                # Extract arguments
+                args = []
+                if hasattr(expr, "args") and expr.args:
+                    for arg in expr.args:
+                        args.append(self._ast_expr_to_string(arg))
+
+                # Format as function call
+                return f"{func_name}({','.join(args)})"
+
+            # Check for ColumnRef type directly
+            elif isinstance(expr, ColumnRef):
+                if hasattr(expr, "fields") and expr.fields:
+                    return ".".join([field.sval for field in expr.fields if hasattr(field, "sval")])
+                return "unknown_column"
+
+            # Try to handle direct values
+            elif hasattr(expr, "sval"):  # String value
+                return expr.sval
+            elif hasattr(expr, "ival"):  # Integer value
+                return str(expr.ival)
+            elif hasattr(expr, "fval"):  # Float value
+                return expr.fval
+
+            # Fallback for other expression types
+            return str(expr)
+        except Exception as e:
+            raise ValueError("Error converting expression to string") from e
+
+    def _is_same_index(self, index1: dict[str, Any], index2: dict[str, Any]) -> bool:
+        """Check if two indexes are functionally equivalent."""
+        if not index1 or not index2:
+            return False
+
+        # Same table?
+        if index1["table"] != index2["table"]:
+            return False
+
+        # Same index type?
+        if index1["type"] != index2["type"]:
+            return False
+
+        # Same columns (order matters for most index types)?
+        if index1["columns"] != index2["columns"]:
+            # For hash indexes, order doesn't matter
+            if index1["type"] == "hash" and set(index1["columns"]) == set(index2["columns"]):
+                return True
+            return False
+
+        # If one is unique and the other is not, they're different
+        # Except when a primary key (which is unique) exists and we're considering a non-unique index on same column
+        if index1["unique"] and not index2["unique"]:
+            return False
+
+        # Same core definition
+        return True
 
 
 class ConditionColumnCollector(ColumnCollector):
@@ -666,6 +830,7 @@ class ConditionColumnCollector(ColumnCollector):
 
     def _column_exists(self, table: str, column: str) -> bool:
         """Check if column exists in table."""
+        # TODO
         # This would normally query the database
         # For now, we'll return True to collect all possible matches
         # The actual filtering will happen later

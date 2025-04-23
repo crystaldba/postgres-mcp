@@ -9,7 +9,7 @@ from typing import Any
 
 from ..artifacts import ErrorResult
 from ..artifacts import ExplainPlanArtifact
-from ..sql import IndexConfig
+from ..sql import IndexDefinition
 from ..sql import SafeSqlDriver
 from ..sql import SqlBindParams
 from ..sql import check_postgres_version_requirement
@@ -114,7 +114,7 @@ class ExplainPlanTool:
 
             # Convert the index definitions to IndexConfig objects
             indexes = frozenset(
-                IndexConfig(
+                IndexDefinition(
                     table=idx["table"],
                     columns=tuple(idx["columns"]),
                     using=idx.get("using", "btree"),
@@ -185,7 +185,7 @@ class ExplainPlanTool:
     async def generate_explain_plan_with_hypothetical_indexes(
         self,
         query_text: str,
-        indexes: frozenset[IndexConfig],
+        indexes: frozenset[IndexDefinition],
         use_generic_plan: bool = False,
         dta=None,
     ) -> dict[str, Any]:

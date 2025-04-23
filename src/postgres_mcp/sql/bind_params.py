@@ -223,6 +223,7 @@ class ColumnCollector(Visitor):
         Visit an A_Expr node (arithmetic or comparison expression).
         """
         if isinstance(node, A_Expr) and self.inside_select:
+            # Process left expression
             if hasattr(node, "lexpr") and node.lexpr:
                 self(node.lexpr)
                 if isinstance(node.lexpr, SelectStmt):
@@ -231,6 +232,8 @@ class ColumnCollector(Visitor):
                     self.context_stack.append((alias_visitor.tables, alias_visitor.aliases))
                     self(node.lexpr)
                     self.context_stack.pop()
+
+            # Process right expression
             if hasattr(node, "rexpr") and node.rexpr:
                 if isinstance(node.rexpr, SelectStmt):
                     alias_visitor = TableAliasVisitor()
@@ -240,6 +243,16 @@ class ColumnCollector(Visitor):
                     self.context_stack.pop()
                 else:
                     self(node.rexpr)
+
+            # Special handling for IN clauses with subqueries
+            if hasattr(node, "kind") and node.kind == 0:  # 0 is the kind for IN operator
+                if hasattr(node, "rexpr") and node.rexpr and isinstance(node.rexpr, SelectStmt):
+                    # Process the subquery in the IN clause
+                    alias_visitor = TableAliasVisitor()
+                    alias_visitor(node.rexpr)
+                    self.context_stack.append((alias_visitor.tables, alias_visitor.aliases))
+                    self(node.rexpr)
+                    self.context_stack.pop()
 
     def visit_JoinExpr(self, ancestors: list[Node], node: Node) -> None:  # noqa: N802
         """

@@ -13,13 +13,16 @@ from postgres_mcp.artifacts import ErrorResult
 from postgres_mcp.explain.explain_plan import ExplainPlanTool
 from postgres_mcp.sql import TableAliasVisitor
 
-from ..sql import IndexConfig
+from ..sql import IndexDefinition
 from ..sql import SqlDriver
+from .index_opt_base import IndexRecommendation
 from .index_opt_base import IndexTuningBase
 
 logger = logging.getLogger(__name__)
 
 
+# We introduce a Pydantic index class to facilitate communication with the LLM
+# via the instructor library.
 class Index(BaseModel):
     table_name: str
     columns: tuple[str, ...]
@@ -32,15 +35,15 @@ class Index(BaseModel):
             return False
         return self.table_name == other.table_name and self.columns == other.columns
 
-    def to_index_config(self) -> IndexConfig:
-        return IndexConfig(table=self.table_name, columns=self.columns)
+    def to_index_recommendation(self) -> IndexRecommendation:
+        return IndexRecommendation(table=self.table_name, columns=self.columns)
+
+    def to_index_definition(self) -> IndexDefinition:
+        return IndexDefinition(table=self.table_name, columns=self.columns)
 
 
 class IndexingAlternative(BaseModel):
     alternatives: list[set[Index]]
-
-    # def to_list(self) -> list[set[IndexConfig]]:
-    #     return [set(IndexConfig(table=index.table_name, columns=index.columns) for index in indexes) for indexes in self.alternatives]
 
 
 @dataclass
@@ -68,9 +71,7 @@ class LLMOptimizerTool(IndexTuningBase):
         return math.log(execution_cost) + self.pareto_alpha * math.log(index_size)
 
     @override
-    async def _generate_recommendations(
-        self, query_weights: list[tuple[str, SelectStmt, float]], existing_index_defs: set[str]
-    ) -> tuple[set[IndexConfig], float]:
+    async def _generate_recommendations(self, query_weights: list[tuple[str, SelectStmt, float]]) -> tuple[set[IndexRecommendation], float]:
         """Generate index tuning queries using optimization by LLM."""
         # For now we support only one table at a time
         if len(query_weights) > 1:
@@ -106,7 +107,7 @@ class LLMOptimizerTool(IndexTuningBase):
         logger.debug("Generated explain plan: %s", explain_plan_json)
 
         # Extract indexes used in the explain plan
-        indexes_used = await self._extract_indexes_from_explain_plan_with_columns(explain_plan_json)
+        indexes_used: set[Index] = await self._extract_indexes_from_explain_plan_with_columns(explain_plan_json)
 
         # Get the current cost
         original_cost = await self._evaluate_configuration_cost(query_weights, frozenset())
@@ -140,7 +141,7 @@ class LLMOptimizerTool(IndexTuningBase):
             if attempt_history:
                 history_prompt = "\nPrevious attempts and their costs:\n"
                 for attempt in attempt_history:
-                    indexes_str = ", ".join(f"{idx.table_name}.{','.join(idx.columns)}" for idx in attempt.indexes)
+                    indexes_str = ";".join(idx.to_index_definition().definition for idx in attempt.indexes)
                     history_prompt += f"- Indexes: {indexes_str}, Cost: {attempt.execution_cost}, Index Size: {attempt.index_size}, "
                     history_prompt += f"Objective Score: {attempt.objective_score}\n"
 
@@ -161,11 +162,12 @@ class LLMOptimizerTool(IndexTuningBase):
                         "role": "user",
                         "content": f"Here is the query we are optimizing: {query}\n"
                         f"Here is the explain plan: {explain_plan_json}\n"
-                        f"Here are the existing indexes: {existing_index_defs}\n"
+                        f"Here are the existing indexes: {';'.join(idx.to_index_definition().definition for idx in indexes_used)}\n"
                         f"{history_prompt}\n"
                         "Each indexing suggestion that you provide is a combination of indexes. You can provide multiple alternative suggestions. "
                         "We will evaluate each alternative using hypopg to see how the optimizer will be behave with those indexes in place. "
                         "The overall score is based on a combination of execution cost and index size. In all cases, lower is better. "
+                        "Prefer fewer indexes to more indexes. Prefer indexes with fewer columns to indexes with more columns. "
                         f"{remaining_attempts_prompt}",
                     },
                 ],
@@ -187,17 +189,17 @@ class LLMOptimizerTool(IndexTuningBase):
                     logger.info("Evaluating alternative %d/%d with %d indexes", i + 1, len(index_alternatives), len(index_set))
                     # Evaluate this index configuration
                     execution_cost_estimate = await self._evaluate_configuration_cost(
-                        query_weights, frozenset({index.to_index_config() for index in index_set})
+                        query_weights, frozenset({index.to_index_definition() for index in index_set})
                     )
                     logger.info(
-                        "Alternative %d cost: %f (improvement: %.2f%%)",
+                        "Alternative %d cost: %f (reduction: %.2f%%)",
                         i + 1,
                         execution_cost_estimate,
-                        ((original_cost - execution_cost_estimate) / original_cost) * 100,
+                        ((best_config.execution_cost - execution_cost_estimate) / best_config.execution_cost) * 100,
                     )
 
                     # Estimate the size of the indexes
-                    index_size_estimate = await self._estimate_index_size_2({index.to_index_config() for index in index_set})
+                    index_size_estimate = await self._estimate_index_size_2({index.to_index_definition() for index in index_set}, 1024 * 1024)
                     logger.info("Estimated index size: %f", index_size_estimate)
 
                     # Score based on a balance of size and performance
@@ -236,18 +238,19 @@ class LLMOptimizerTool(IndexTuningBase):
 
         if best_config != original_config:
             logger.info(
-                "Selected best index configuration with %d indexes, cost improvement: %.2f%%",
+                "Selected best index configuration with %d indexes, cost reduction: %.2f%%, indexes: %s",
                 len(best_config.indexes),
                 ((original_cost - best_config.execution_cost) / original_cost) * 100,
+                ", ".join(f"{idx.table_name}.({','.join(idx.columns)})" for idx in best_config.indexes),
             )
         else:
             logger.info("No better index configuration found")
 
         # Convert Index objects to IndexConfig objects for return
-        best_index_config_set = {index.to_index_config() for index in best_config.indexes}
+        best_index_config_set = {index.to_index_recommendation() for index in best_config.indexes}
         return (best_index_config_set, best_config.execution_cost)
 
-    async def _estimate_index_size_2(self, index_set: set[IndexConfig]) -> float:
+    async def _estimate_index_size_2(self, index_set: set[IndexDefinition], min_size_penalty: float = 1024 * 1024) -> float:
         """
         Estimate the size of a set of indexes using hypopg.
 
@@ -277,7 +280,7 @@ class LLMOptimizerTool(IndexTuningBase):
                 if result and len(result) > 0:
                     # Extract the size from the result
                     size = result[0].cells.get("size", 0)
-                    total_size += float(size)
+                    total_size += max(float(size), min_size_penalty)
                     logger.debug(f"Estimated size for index {index_config.name}: {size} bytes")
                 else:
                     logger.warning(f"Failed to estimate size for index {index_config.name}")
@@ -379,76 +382,3 @@ class LLMOptimizerTool(IndexTuningBase):
         except Exception as e:
             logger.error(f"Error getting columns for index {index_name}: {e!s}")
             return tuple()
-
-    # def _get_tables(self, workload_queries: list[SelectStmt]) -> set[tuple[str, str]]:
-    #     """Extract table information from the workload queries."""
-    #     tables: set[tuple[str, str]] = set()
-
-    #     def walk_node(node: Node) -> None:
-    #         if isinstance(node, RangeVar):
-    #             # Handle the case where schemaname or relname might be None
-    #             schema = node.schemaname if node.schemaname is not None else "public"
-    #             relname = node.relname if node.relname is not None else ""
-    #             if relname:  # Only add if we have a valid table name
-    #                 tables.add((schema, relname))
-
-    #         # Recursively validate all attributes that might be nodes
-    #         for attr_name in node.__slots__:
-    #             # Skip private attributes and methods
-    #             if attr_name.startswith("_"):
-    #                 continue
-
-    #             try:
-    #                 attr = getattr(node, attr_name)
-    #             except AttributeError:
-    #                 # Skip attributes that don't exist (this is normal in pglast)
-    #                 continue
-
-    #             # Handle lists of nodes
-    #             if isinstance(attr, list):
-    #                 for item in attr:
-    #                     if isinstance(item, Node):
-    #                         walk_node(item)
-
-    #             # Handle tuples of nodes
-    #             elif isinstance(attr, tuple):
-    #                 for item in attr:
-    #                     if isinstance(item, Node):
-    #                         walk_node(item)
-
-    #             # Handle single nodes
-    #             elif isinstance(attr, Node):
-    #                 walk_node(attr)
-
-    #     for stmt in workload_queries:
-    #         walk_node(stmt)
-
-    #     return tables
-
-    # async def _get_candidate_indexes(
-    #     self, workload_queries: list[str], existing_index_defs: set[str], best_recommendations: list[IndexRecommendation]
-    # ) -> list[set[IndexConfig]]:
-    #     """Get candidate indexes from the workload queries and existing index definitions."""
-    #     # Use Instructor to get index recommendations from the LLM
-    #     client = instructor.from_openai(OpenAI())
-
-    #     workload_queries_str = "\n".join(workload_queries)
-    #     best_recommendations_str = "\n".join(str(rec) for rec in best_recommendations)
-
-    #     response = client.chat.completions.create(
-    #         model="gpt-4o",
-    #         response_model=IndexingAlternative,
-    #         messages=[
-    #             {"role": "system", "content": "You are a helpful assistant that generates index recommendations for a given workload."},
-    #             {
-    #                 "role": "user",
-    #                 "content": f"Here are the queries we are optimizing: {workload_queries_str}\n"
-    #                 f"Here are the existing indexes: {existing_index_defs}\n"
-    #                 f"Here are the best recommendations so far: {best_recommendations_str}\n\n"
-    #                 "Generate a list of possible indexes that would best improve the performance of the queries.",
-    #             },
-    #         ],
-    #     )
-
-    #     # Convert the response to IndexConfig objects
-    #     return response.to_list()

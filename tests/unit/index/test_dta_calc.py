@@ -10,14 +10,13 @@ from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
+from pglast import parse_sql
 
-from postgres_mcp.dta import ColumnCollector
-from postgres_mcp.dta import ConditionColumnCollector
-from postgres_mcp.dta import DatabaseTuningAdvisor
-from postgres_mcp.dta import ExplainPlanArtifact
-from postgres_mcp.dta import Index
-from postgres_mcp.dta import parse_sql
-from postgres_mcp.sql import IndexConfig
+from postgres_mcp.artifacts import ExplainPlanArtifact
+from postgres_mcp.index.dta_calc import ColumnCollector
+from postgres_mcp.index.dta_calc import ConditionColumnCollector
+from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
+from postgres_mcp.index.dta_calc import IndexRecommendation
 
 logger = getLogger(__name__)
 
@@ -68,7 +67,7 @@ async def test_extract_columns_subquery(create_dta):
 @pytest.mark.asyncio
 async def test_index_initialization():
     """Test Index class initialization and properties."""
-    idx = Index(
+    idx = IndexRecommendation(
         table="users",
         columns=(
             "name",
@@ -83,13 +82,12 @@ async def test_index_initialization():
 @pytest.mark.asyncio
 async def test_index_equality():
     """Test Index equality comparison."""
-    idx1 = Index(table="users", columns=("name",))
-    idx2 = Index(table="users", columns=("name",))
-    idx3 = Index(table="users", columns=("email",))
+    idx1 = IndexRecommendation(table="users", columns=("name",))
+    idx2 = IndexRecommendation(table="users", columns=("name",))
+    idx3 = IndexRecommendation(table="users", columns=("email",))
 
-    assert idx1 == idx2
-    assert idx1 != idx3
-    assert idx2 != idx3
+    assert idx1.index_definition == idx2.index_definition
+    assert idx1.index_definition != idx3.index_definition
 
 
 @pytest.mark.asyncio
@@ -165,7 +163,7 @@ async def test_generate_candidates(async_sql_driver, create_dta):
     candidates = await dta.generate_candidates(queries, set())
 
     assert any(c.table == "users" and c.columns == ("name",) for c in candidates)
-    assert candidates[0].estimated_size == 10 * 8192
+    assert candidates[0].estimated_size_bytes == 10 * 8192
 
 
 @pytest.mark.asyncio
@@ -254,56 +252,56 @@ async def test_index_exists(create_dta):
     test_cases = [
         # Basic case - exact match
         {
-            "candidate": Index("users", ("name",)),
+            "candidate": IndexRecommendation("users", ("name",)),
             "existing_defs": {"CREATE INDEX crystaldba_idx_users_name_1 ON users USING btree (name)"},
             "expected": True,
             "description": "Exact match",
         },
         # Different name but same structure
         {
-            "candidate": Index("users", ("id",)),
+            "candidate": IndexRecommendation("users", ("id",)),
             "existing_defs": {"CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)"},
             "expected": True,
             "description": "Primary key detection",
         },
         # Different schema but same table and columns
         {
-            "candidate": Index("users", ("email",)),
+            "candidate": IndexRecommendation("users", ("email",)),
             "existing_defs": {"CREATE UNIQUE INDEX users_email_key ON public.users USING btree (email)"},
             "expected": True,
             "description": "Schema-qualified match",
         },
         # Multi-column index with different order
         {
-            "candidate": Index("orders", ("customer_id", "product_id"), "hash"),
+            "candidate": IndexRecommendation("orders", ("customer_id", "product_id"), "hash"),
             "existing_defs": {"CREATE INDEX orders_idx ON orders USING hash (product_id, customer_id)"},
             "expected": True,
             "description": "Hash index with different column order",
         },
         # Partial match - not enough
         {
-            "candidate": Index("products", ("category", "name", "price")),
+            "candidate": IndexRecommendation("products", ("category", "name", "price")),
             "existing_defs": {"CREATE INDEX products_category_idx ON products USING btree (category)"},
             "expected": False,
             "description": "Partial coverage - not enough",
         },
         # Complete match but different type
         {
-            "candidate": Index("payments", ("method", "status"), "hash"),
+            "candidate": IndexRecommendation("payments", ("method", "status"), "hash"),
             "existing_defs": {"CREATE INDEX payments_method_status_idx ON payments USING btree (method, status)"},
             "expected": False,
             "description": "Different index type",
         },
         # Different table
         {
-            "candidate": Index("customers", ("id",)),
+            "candidate": IndexRecommendation("customers", ("id",)),
             "existing_defs": {"CREATE INDEX users_id_idx ON users USING btree (id)"},
             "expected": False,
             "description": "Different table",
         },
         # Complex case with expression index
         {
-            "candidate": Index("users", ("name",)),
+            "candidate": IndexRecommendation("users", ("name",)),
             "existing_defs": {"CREATE INDEX users_name_idx ON users USING btree (lower(name))"},
             "expected": False,
             "description": "Expression index vs regular column",
@@ -320,7 +318,7 @@ async def test_index_exists(create_dta):
     # Test fallback mechanism when parsing fails
     with patch("pglast.parser.parse_sql", side_effect=Exception("Parsing error")):
         # Should use fallback and return True based on substring matching
-        index = Index("users", ("name", "email"))
+        index = IndexRecommendation("users", ("name", "email"))
         with pytest.raises(Exception, match="Error in robust index comparison"):
             dta._index_exists(
                 index,
@@ -328,7 +326,7 @@ async def test_index_exists(create_dta):
             )
 
         # Should return False when no match even with fallback
-        index = Index("users", ("address",))
+        index = IndexRecommendation("users", ("address",))
         with pytest.raises(Exception, match="Error in robust index comparison"):
             dta._index_exists(
                 index,
@@ -426,13 +424,13 @@ async def test_filter_long_text_columns(async_sql_driver, create_dta):
 
     # Create test candidates
     candidates = [
-        Index("users", ("name",)),  # Should keep (short varchar)
-        Index("users", ("bio",)),  # Should filter out (long text)
-        Index("users", ("description",)),  # Should filter out (long varchar)
-        Index("users", ("status",)),  # Should keep (unlimited varchar but short actual length)
-        Index("users", ("name", "status")),  # Should keep (both columns ok)
-        Index("users", ("name", "bio")),  # Should filter out (contains long text)
-        Index("users", ("description", "status")),  # Should filter out (contains long varchar)
+        IndexRecommendation("users", ("name",)),  # Should keep (short varchar)
+        IndexRecommendation("users", ("bio",)),  # Should filter out (long text)
+        IndexRecommendation("users", ("description",)),  # Should filter out (long varchar)
+        IndexRecommendation("users", ("status",)),  # Should keep (unlimited varchar but short actual length)
+        IndexRecommendation("users", ("name", "status")),  # Should keep (both columns ok)
+        IndexRecommendation("users", ("name", "bio")),  # Should filter out (contains long text)
+        IndexRecommendation("users", ("description", "status")),  # Should filter out (contains long varchar)
     ]
 
     # Execute the filter with max_text_length = 100
@@ -985,11 +983,11 @@ async def test_filter_candidates_by_query_conditions(async_sql_driver, create_dt
 
     # Create test candidates (some with columns not in conditions)
     candidates = [
-        Index("users", ("name",)),
-        Index("users", ("name", "email")),  # email not in conditions
-        Index("users", ("age",)),
-        Index("orders", ("status", "total")),
-        Index("orders", ("order_date",)),  # order_date not in conditions
+        IndexRecommendation("users", ("name",)),
+        IndexRecommendation("users", ("name", "email")),  # email not in conditions
+        IndexRecommendation("users", ("age",)),
+        IndexRecommendation("orders", ("status", "total")),
+        IndexRecommendation("orders", ("order_date",)),  # order_date not in conditions
     ]
 
     # Execute the filter
@@ -1087,7 +1085,7 @@ async def test_enumerate_greedy_pareto_cost_benefit(async_sql_driver):
     # Create candidate indexes
     candidate_indexes = set()
     for i in range(10):
-        candidate_indexes.add(IndexConfig(table="test_table", columns=(f"col{i}",)))
+        candidate_indexes.add(IndexRecommendation(table="test_table", columns=(f"col{i}",)))
 
     # Base query cost
     base_cost = 1000.0
@@ -1149,7 +1147,6 @@ async def test_enumerate_greedy_pareto_cost_benefit(async_sql_driver):
     dta._evaluate_configuration_cost = AsyncMock(side_effect=mock_evaluate_cost)  # type: ignore
     dta._estimate_index_size = AsyncMock(side_effect=mock_index_size)  # type: ignore
     dta._estimate_table_size = AsyncMock(side_effect=mock_estimate_table_size)  # type: ignore
-    # sql.sql_driver.execute_query = AsyncMock(side_effect=mock_execute_query)  # type: ignore
 
     # Set alpha parameter for cost/benefit analysis
     dta.pareto_alpha = 2.0
@@ -1173,10 +1170,7 @@ async def test_enumerate_greedy_pareto_cost_benefit(async_sql_driver):
 
     current_indexes = set()
     current_cost = base_cost
-    (
-        final_indexes_lower_threshold,
-        final_cost_lower_threshold,
-    ) = await dta._enumerate_greedy(  # type: ignore
+    final_indexes_lower_threshold, final_cost_lower_threshold = await dta._enumerate_greedy(  # type: ignore
         queries, current_indexes, current_cost, candidate_indexes.copy()
     )
 
@@ -1188,10 +1182,7 @@ async def test_enumerate_greedy_pareto_cost_benefit(async_sql_driver):
 
     current_indexes = set()
     current_cost = base_cost
-    (
-        final_indexes_higher_threshold,
-        final_cost_higher_threshold,
-    ) = await dta._enumerate_greedy(  # type: ignore
+    final_indexes_higher_threshold, final_cost_higher_threshold = await dta._enumerate_greedy(  # type: ignore
         queries, current_indexes, current_cost, candidate_indexes.copy()
     )
 

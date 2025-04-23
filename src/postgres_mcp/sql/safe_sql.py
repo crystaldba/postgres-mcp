@@ -993,7 +993,14 @@ class SafeSqlDriver(SqlDriver):
                         force_readonly=True,
                     )
             except asyncio.TimeoutError as e:
-                raise ValueError(f"Query execution timed out after {self.timeout} seconds in restricted mode") from e
+                logger.warning(f"Query execution timed out after {self.timeout} seconds: {query[:100]}...")
+                raise ValueError(
+                    f"Query execution timed out after {self.timeout} seconds in restricted mode. "
+                    "Consider simplifying your query or increasing the timeout."
+                ) from e
+            except Exception as e:
+                logger.error(f"Error executing query: {e}")
+                raise
         else:
             return await self.sql_driver.execute_query(
                 f"/* crystaldba */ {query}",

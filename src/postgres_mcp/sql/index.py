@@ -3,13 +3,12 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class IndexConfig:
+class IndexDefinition:
     """Immutable index configuration for hashing."""
 
     table: str
     columns: tuple[str, ...]
     using: str = "btree"
-    potential_problematic_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -50,4 +49,4 @@ class IndexConfig:
         return self.definition
 
     def __repr__(self) -> str:
-        return self.definition
+        return f"IndexConfig(table='{self.table}', columns={self.columns}, using='{self.using}')"

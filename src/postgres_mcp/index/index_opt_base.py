@@ -13,7 +13,7 @@ from pglast.ast import SelectStmt
 
 from ..artifacts import calculate_improvement_multiple
 from ..explain import ExplainPlanTool
-from ..sql import IndexConfig
+from ..sql import IndexDefinition
 from ..sql import SafeSqlDriver
 from ..sql import SqlBindParams
 from ..sql import SqlDriver
@@ -25,79 +25,74 @@ logger = logging.getLogger(__name__)
 MAX_NUM_INDEX_TUNING_QUERIES = 10
 
 
-def _pp_list(lst) -> str:
-    """Pretty print a list."""
+def pp_list(lst: list[Any]) -> str:
+    """Pretty print a list for debugging."""
     return ("\n  - " if len(lst) > 0 else "") + "\n  - ".join([str(item) for item in lst])
 
 
 @dataclass
-class Index:
+class IndexRecommendation:
     """Represents a database index with size estimation and definition."""
 
-    index_config: IndexConfig
-    estimated_size: int = 0
+    _definition: IndexDefinition
+    estimated_size_bytes: int = 0
+    potential_problematic_reason: str | None = None
 
     def __init__(
         self,
         table: str,
         columns: tuple[str, ...],
         using: str = "btree",
-        estimated_size: int = 0,
+        estimated_size_bytes: int = 0,
         potential_problematic_reason: str | None = None,
     ):
-        self.index_config = IndexConfig(table, columns, using, potential_problematic_reason)
-        self.estimated_size = estimated_size
+        self._definition = IndexDefinition(table, columns, using)
+        self.estimated_size_bytes = estimated_size_bytes
+        self.potential_problematic_reason = potential_problematic_reason
+
+    @property
+    def index_definition(self) -> IndexDefinition:
+        return self._definition
 
     @property
     def definition(self) -> str:
-        return self.index_config.definition
+        return self._definition.definition
 
     @property
     def name(self) -> str:
-        return self.index_config.name
+        return self._definition.name
 
     @property
     def columns(self) -> tuple[str, ...]:
-        return self.index_config.columns
+        return self._definition.columns
 
     @property
     def table(self) -> str:
-        return self.index_config.table
+        return self._definition.table
 
     @property
     def using(self) -> str:
-        return self.index_config.using
-
-    @property
-    def potential_problematic_reason(self) -> str | None:
-        return self.index_config.potential_problematic_reason
-
-    @potential_problematic_reason.setter
-    def potential_problematic_reason(self, reason: str | None) -> None:
-        self.index_config = IndexConfig(self.table, self.columns, self.using, reason)
+        return self._definition.using
 
     def __hash__(self) -> int:
-        return self.index_config.__hash__()
+        return self._definition.__hash__()
 
     def __eq__(self, other: Any) -> bool:
-        return self.index_config.__eq__(other.index_config)
+        return self._definition.__eq__(other.index_config)
 
     def __str__(self) -> str:
-        return self.index_config.__str__() + f" (estimated_size: {self.estimated_size})"
+        return self._definition.__str__() + f" (estimated_size_bytes: {self.estimated_size_bytes})"
 
     def __repr__(self) -> str:
-        return self.index_config.__repr__() + f" (estimated_size: {self.estimated_size})"
+        return self._definition.__repr__() + f" (estimated_size_bytes: {self.estimated_size_bytes})"
 
 
 @dataclass
-class IndexRecommendation:
+class IndexRecommendationAnalysis:
     """Represents a recommended index with benefit estimation."""
 
-    table: str
-    columns: tuple[str, ...]
-    using: str
-    potential_problematic_reason: str | None
-    estimated_size_bytes: int
+    index_recommendation: IndexRecommendation
+
     progressive_base_cost: float
     progressive_recommendation_cost: float
     individual_base_cost: float
@@ -106,30 +101,58 @@ class IndexRecommendation:
     definition: str
 
     @property
+    def table(self) -> str:
+        return self.index_recommendation.table
+
+    @property
+    def columns(self) -> tuple[str, ...]:
+        return self.index_recommendation.columns
+
+    @property
+    def using(self) -> str:
+        return self.index_recommendation.using
+
+    @property
     def progressive_improvement_multiple(self) -> float:
         """Calculate the progressive percentage improvement from this recommendation."""
         return calculate_improvement_multiple(self.progressive_base_cost, self.progressive_recommendation_cost)
+
+    @property
+    def potential_problematic_reason(self) -> str | None:
+        return self.index_recommendation.potential_problematic_reason
+
+    @property
+    def estimated_size_bytes(self) -> int:
+        return self.index_recommendation.estimated_size_bytes
 
     @property
     def individual_improvement_multiple(self) -> float:
         """Calculate the individual percentage improvement from this recommendation."""
         return calculate_improvement_multiple(self.individual_base_cost, self.individual_recommendation_cost)
 
+    def to_index(self) -> IndexRecommendation:
+        return self.index_recommendation
+
 
 @dataclass
-class DTASession:
-    """Tracks a DTA analysis session."""
+class IndexTuningResult:
+    """Results of index tuning analysis."""
 
+    # Session ID for tracing
     session_id: str
-    budget_mb: int
+
+    # Input parameters
+    budget_mb: int  # Tuning budget in MB
     workload_source: str = "n/a"  # 'args', 'query_list', 'query_store', 'sql_file'
-    recommendations: list[IndexRecommendation] = field(default_factory=list)
     workload: list[dict[str, Any]] | None = None
+
+    # Output results
+    recommendations: list[IndexRecommendationAnalysis] = field(default_factory=list)
     error: str | None = None
     dta_traces: list[str] = field(default_factory=list)
 
 
-def candidate_str(indexes: Iterable[Index] | Iterable[IndexConfig]) -> str:
+def candidate_str(indexes: Iterable[IndexDefinition] | Iterable[IndexRecommendation] | Iterable[IndexRecommendationAnalysis]) -> str:
     return ", ".join(f"{idx.table}({','.join(idx.columns)})" for idx in indexes) if indexes else "(no indexes)"
 
 
@@ -139,12 +162,12 @@ class IndexTuningBase(ABC):
         sql_driver: SqlDriver,
     ):
         """
-        :param sql_driver: Griptape SqlDriver
+        :param sql_driver: Database access
         """
         self.sql_driver = sql_driver
 
         # Add memoization caches
-        self.cost_cache: dict[frozenset[IndexConfig], float] = {}
+        self.cost_cache: dict[frozenset[IndexDefinition], float] = {}
         self._size_estimate_cache: dict[tuple[str, frozenset[str]], int] = {}
         self._table_size_cache = {}
         self._estimate_table_size_cache = {}
@@ -163,7 +186,7 @@ class IndexTuningBase(ABC):
         min_avg_time_ms: float = 5.0,
         limit: int = MAX_NUM_INDEX_TUNING_QUERIES,
         max_index_size_mb: int = -1,
-    ) -> DTASession:
+    ) -> IndexTuningResult:
         """
         Analyze query workload and recommend indexes.
 
@@ -183,7 +206,7 @@ class IndexTuningBase(ABC):
             max_index_size_mb: Maximum total size of recommended indexes in MB
 
         Returns:
-            DTASession with analysis results
+            IndexTuningResult with analysis results
         """
         session_id = str(int(time.time()))
         self._analysis_start_time = time.time()
@@ -195,7 +218,7 @@ class IndexTuningBase(ABC):
         if max_index_size_mb > 0:
             self.budget_mb = max_index_size_mb
 
-        session = DTASession(
+        session = IndexTuningResult(
             session_id=session_id,
             budget_mb=max_index_size_mb,
         )
@@ -252,15 +275,10 @@ class IndexTuningBase(ABC):
                 # Gather queries as strings
                 workload_queries = [q for q, _, _ in query_weights]
 
-                self.dta_trace(f"Workload queries ({len(workload_queries)}): {_pp_list(workload_queries)}")
-
-                # get existing indexes
-                existing_defs = {idx["definition"] for idx in await self._get_existing_indexes()}
-
-                logger.debug(f"Existing indexes ({len(existing_defs)}): {_pp_list(existing_defs)}")
+                self.dta_trace(f"Workload queries ({len(workload_queries)}): {pp_list(workload_queries)}")
 
                 # Generate and evaluate index recommendations
-                recommendations = await self._generate_recommendations(query_weights, existing_defs)
+                recommendations: tuple[set[IndexRecommendation], float] = await self._generate_recommendations(query_weights)
                 session.recommendations = await self._format_recommendations(query_weights, recommendations)
 
                 # Reset HypoPG only once at the end
@@ -273,7 +291,7 @@ class IndexTuningBase(ABC):
         session.dta_traces = self._dta_traces
         return session
 
-    async def _run_prechecks(self, session: DTASession) -> DTASession | None:
+    async def _run_prechecks(self, session: IndexTuningResult) -> IndexTuningResult | None:
         """
         Run pre-checks before analysis and return a session with error if any check fails.
 
@@ -306,22 +324,6 @@ class IndexTuningBase(ABC):
 
         # All checks passed
         return None
-
-    async def _get_existing_indexes(self) -> list[dict[str, Any]]:
-        """Get existing indexes"""
-        query = """
-        SELECT schemaname as schema,
-               tablename as table,
-               indexname as name,
-               indexdef as definition
-        FROM pg_indexes
-        WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
-        ORDER BY schemaname, tablename, indexname
-        """
-        result = await self.sql_driver.execute_query(query)
-        if result is not None:
-            return [dict(row.cells) for row in result]
-        return []
 
     async def _validate_and_parse_workload(self, workload: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Validate the workload to ensure it is analyzable."""
@@ -358,7 +360,7 @@ class IndexTuningBase(ABC):
         """Convert query info to weight based on query frequency."""
         return query_info.get("calls", 1.0) * query_info.get("avg_exec_time", 1.0)
 
-    async def get_explain_plan_with_indexes(self, query_text: str, indexes: frozenset[IndexConfig]) -> dict[str, Any]:
+    async def get_explain_plan_with_indexes(self, query_text: str, indexes: frozenset[IndexDefinition]) -> dict[str, Any]:
         """
         Get the explain plan for a query with a specific set of indexes.
         Results are memoized to avoid redundant explain operations.
@@ -445,171 +447,6 @@ class IndexTuningBase(ABC):
             return False
         return True
 
-    def _index_exists(self, index: Index, existing_defs: set[str]) -> bool:
-        """Check if an index with the same table, columns, and type already exists in the database.
-
-        Uses pglast to parse index definitions and compare their structure rather than
-        doing simple string matching.
-        """
-        from pglast import parser
-
-        try:
-            # Parse the candidate index
-            candidate_stmt = parser.parse_sql(index.definition)[0]
-            candidate_node = candidate_stmt.stmt
-
-            # Extract key information from candidate index
-            candidate_info = self._extract_index_info(candidate_node)
-
-            # If we couldn't parse the candidate index, fall back to string comparison
-            if not candidate_info:
-                return index.definition in existing_defs
-
-            # Check each existing index
-            for existing_def in existing_defs:
-                try:
-                    # Skip if it's obviously not an index
-                    if not ("CREATE INDEX" in existing_def.upper() or "CREATE UNIQUE INDEX" in existing_def.upper()):
-                        continue
-
-                    # Parse the existing index
-                    existing_stmt = parser.parse_sql(existing_def)[0]
-                    existing_node = existing_stmt.stmt
-
-                    # Extract key information
-                    existing_info = self._extract_index_info(existing_node)
-
-                    # Compare the key components
-                    if existing_info and self._is_same_index(candidate_info, existing_info):
-                        return True
-                except Exception as e:
-                    raise ValueError("Error parsing existing index") from e
-
-            return False
-        except Exception as e:
-            raise ValueError("Error in robust index comparison") from e
-
-    def _extract_index_info(self, node) -> dict[str, Any] | None:
-        """Extract key information from a parsed index node."""
-        try:
-            # Handle differences in node structure between pglast versions
-            if hasattr(node, "IndexStmt"):
-                index_stmt = node.IndexStmt
-            else:
-                index_stmt = node
-
-            # Extract table name
-            if hasattr(index_stmt.relation, "relname"):
-                table_name = index_stmt.relation.relname
-            else:
-                # Extract from RangeVar
-                table_name = index_stmt.relation.RangeVar.relname
-
-            # Extract columns
-            columns = []
-            for idx_elem in index_stmt.indexParams:
-                if hasattr(idx_elem, "name") and idx_elem.name:
-                    columns.append(idx_elem.name)
-                elif hasattr(idx_elem, "IndexElem") and idx_elem.IndexElem:
-                    columns.append(idx_elem.IndexElem.name)
-                elif hasattr(idx_elem, "expr") and idx_elem.expr:
-                    # Convert the expression to a proper string representation
-                    expr_str = self._ast_expr_to_string(idx_elem.expr)
-                    columns.append(expr_str)
-            # Extract index type
-            index_type = "btree"  # default
-            if hasattr(index_stmt, "accessMethod") and index_stmt.accessMethod:
-                index_type = index_stmt.accessMethod
-
-            # Check if unique
-            is_unique = False
-            if hasattr(index_stmt, "unique"):
-                is_unique = index_stmt.unique
-
-            return {
-                "table": table_name.lower(),
-                "columns": [col.lower() for col in columns],
-                "type": index_type.lower(),
-                "unique": is_unique,
-            }
-        except Exception as e:
-            self.dta_trace(f"Error extracting index info: {e}")
-            raise ValueError("Error extracting index info") from e
-
-    def _ast_expr_to_string(self, expr) -> str:
-        """Convert an AST expression (like FuncCall) to a proper string representation.
-
-        For example, converts a FuncCall node representing lower(name) to "lower(name)"
-        """
-        try:
-            # Import FuncCall and ColumnRef for type checking
-            from pglast.ast import ColumnRef
-            from pglast.ast import FuncCall
-
-            # Check for FuncCall type directly
-            if isinstance(expr, FuncCall):
-                # Extract function name
-                if hasattr(expr, "funcname") and expr.funcname:
-                    func_name = ".".join([name.sval for name in expr.funcname if hasattr(name, "sval")])
-                else:
-                    func_name = "unknown_func"
-
-                # Extract arguments
-                args = []
-                if hasattr(expr, "args") and expr.args:
-                    for arg in expr.args:
-                        args.append(self._ast_expr_to_string(arg))
-
-                # Format as function call
-                return f"{func_name}({','.join(args)})"
-
-            # Check for ColumnRef type directly
-            elif isinstance(expr, ColumnRef):
-                if hasattr(expr, "fields") and expr.fields:
-                    return ".".join([field.sval for field in expr.fields if hasattr(field, "sval")])
-                return "unknown_column"
-
-            # Try to handle direct values
-            elif hasattr(expr, "sval"):  # String value
-                return expr.sval
-            elif hasattr(expr, "ival"):  # Integer value
-                return str(expr.ival)
-            elif hasattr(expr, "fval"):  # Float value
-                return expr.fval
-
-            # Fallback for other expression types
-            return str(expr)
-        except Exception as e:
-            raise ValueError("Error converting expression to string") from e
-
-    def _is_same_index(self, index1: dict[str, Any], index2: dict[str, Any]) -> bool:
-        """Check if two indexes are functionally equivalent."""
-        if not index1 or not index2:
-            return False
-
-        # Same table?
-        if index1["table"] != index2["table"]:
-            return False
-
-        # Same index type?
-        if index1["type"] != index2["type"]:
-            return False
-
-        # Same columns (order matters for most index types)?
-        if index1["columns"] != index2["columns"]:
-            # For hash indexes, order doesn't matter
-            if index1["type"] == "hash" and set(index1["columns"]) == set(index2["columns"]):
-                return True
-            return False
-
-        # If one is unique and the other is not, they're different
-        # Except when a primary key (which is unique) exists and we're considering a non-unique index on same column
-        if index1["unique"] and not index2["unique"]:
-            return False
-
-        # Same core definition
-        return True
-
     def dta_trace(self, message: Any, exc_info: bool = False):
         """Convenience function to log DTA thinking process."""
 
@@ -624,7 +461,7 @@ class IndexTuningBase(ABC):
     async def _evaluate_configuration_cost(
         self,
         weighted_workload: list[tuple[str, SelectStmt, float]],
-        indexes: frozenset[IndexConfig],
+        indexes: frozenset[IndexDefinition],
     ) -> float:
         """Evaluate total cost with selective enabling and caching."""
         # Use indexes as cache key
@@ -704,37 +541,39 @@ class IndexTuningBase(ABC):
         return size_estimate
 
     async def _format_recommendations(
-        self, query_weights: list[tuple[str, SelectStmt, float]], best_config: tuple[set[IndexConfig], float]
-    ) -> list[IndexRecommendation]:
+        self, query_weights: list[tuple[str, SelectStmt, float]], best_config: tuple[set[IndexRecommendation], float]
+    ) -> list[IndexRecommendationAnalysis]:
         """Format recommendations into a list of IndexRecommendation objects."""
         # build final recommendations from best_config
-        recommendations: list[IndexRecommendation] = []
+        recommendations: list[IndexRecommendationAnalysis] = []
         total_size = 0
         budget_bytes = self.budget_mb * 1024 * 1024
         individual_base_cost = await self._evaluate_configuration_cost(query_weights, frozenset()) or 1.0
         progressive_base_cost = individual_base_cost
-        indexes_so_far = []
+        indexes_so_far: list[IndexRecommendation] = []
         for index_config in best_config[0]:
             indexes_so_far.append(index_config)
             # Calculate the cost with only this index
             progressive_cost = await self._evaluate_configuration_cost(
                 query_weights,
-                frozenset(indexes_so_far),  # Indexes so far
+                frozenset(idx.index_definition for idx in indexes_so_far),  # Indexes so far
             )
             individual_cost = await self._evaluate_configuration_cost(
                 query_weights,
-                frozenset([index_config]),  # Only this index
+                frozenset([index_config.index_definition]),  # Only this index
             )
 
             size = await self._estimate_index_size(index_config.table, list(index_config.columns))
             if budget_bytes < 0 or total_size + size <= budget_bytes:
                 self.dta_trace(f"Adding index: {candidate_str([index_config])}")
-                rec = IndexRecommendation(
-                    table=index_config.table,
-                    columns=index_config.columns,
-                    using=index_config.using,
-                    potential_problematic_reason=index_config.potential_problematic_reason,
-                    estimated_size_bytes=size,
+                rec = IndexRecommendationAnalysis(
+                    index_recommendation=IndexRecommendation(
+                        table=index_config.table,
+                        columns=index_config.columns,
+                        using=index_config.using,
+                        potential_problematic_reason=index_config.potential_problematic_reason,
+                        estimated_size_bytes=size,
+                    ),
                     progressive_base_cost=progressive_base_cost,
                     progressive_recommendation_cost=progressive_cost,
                     individual_base_cost=individual_base_cost,
@@ -827,8 +666,6 @@ class IndexTuningBase(ABC):
         return 10 * 1024 * 1024  # 10MB default
 
     @abstractmethod
-    async def _generate_recommendations(
-        self, query_weights: list[tuple[str, SelectStmt, float]], existing_index_defs: set[str]
-    ) -> tuple[set[IndexConfig], float]:
+    async def _generate_recommendations(self, query_weights: list[tuple[str, SelectStmt, float]]) -> tuple[set[IndexRecommendation], float]:
         """Generate index tuning queries."""
         pass

@@ -6,8 +6,8 @@ from functools import wraps
 import pytest
 import pytest_asyncio
 
-from postgres_mcp.dta import DatabaseTuningAdvisor
-from postgres_mcp.dta import DTASession
+from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
+from postgres_mcp.index.index_opt_base import IndexTuningResult
 from postgres_mcp.sql import DbConnPool
 from postgres_mcp.sql import SqlDriver
 
@@ -425,7 +425,7 @@ async def test_join_order_benchmark(db_connection, setup_test_tables, create_dta
             )
 
             # Check that we got recommendations
-            assert isinstance(session, DTASession)
+            assert isinstance(session, IndexTuningResult)
 
             # Allow test to continue with zero recommendations, but log it
             if len(session.recommendations) == 0:
@@ -756,7 +756,7 @@ async def test_multi_column_indexes(db_connection, setup_test_tables, create_dta
     )
 
     # Check that we got recommendations
-    assert isinstance(session, DTASession)
+    assert isinstance(session, IndexTuningResult)
     assert len(session.recommendations) > 0
 
     # Expected multi-column index patterns
@@ -1014,7 +1014,7 @@ async def test_diminishing_returns(db_connection, create_dta):
         )
 
         # Check recommendations with 5% threshold
-        assert isinstance(session_with_threshold, DTASession)
+        assert isinstance(session_with_threshold, IndexTuningResult)
 
         # Continue test even if no recommendations, but log warning
         if len(session_with_threshold.recommendations) == 0:
@@ -1272,7 +1272,7 @@ async def test_storage_cost_tradeoff(db_connection, create_dta):
     session_storage_sensitive = await dta.analyze_workload(query_list=[q["query"] for q in queries], min_calls=1, min_avg_time_ms=1.0)
 
     # Check that we have recommendations
-    assert isinstance(session_storage_sensitive, DTASession)
+    assert isinstance(session_storage_sensitive, IndexTuningResult)
     assert len(session_storage_sensitive.recommendations) > 0
 
     # Should prefer smaller indexes with good benefit/cost ratio
@@ -1372,7 +1372,7 @@ async def test_pareto_optimal_index_selection(db_connection, create_dta):
     session = await dta.analyze_workload(query_list=queries, min_calls=1, min_avg_time_ms=1.0)
 
     # Verify we got recommendations
-    assert isinstance(session, DTASession)
+    assert isinstance(session, IndexTuningResult)
     assert len(session.recommendations) > 0
 
     # Log recommendations for manual inspection
