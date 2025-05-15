@@ -470,6 +470,18 @@ This allows us to generate better solutions at the cost of longer runtime.
 We also show the work done in each round of the search, including a comparison of the query plans before and after the addition of each index.
 This give the LLM additional context that it can use when responding to the indexing recommendations.
 
+### Experimental: Index Tuning by LLM
+
+Postgres MCP Pro includes an experimental index tuning feature based on [Optimization by LLM](https://arxiv.org/abs/2309.03409).
+Instead of using heuristics to explore possible index configurations, we provide the database schema and query plans to an LLM and ask it to propose index configurations.
+We then use `hypopg` to predict performance with the proposed indexes, then feed those results back into the LLM to produce a new set of suggestions.
+We repeat this process until multiple rounds of iteration produce no further improvements.
+
+Index optimization by LLM is has advantages when the index search space is large, or when indexes with many columns need to be considered.
+Like traditional search-based approaches, it relies on the accuracy of the `hypopg` performance predictions.
+
+In order to perform index optimization by LLM, you must provide an OpenAI API key by setting the `OPENAI_API_KEY` environment variable.
+
 
 ### Database Health
 
