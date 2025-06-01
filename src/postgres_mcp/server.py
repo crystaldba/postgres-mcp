@@ -60,6 +60,7 @@ class AccessMode(str, Enum):
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
 shutdown_in_progress = False
+is_stdio_transport = False
 shutdown_event = threading.Event()
 
 
@@ -604,7 +605,12 @@ async def get_top_queries(
 def signal_handler(signum, _):
     """Signal handler that works with stdio transport."""
     logger.info(f"Received signal {signum}")
-    shutdown_event.set()
+    if is_stdio_transport:
+        logger.info("Stdio transport detected - using sys.exit()")
+        sys.exit(0)
+    else:
+        logger.info("Non-stdio transport - using graceful shutdown")
+        shutdown_event.set()
 
 
 async def main():
@@ -699,14 +705,18 @@ async def main():
         signal.signal(signal.SIGINT, signal_handler)
         logger.warning("Limited signal handling on Windows")
 
-    global shutdown_in_progress
+    global shutdown_in_progress, is_stdio_transport
+    is_stdio_transport = True if args.transport == "stdio" else False
     try:
         logger.info("Server starting...")
+        if is_stdio_transport:
+            while True:
+                await mcp.run_stdio_async()
+                await asyncio.sleep(0.1)
+
         while not shutdown_event.is_set():
             # Run the server with the selected transport (always async)
-            if args.transport == "stdio":
-                await mcp.run_stdio_async()
-            elif args.transport == "sse":
+            if args.transport == "sse":
                 # Update FastMCP settings based on command line arguments
                 mcp.settings.host = args.sse_host
                 mcp.settings.port = args.sse_port
@@ -720,15 +730,26 @@ async def main():
         await shutdown()
     except asyncio.CancelledError:
         logger.info("Server task cancelled")
-        await shutdown()
+        if is_stdio_transport:
+            sys.exit(0)
+        else:
+            await shutdown()
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt")
-        await shutdown()
+        if is_stdio_transport:
+            sys.exit(0)
+        else:
+            await shutdown()
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-        await shutdown()
+        if is_stdio_transport:
+            sys.exit(1)
+        else:
+            await shutdown()
     finally:
         logger.info("Server stopped")
+        if not is_stdio_transport:
+            await shutdown()
         # Force exit for MCP servers
         os._exit(0)
 
