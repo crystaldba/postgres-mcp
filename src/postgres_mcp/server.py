@@ -5,6 +5,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 from enum import Enum
 from typing import Any
 from typing import List
@@ -59,6 +60,7 @@ class AccessMode(str, Enum):
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
 shutdown_in_progress = False
+shutdown_event = threading.Event()
 
 
 async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
@@ -599,6 +601,12 @@ async def get_top_queries(
         return format_error_response(str(e))
 
 
+def signal_handler(signum, _):
+    """Signal handler that works with stdio transport."""
+    logger.info(f"Received signal {signum}")
+    shutdown_event.set()
+
+
 async def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="PostgreSQL MCP Server")
@@ -684,24 +692,17 @@ async def main():
         )
 
     # Set up proper shutdown handling
-    try:
-        loop = asyncio.get_running_loop()
-        if sys.platform != "win32":
-            signals = (signal.SIGTERM, signal.SIGINT)
-            for s in signals:
-                loop.add_signal_handler(
-                    s, lambda s=s: asyncio.create_task(shutdown(s))
-                )
-        else:
-            # Windows doesn't support signals properly
-            logger.warning("Signal handling not supported on Windows")
-    except NotImplementedError:
-        logger.warning("Signal handling not supported on this platform")
+    if sys.platform != "win32":
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+    else:
+        signal.signal(signal.SIGINT, signal_handler)
+        logger.warning("Limited signal handling on Windows")
 
     global shutdown_in_progress
     try:
         logger.info("Server starting...")
-        while not shutdown_in_progress:
+        while not shutdown_event.is_set():
             # Run the server with the selected transport (always async)
             if args.transport == "stdio":
                 await mcp.run_stdio_async()
@@ -715,6 +716,8 @@ async def main():
                 mcp.settings.port = args.streamable_http_port
                 await mcp.run_streamable_http_async()
             await asyncio.sleep(0.1)
+        logger.info("Shutdown event detected, cleaning up...")
+        await shutdown()
     except asyncio.CancelledError:
         logger.info("Server task cancelled")
         await shutdown()
@@ -726,16 +729,12 @@ async def main():
         await shutdown()
     finally:
         logger.info("Server stopped")
+        # Force exit for MCP servers
+        os._exit(0)
 
 
 async def shutdown(sig: Optional[signal.Signals] = None):
     """Clean shutdown of the server."""
-    global shutdown_in_progress
-    if shutdown_in_progress:
-        logger.warning("Shutdown already in progress")
-        return
-
-    shutdown_in_progress = True
     if sig:
         logger.info(f"Received exit signal {sig.name}")
 
@@ -747,5 +746,4 @@ async def shutdown(sig: Optional[signal.Signals] = None):
     except Exception as e:
         logger.error(f"Error closing database connections: {e}")
 
-    # Signal the main loop to stop
-    logger.info("Initiating graceful shutdown")
+    logger.info("Shutdown complete")
