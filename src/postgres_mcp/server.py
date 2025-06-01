@@ -5,10 +5,12 @@ import logging
 import os
 import signal
 import sys
+import threading
 from enum import Enum
 from typing import Any
 from typing import List
 from typing import Literal
+from typing import Optional
 from typing import Union
 
 import mcp.types as types
@@ -56,6 +58,8 @@ class AccessMode(str, Enum):
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
 shutdown_in_progress = False
+is_stdio_transport = False
+shutdown_event = threading.Event()
 
 
 async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
@@ -109,7 +113,10 @@ async def list_schemas() -> ResponseType:
 @mcp.tool(description="List objects in a schema")
 async def list_objects(
     schema_name: str = Field(description="Schema name"),
-    object_type: str = Field(description="Object type: 'table', 'view', 'sequence', or 'extension'", default="table"),
+    object_type: str = Field(
+        description="Object type: 'table', 'view', 'sequence', or 'extension'",
+        default="table",
+    ),
 ) -> ResponseType:
     """List objects of a given type in a schema."""
     try:
@@ -128,7 +135,14 @@ async def list_objects(
                 [schema_name, table_type],
             )
             objects = (
-                [{"schema": row.cells["table_schema"], "name": row.cells["table_name"], "type": row.cells["table_type"]} for row in rows]
+                [
+                    {
+                        "schema": row.cells["table_schema"],
+                        "name": row.cells["table_name"],
+                        "type": row.cells["table_type"],
+                    }
+                    for row in rows
+                ]
                 if rows
                 else []
             )
@@ -145,7 +159,14 @@ async def list_objects(
                 [schema_name],
             )
             objects = (
-                [{"schema": row.cells["sequence_schema"], "name": row.cells["sequence_name"], "data_type": row.cells["data_type"]} for row in rows]
+                [
+                    {
+                        "schema": row.cells["sequence_schema"],
+                        "name": row.cells["sequence_name"],
+                        "data_type": row.cells["data_type"],
+                    }
+                    for row in rows
+                ]
                 if rows
                 else []
             )
@@ -160,7 +181,14 @@ async def list_objects(
                 """
             )
             objects = (
-                [{"name": row.cells["extname"], "version": row.cells["extversion"], "relocatable": row.cells["extrelocatable"]} for row in rows]
+                [
+                    {
+                        "name": row.cells["extname"],
+                        "version": row.cells["extversion"],
+                        "relocatable": row.cells["extrelocatable"],
+                    }
+                    for row in rows
+                ]
                 if rows
                 else []
             )
@@ -178,7 +206,10 @@ async def list_objects(
 async def get_object_details(
     schema_name: str = Field(description="Schema name"),
     object_name: str = Field(description="Object name"),
-    object_type: str = Field(description="Object type: 'table', 'view', 'sequence', or 'extension'", default="table"),
+    object_type: str = Field(
+        description="Object type: 'table', 'view', 'sequence', or 'extension'",
+        default="table",
+    ),
 ) -> ResponseType:
     """Get detailed information about a database object."""
     try:
@@ -249,10 +280,24 @@ async def get_object_details(
                 [schema_name, object_name],
             )
 
-            indexes = [{"name": r.cells["indexname"], "definition": r.cells["indexdef"]} for r in idx_rows] if idx_rows else []
+            indexes = (
+                [
+                    {
+                        "name": r.cells["indexname"],
+                        "definition": r.cells["indexdef"],
+                    }
+                    for r in idx_rows
+                ]
+                if idx_rows
+                else []
+            )
 
             result = {
-                "basic": {"schema": schema_name, "name": object_name, "type": object_type},
+                "basic": {
+                    "schema": schema_name,
+                    "name": object_name,
+                    "type": object_type,
+                },
                 "columns": columns,
                 "constraints": constraints_list,
                 "indexes": indexes,
@@ -294,7 +339,11 @@ async def get_object_details(
 
             if rows and rows[0]:
                 row = rows[0]
-                result = {"name": row.cells["extname"], "version": row.cells["extversion"], "relocatable": row.cells["extrelocatable"]}
+                result = {
+                    "name": row.cells["extname"],
+                    "version": row.cells["extversion"],
+                    "relocatable": row.cells["extrelocatable"],
+                }
             else:
                 result = {}
 
@@ -489,7 +538,10 @@ async def get_top_queries(
         "for resource-intensive queries",
         default="resources",
     ),
-    limit: int = Field(description="Number of queries to return when ranking based on mean_time or total_time", default=10),
+    limit: int = Field(
+        description="Number of queries to return when ranking based on mean_time or total_time",
+        default=10,
+    ),
 ) -> ResponseType:
     try:
         sql_driver = await get_sql_driver()
@@ -500,13 +552,27 @@ async def get_top_queries(
             return format_text_response(result)
         elif sort_by == "mean_time" or sort_by == "total_time":
             # Map the sort_by values to what get_top_queries_by_time expects
-            result = await top_queries_tool.get_top_queries_by_time(limit=limit, sort_by="mean" if sort_by == "mean_time" else "total")
+            result = await top_queries_tool.get_top_queries_by_time(
+                limit=limit,
+                sort_by="mean" if sort_by == "mean_time" else "total",
+            )
         else:
             return format_error_response("Invalid sort criteria. Please use 'resources' or 'mean_time' or 'total_time'.")
         return format_text_response(result)
     except Exception as e:
         logger.error(f"Error getting slow queries: {e}")
         return format_error_response(str(e))
+
+
+def signal_handler(signum, _):
+    """Signal handler that works with stdio transport."""
+    logger.info(f"Received signal {signum}")
+    if is_stdio_transport:
+        logger.info("Stdio transport detected - using sys.exit()")
+        sys.exit(0)
+    else:
+        logger.info("Non-stdio transport - using graceful shutdown")
+        shutdown_event.set()
 
 
 async def main():
@@ -523,9 +589,9 @@ async def main():
     parser.add_argument(
         "--transport",
         type=str,
-        choices=["stdio", "sse"],
+        choices=["stdio", "sse", "streamable_http"],
         default="stdio",
-        help="Select MCP transport: stdio (default) or sse",
+        help="Select MCP transport: stdio (default), sse or streamable_http",
     )
     parser.add_argument(
         "--sse-host",
@@ -538,6 +604,19 @@ async def main():
         type=int,
         default=8000,
         help="Port for SSE server (default: 8000)",
+    )
+
+    parser.add_argument(
+        "--streamable_http-host",
+        type=str,
+        default="localhost",
+        help="Host to bind streamable http server to (default: localhost)",
+    )
+    parser.add_argument(
+        "--streamable_http-port",
+        type=int,
+        default=8001,
+        help="Port for streamable http server (default: 8000)",
     )
 
     args = parser.parse_args()
@@ -575,46 +654,73 @@ async def main():
         )
 
     # Set up proper shutdown handling
-    try:
-        loop = asyncio.get_running_loop()
-        signals = (signal.SIGTERM, signal.SIGINT)
-        for s in signals:
-            loop.add_signal_handler(s, lambda s=s: asyncio.create_task(shutdown(s)))
-    except NotImplementedError:
-        # Windows doesn't support signals properly
-        logger.warning("Signal handling not supported on Windows")
-        pass
-
-    # Run the server with the selected transport (always async)
-    if args.transport == "stdio":
-        await mcp.run_stdio_async()
+    if sys.platform != "win32":
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
     else:
-        # Update FastMCP settings based on command line arguments
-        mcp.settings.host = args.sse_host
-        mcp.settings.port = args.sse_port
-        await mcp.run_sse_async()
+        signal.signal(signal.SIGINT, signal_handler)
+        logger.warning("Limited signal handling on Windows")
+
+    global shutdown_in_progress, is_stdio_transport
+    is_stdio_transport = True if args.transport == "stdio" else False
+    try:
+        logger.info("Server starting...")
+        if is_stdio_transport:
+            while True:
+                await mcp.run_stdio_async()
+                await asyncio.sleep(0.1)
+
+        while not shutdown_event.is_set():
+            # Run the server with the selected transport (always async)
+            if args.transport == "sse":
+                # Update FastMCP settings based on command line arguments
+                mcp.settings.host = args.sse_host
+                mcp.settings.port = args.sse_port
+                await mcp.run_sse_async()
+            elif args.transport == "streamable_http":
+                mcp.settings.host = args.streamable_http_host
+                mcp.settings.port = args.streamable_http_port
+                await mcp.run_streamable_http_async()
+            await asyncio.sleep(0.1)
+        logger.info("Shutdown event detected, cleaning up...")
+        await shutdown()
+    except asyncio.CancelledError:
+        logger.info("Server task cancelled")
+        if is_stdio_transport:
+            sys.exit(0)
+        else:
+            await shutdown()
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt")
+        if is_stdio_transport:
+            sys.exit(0)
+        else:
+            await shutdown()
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        if is_stdio_transport:
+            sys.exit(1)
+        else:
+            await shutdown()
+    finally:
+        logger.info("Server stopped")
+        if not is_stdio_transport:
+            await shutdown()
+        # Force exit for MCP servers
+        os._exit(0)
 
 
-async def shutdown(sig=None):
+async def shutdown(sig: Optional[signal.Signals] = None):
     """Clean shutdown of the server."""
-    global shutdown_in_progress
-
-    if shutdown_in_progress:
-        logger.warning("Forcing immediate exit")
-        # Use sys.exit instead of os._exit to allow for proper cleanup
-        sys.exit(1)
-
-    shutdown_in_progress = True
-
     if sig:
         logger.info(f"Received exit signal {sig.name}")
 
     # Close database connections
     try:
-        await db_connection.close()
-        logger.info("Closed database connections")
+        if db_connection:
+            await db_connection.close()
+            logger.info("Closed database connections")
     except Exception as e:
         logger.error(f"Error closing database connections: {e}")
 
-    # Exit with appropriate status code
-    sys.exit(128 + sig if sig is not None else 0)
+    logger.info("Shutdown complete")
