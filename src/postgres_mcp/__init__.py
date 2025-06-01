@@ -13,24 +13,21 @@ def main():
     """Main entry point for the package."""
     # As of version 3.3.0 Psycopg on Windows is not compatible with the default
     # ProactorEventLoop.
+    # See: https://www.psycopg.org/psycopg3/docs/advanced/async.html#async
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    # Check if we're already in an event loop
+    # Simply run the server main function
+    # All shutdown logic is handled inside server.main()
     try:
-        asyncio.get_running_loop()
-        # If we get here, we're already in a running loop
-        raise RuntimeError(
-            "Cannot run server.main() from within an event loop. "
-            "Call server.main() directly as an async function."
-        )
-    except RuntimeError as e:
-        if "no running event loop" in str(e).lower():
-            # No running loop, safe to use asyncio.run()
-            return asyncio.run(server.main())
-        else:
-            # Re-raise if it's the error about being in a loop
-            raise
+        return asyncio.run(server.main())
+    except KeyboardInterrupt:
+        # This might not be reached if server.main() handles signals properly
+        print("Interrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error running server: {e}")
+        sys.exit(1)
 
 
 # Optionally expose other important items at package level
