@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any
 from typing import List
 from typing import Literal
+from typing import Optional
 from typing import Union
 
 import mcp.types as types
@@ -685,50 +686,66 @@ async def main():
     # Set up proper shutdown handling
     try:
         loop = asyncio.get_running_loop()
-        signals = (signal.SIGTERM, signal.SIGINT)
-        for s in signals:
-            loop.add_signal_handler(
-                s, lambda s=s: asyncio.create_task(shutdown(s))
-            )
+        if sys.platform != "win32":
+            signals = (signal.SIGTERM, signal.SIGINT)
+            for s in signals:
+                loop.add_signal_handler(
+                    s, lambda s=s: asyncio.create_task(shutdown(s))
+                )
+        else:
+            # Windows doesn't support signals properly
+            logger.warning("Signal handling not supported on Windows")
     except NotImplementedError:
-        # Windows doesn't support signals properly
-        logger.warning("Signal handling not supported on Windows")
-        pass
+        logger.warning("Signal handling not supported on this platform")
 
-    # Run the server with the selected transport (always async)
-    if args.transport == "stdio":
-        await mcp.run_stdio_async()
-    elif args.transport == "sse":
-        # Update FastMCP settings based on command line arguments
-        mcp.settings.host = args.sse_host
-        mcp.settings.port = args.sse_port
-        await mcp.run_sse_async()
-    elif args.transport == "streamable_http":
-        mcp.settings.host = args.streamable_http_host
-        mcp.settings.port = args.streamable_http_port
-        await mcp.run_streamable_http_async()
+    global shutdown_in_progress
+    try:
+        logger.info("Server starting...")
+        while not shutdown_in_progress:
+            # Run the server with the selected transport (always async)
+            if args.transport == "stdio":
+                await mcp.run_stdio_async()
+            elif args.transport == "sse":
+                # Update FastMCP settings based on command line arguments
+                mcp.settings.host = args.sse_host
+                mcp.settings.port = args.sse_port
+                await mcp.run_sse_async()
+            elif args.transport == "streamable_http":
+                mcp.settings.host = args.streamable_http_host
+                mcp.settings.port = args.streamable_http_port
+                await mcp.run_streamable_http_async()
+            await asyncio.sleep(0.1)
+    except asyncio.CancelledError:
+        logger.info("Server task cancelled")
+        await shutdown()
+    except KeyboardInterrupt:
+        logger.info("Received keyboard interrupt")
+        await shutdown()
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        await shutdown()
+    finally:
+        logger.info("Server stopped")
 
 
-async def shutdown(sig=None):
+async def shutdown(sig: Optional[signal.Signals] = None):
     """Clean shutdown of the server."""
     global shutdown_in_progress
-
     if shutdown_in_progress:
-        logger.warning("Forcing immediate exit")
-        # Use sys.exit instead of os._exit to allow for proper cleanup
-        sys.exit(1)
+        logger.warning("Shutdown already in progress")
+        return
 
     shutdown_in_progress = True
-
     if sig:
         logger.info(f"Received exit signal {sig.name}")
 
     # Close database connections
     try:
-        await db_connection.close()
-        logger.info("Closed database connections")
+        if db_connection:
+            await db_connection.close()
+            logger.info("Closed database connections")
     except Exception as e:
         logger.error(f"Error closing database connections: {e}")
 
-    # Exit with appropriate status code
-    sys.exit(128 + sig if sig is not None else 0)
+    # Signal the main loop to stop
+    logger.info("Initiating graceful shutdown")
