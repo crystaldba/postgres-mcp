@@ -11,7 +11,7 @@ image:
   tag: ""
 
 imagePullSecrets: 
-  - dockerhub-secret
+  - name: dockerhub-secret
 nameOverride: ""
 fullnameOverride: ""
 
