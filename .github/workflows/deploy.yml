@@ -1,0 +1,67 @@
+name: Build & Deploy to Kubernetes
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker auth for Kaniko
+      run: |
+        mkdir -p /tmp/kaniko/.docker
+        echo '{
+          "auths": {
+            "https://index.docker.io/v1/": {
+              "username": "${{ secrets.REGISTRY_USERNAME }}",
+              "password": "${{ secrets.REGISTRY_PASSWORD }}"
+            }
+          }
+        }' > /tmp/kaniko/.docker/config.json
+
+    - name: Build and Push Docker image with Kaniko
+      uses: addnab/docker-run-action@v3
+      with:
+        image: gcr.io/kaniko-project/executor:debug
+        options: >
+          -v ${{ github.workspace }}:/workspace
+          -v /tmp/kaniko/.docker:/kaniko/.docker
+        run: >
+          /kaniko/executor
+          --context=/workspace
+          --dockerfile=/workspace/Dockerfile
+          --destination=avukatcloud/nomika:${{ github.event.repository.name }}-${{ github.run_number }}
+          --skip-tls-verify=true
+
+    - name: Install kubectl
+      run: |
+        KUBECTL_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+        curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+        chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'latest'
+
+    - name: Set up Kubeconfig
+      run: |
+        kubectl config set-cluster k8s \
+          --server=https://34.88.197.247:6443 \
+          --insecure-skip-tls-verify=true
+        kubectl config set-credentials github-deployer --token=${{ secrets.K8S_TOKEN }}
+        kubectl config set-context default --cluster=k8s --user=github-deployer --namespace=default
+        kubectl config use-context default
+
+    - name: Deploy to Kubernetes with Helm
+      run: |
+        helm upgrade --install ${{ github.event.repository.name }} ./helm-chart \
+          --namespace default \
+          --set image.repository=avukatcloud/nomika \
+          --set image.tag=${{ github.event.repository.name }}-${{ github.run_number }}
+          --set env.DATABASE_URI=${{ secrets.POSTGRES }}
