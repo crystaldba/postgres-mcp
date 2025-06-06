@@ -83,5 +83,5 @@ jobs:
         helm upgrade --install ${{ github.event.repository.name }} ./helm-chart \
           --namespace default \
           --set image.repository=avukatcloud/nomika \
-          --set image.tag=${{ steps.meta.outputs.version }}
+          --set image.tag=${{ steps.meta.outputs.version }} \
           --set env.DATABASE_URI=${{ secrets.POSTGRES }}
