@@ -36,6 +36,9 @@ FROM python:3.12-slim-bookworm
 # Python executable must be the same, e.g., using `python:3.11-slim-bookworm`
 # will fail.
 
+# Create app user
+RUN groupadd --gid 1000 app && useradd --uid 1000 --gid app --shell /bin/bash --create-home app
+
 COPY --from=builder --chown=app:app /app /app
 
 ENV PATH="/app/.venv/bin:$PATH"
@@ -58,6 +61,9 @@ RUN apt-get update && apt-get install -y \
 
 COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
+
+# Switch to app user
+USER app
 
 # Expose the SSE port
 EXPOSE 8000
