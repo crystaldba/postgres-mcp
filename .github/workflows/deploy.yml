@@ -2,7 +2,7 @@ name: Build & Deploy to Kubernetes
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
 
 jobs:
   build-and-deploy:
