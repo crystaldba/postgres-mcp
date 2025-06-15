@@ -66,11 +66,11 @@ RUN chmod +x /app/docker-entrypoint.sh
 USER app
 
 # Expose the SSE port
-EXPOSE 8000
+EXPOSE 80
 
 # Run the postgres-mcp server
 # Users can pass a database URI or individual connection arguments:
 #   docker run -it --rm postgres-mcp postgres://user:pass@host:port/dbname
 #   docker run -it --rm postgres-mcp -h myhost -p 5432 -U myuser -d mydb
 ENTRYPOINT ["/app/docker-entrypoint.sh", "postgres-mcp"]
-CMD ["--transport", "sse", "--sse-host", "0.0.0.0", "--sse-port", "8000"]
+CMD ["--transport", "sse", "--sse-host", "0.0.0.0", "--sse-port", "80"]
