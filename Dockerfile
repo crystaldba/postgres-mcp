@@ -10,14 +10,23 @@ ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 ENV UV_PYTHON_DOWNLOADS=0
 
 WORKDIR /app
+
+# Install build dependencies
 RUN apt-get update \
   && apt-get install -y libpq-dev gcc \
   && rm -rf /var/lib/apt/lists/*
+
+# Copy dependency files first for better caching
+COPY uv.lock pyproject.toml ./
+
+# Install dependencies without installing the project itself
 RUN --mount=type=cache,target=/root/.cache/uv \
-  --mount=type=bind,source=uv.lock,target=uv.lock \
-  --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
   uv sync --frozen --no-install-project --no-dev
-ADD . /app
+
+# Copy the rest of the application
+COPY . .
+
+# Install the project
 RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --frozen --no-dev
 
