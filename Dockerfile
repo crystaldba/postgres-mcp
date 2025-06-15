@@ -58,4 +58,4 @@ EXPOSE 8000
 #   docker run -it --rm postgres-mcp postgres://user:pass@host:port/dbname
 #   docker run -it --rm postgres-mcp -h myhost -p 5432 -U myuser -d mydb
 ENTRYPOINT ["/app/docker-entrypoint.sh", "postgres-mcp"]
-CMD []
+CMD ["--transport", "sse", "--sse-host", "0.0.0.0", "--sse-port", "8000"]
