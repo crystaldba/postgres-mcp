@@ -13,6 +13,12 @@ from typing import Union
 
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
+
+from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware import Middleware
+
+import uvicorn
+
 from pydantic import Field
 from pydantic import validate_call
 
@@ -539,6 +545,12 @@ async def main():
         default=8000,
         help="Port for SSE server (default: 8000)",
     )
+    parser.add_argument(
+        "--cors-origins",
+        nargs="*",
+        default=[],
+        help="List of allowed CORS origins (default: empty, no CORS)",
+    )
 
     args = parser.parse_args()
 
@@ -589,10 +601,26 @@ async def main():
     if args.transport == "stdio":
         await mcp.run_stdio_async()
     else:
-        # Update FastMCP settings based on command line arguments
-        mcp.settings.host = args.sse_host
-        mcp.settings.port = args.sse_port
-        await mcp.run_sse_async()
+        starlette_app = mcp.sse_app()
+        
+        if args.cors_origins:
+            logger.info(f"Enabling CORS for origins: {", ".join(args.cors_origins)}")
+            starlette_app.add_middleware(
+                CORSMiddleware,
+                allow_origins=args.cors_origins,
+                allow_methods=['GET', 'POST', 'OPTIONS'],
+                allow_headers=['*']
+            )
+
+        config = uvicorn.Config(
+            starlette_app,
+            host=args.sse_host,
+            port=args.sse_port,
+            log_level="info",
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
+
 
 
 async def shutdown(sig=None):
