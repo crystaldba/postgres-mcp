@@ -32,6 +32,8 @@ from .sql import SqlDriver
 from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
 from .top_queries import TopQueriesCalc
+from typing import Any, List, Literal, Union
+from pydantic import Field, validate_call
 
 # Initialize FastMCP with default settings
 mcp = FastMCP("postgres-mcp")
@@ -105,6 +107,34 @@ async def list_schemas() -> ResponseType:
         logger.error(f"Error listing schemas: {e}")
         return format_error_response(str(e))
 
+@mcp.tool(description="Kararlar birleşik tablosunda tam metin araması yapar.")
+async def search_kararlar(
+    user_query: str = Field(description="Arama sorgusu."),
+    limit: int = Field(description="Döndürülecek maksimum sonuç sayısı.", default=10),
+) -> ResponseType:
+    """
+    kararlar_birlesik tablosunda Türkçe tam metin araması yapar.
+    """
+    try:
+        sql_driver = await get_sql_driver()
+        # Psycopg 3, parametreler için %s kullanır.
+        query = """
+        SELECT
+            *,
+            ts_rank_cd(b.fts_vector, websearch_to_tsquery('turkish', %s)) as alaka_puani
+        FROM kararlar_birlesik b
+        WHERE b.fts_vector @@ websearch_to_tsquery('turkish', %s)
+        ORDER BY alaka_puani DESC
+        LIMIT %s;
+        """
+        # Sorgu parametrelerini bir liste olarak gönderiyoruz.
+        rows = await sql_driver.execute_query(query, [user_query, user_query, limit])
+        if rows is None:
+            return format_text_response("Sonuç bulunamadı.")
+        return format_text_response([row.cells for row in rows])
+    except Exception as e:
+        logger.error(f"Kararlar aranırken hata oluştu: {e}")
+        return format_error_response(str(e))
 
 @mcp.tool(description="List objects in a schema")
 async def list_objects(
