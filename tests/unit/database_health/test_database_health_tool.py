@@ -21,7 +21,7 @@ async def setup_test_tables(sql_driver):
     conn_pool = await pool_wrapper.pool_connect()
     async with conn_pool.connection() as conn:
         # Drop existing tables if they exist
-        await conn.execute("DROP TABLE IF EXISTS test_orders")
+        await conn.execute("DROP TABLE IF EXISTS \"TestOrders\"")
         await conn.execute("DROP TABLE IF EXISTS test_customers")
         await conn.execute("DROP SEQUENCE IF EXISTS test_seq")
 
@@ -42,7 +42,7 @@ async def setup_test_tables(sql_driver):
 
         await conn.execute(
             """
-            CREATE TABLE test_orders (
+            CREATE TABLE "TestOrders" (
                 id SERIAL PRIMARY KEY,
                 customer_id INTEGER REFERENCES test_customers(id),
                 total DECIMAL NOT NULL CHECK (total >= 0),
@@ -55,23 +55,23 @@ async def setup_test_tables(sql_driver):
         # Create some indexes to test index health
         await conn.execute(
             """
-            CREATE INDEX idx_orders_customer ON test_orders(customer_id)
+            CREATE INDEX idx_orders_customer ON "TestOrders"(customer_id)
             """
         )
         await conn.execute(
             """
-            CREATE INDEX idx_orders_status ON test_orders(status)
+            CREATE INDEX idx_orders_status ON "TestOrders"(status)
             """
         )
         await conn.execute(
             """
-            CREATE INDEX idx_orders_created ON test_orders(created_at)
+            CREATE INDEX idx_orders_created ON "TestOrders"(created_at)
             """
         )
         # Create a duplicate index to test duplicate index detection
         await conn.execute(
             """
-            CREATE INDEX idx_orders_customer_dup ON test_orders(customer_id)
+            CREATE INDEX idx_orders_customer_dup ON "TestOrders"(customer_id)
             """
         )
 
@@ -88,7 +88,7 @@ async def setup_test_tables(sql_driver):
 
         await conn.execute(
             """
-            INSERT INTO test_orders (customer_id, total, status)
+            INSERT INTO "TestOrders" (customer_id, total, status)
             SELECT
                 (random() * 99)::int + 1,  -- Changed to ensure IDs are between 1 and 100
                 (random() * 1000)::decimal,
@@ -103,7 +103,7 @@ async def setup_test_tables(sql_driver):
 
         # Run ANALYZE to update statistics
         await conn.execute("ANALYZE test_customers")
-        await conn.execute("ANALYZE test_orders")
+        await conn.execute("ANALYZE \"TestOrders\"")
 
 
 async def cleanup_test_tables(sql_driver):
@@ -111,7 +111,7 @@ async def cleanup_test_tables(sql_driver):
     conn_pool = await pool_wrapper.pool_connect()
     try:
         async with conn_pool.connection() as conn:
-            await conn.execute("DROP TABLE IF EXISTS test_orders")
+            await conn.execute("DROP TABLE IF EXISTS \"TestOrders\"")
             await conn.execute("DROP TABLE IF EXISTS test_customers")
             await conn.execute("DROP SEQUENCE IF EXISTS test_seq")
     finally:
