@@ -143,6 +143,9 @@ class SequenceHealthCalc:
         # Remove nextval and cast parts
         clean_value = default_value.replace("nextval('", "").replace("'::regclass)", "")
         clean_value = clean_value.replace("('", "").replace("'::text)", "")
+        # We're going to feed these to sql.Identifier, so we need to remove quotes, or else
+        # they will be double quoted.
+        clean_value = clean_value.replace('"', "")
 
         # Split into schema and sequence
         parts = clean_value.split(".")
