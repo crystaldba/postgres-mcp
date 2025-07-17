@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/crystaldba-postgres-mcp-badge.png)](https://mseep.ai/app/crystaldba-postgres-mcp)
+
 <div align="center">
 
 <img src="assets/postgres-mcp-pro.png" alt="Postgres MCP Pro Logo" width="600"/>
