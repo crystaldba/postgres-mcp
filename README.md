@@ -153,6 +153,25 @@ The Postgres MCP Pro Docker image will automatically remap the hostname `localho
 - MacOS/Windows: Uses `host.docker.internal` automatically
 - Linux: Uses `172.17.0.1` or the appropriate host address automatically
 
+##### If you are using `uvx`
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "uvx",
+      "args": [
+        "postgres-mcp",
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
+      }
+    }
+  }
+}
+```
+
 
 ##### If you are using `pipx`
 
