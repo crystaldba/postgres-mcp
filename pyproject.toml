@@ -12,6 +12,7 @@ dependencies = [
     "attrs>=25.3.0",
     "psycopg-pool>=3.2.6",
     "instructor>=1.7.9",
+    "python-dotenv>=1.0.0",
 ]
 license = "mit"
 license-files = ["LICENSE"]
