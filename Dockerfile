@@ -27,6 +27,8 @@ FROM python:3.12-slim-bookworm
 # Python executable must be the same, e.g., using `python:3.11-slim-bookworm`
 # will fail.
 
+RUN groupadd -r app && useradd -r -g app app
+
 COPY --from=builder --chown=app:app /app /app
 
 ENV PATH="/app/.venv/bin:$PATH"
@@ -49,6 +51,8 @@ RUN apt-get update && apt-get install -y \
 
 COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
+
+USER app
 
 # Expose the SSE port
 EXPOSE 8000
