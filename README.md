@@ -199,6 +199,59 @@ The Postgres MCP Pro Docker image will automatically remap the hostname `localho
 Replace `postgresql://...` with your [Postgres database connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS).
 
 
+##### Multiple Database Connections
+
+Postgres MCP Pro supports connecting to multiple databases simultaneously. This is useful when you need to work across different databases (e.g., application database, ETL database, analytics database).
+
+To configure multiple connections, define additional environment variables with the pattern `DATABASE_URI_<NAME>`:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e", "DATABASE_URI_APP",
+        "-e", "DATABASE_URI_ETL",
+        "-e", "DATABASE_URI_ANALYTICS",
+        "-e", "DATABASE_DESC_APP",
+        "-e", "DATABASE_DESC_ETL",
+        "-e", "DATABASE_DESC_ANALYTICS",
+        "crystaldba/postgres-mcp",
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI_APP": "postgresql://user:pass@localhost:5432/app_db",
+        "DATABASE_URI_ETL": "postgresql://user:pass@localhost:5432/etl_db",
+        "DATABASE_URI_ANALYTICS": "postgresql://user:pass@localhost:5432/analytics_db",
+        "DATABASE_DESC_APP": "Main application database with user data and transactions",
+        "DATABASE_DESC_ETL": "ETL staging database for data processing pipelines",
+        "DATABASE_DESC_ANALYTICS": "Read-only analytics database with aggregated metrics"
+      }
+    }
+  }
+}
+```
+
+Each connection is identified by its name (the part after `DATABASE_URI_`, converted to lowercase):
+- `DATABASE_URI_APP` → connection name: `"app"`
+- `DATABASE_URI_ETL` → connection name: `"etl"`
+- `DATABASE_URI_ANALYTICS` → connection name: `"analytics"`
+
+**Connection Descriptions**: You can optionally provide descriptions for each connection using `DATABASE_DESC_<NAME>` environment variables. These descriptions help the AI assistant understand which database to use for different tasks. The descriptions are:
+- Automatically displayed in the server context (visible to the AI without requiring a tool call)
+- Useful for guiding the AI to select the appropriate database
+
+When using tools, you'll specify which connection to use via the `conn_name` parameter:
+- `list_schemas(conn_name="app")` - Lists schemas in the app database
+- `explain_query(conn_name="etl", sql="SELECT ...")` - Explains query in the ETL database
+
+For backward compatibility, `DATABASE_URI` (without a suffix) maps to the connection name `"default"`.
+
+
 ##### Access Mode
 
 Postgres MCP Pro supports multiple *access modes* to give you control over the operations that the AI agent can perform on the database:

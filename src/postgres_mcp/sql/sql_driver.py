@@ -1,6 +1,8 @@
 """SQL driver adapter for PostgreSQL connections."""
 
+import asyncio
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -134,6 +136,170 @@ class DbConnPool:
     def last_error(self) -> Optional[str]:
         """Get the last error message."""
         return self._last_error
+
+
+class ConnectionRegistry:
+    """Registry for managing multiple database connections."""
+
+    def __init__(self):
+        self.connections: Dict[str, DbConnPool] = {}
+        self._connection_urls: Dict[str, str] = {}
+        self._connection_descriptions: Dict[str, str] = {}
+
+    def discover_connections(self) -> Dict[str, str]:
+        """
+        Discover all DATABASE_URI_* environment variables.
+
+        Returns:
+            Dict mapping connection names to connection URLs
+            - DATABASE_URI -> "default"
+            - DATABASE_URI_APP -> "app"
+            - DATABASE_URI_ETL -> "etl"
+        """
+        discovered = {}
+
+        for env_var, url in os.environ.items():
+            if env_var == "DATABASE_URI":
+                discovered["default"] = url
+            elif env_var.startswith("DATABASE_URI_"):
+                # Extract postfix and lowercase it
+                postfix = env_var[len("DATABASE_URI_"):]
+                conn_name = postfix.lower()
+                discovered[conn_name] = url
+
+        return discovered
+
+    def discover_descriptions(self) -> Dict[str, str]:
+        """
+        Discover all DATABASE_DESC_* environment variables.
+
+        Returns:
+            Dict mapping connection names to descriptions
+            - DATABASE_DESC -> "default"
+            - DATABASE_DESC_APP -> "app"
+            - DATABASE_DESC_ETL -> "etl"
+        """
+        descriptions = {}
+
+        for env_var, desc in os.environ.items():
+            if env_var == "DATABASE_DESC":
+                descriptions["default"] = desc
+            elif env_var.startswith("DATABASE_DESC_"):
+                # Extract postfix and lowercase it
+                postfix = env_var[len("DATABASE_DESC_"):]
+                conn_name = postfix.lower()
+                descriptions[conn_name] = desc
+
+        return descriptions
+
+    async def discover_and_connect(self) -> None:
+        """
+        Discover all DATABASE_URI_* environment variables and connect to them.
+        Connections are initialized in parallel for efficiency.
+        """
+        discovered = self.discover_connections()
+
+        if not discovered:
+            raise ValueError(
+                "No database connections found. Please set DATABASE_URI or DATABASE_URI_* environment variables."
+            )
+
+        logger.info(f"Discovered {len(discovered)} database connection(s): {', '.join(discovered.keys())}")
+
+        # Store URLs and descriptions for reference
+        self._connection_urls = discovered.copy()
+        self._connection_descriptions = self.discover_descriptions()
+
+        # Create connection pools
+        for conn_name, url in discovered.items():
+            self.connections[conn_name] = DbConnPool(url)
+
+        # Connect to all databases in parallel
+        async def connect_single(conn_name: str, pool: DbConnPool) -> tuple[str, bool, Optional[str]]:
+            """Connect to a single database and return status."""
+            try:
+                await pool.pool_connect()
+                return (conn_name, True, None)
+            except Exception as e:
+                error_msg = obfuscate_password(str(e))
+                logger.warning(f"Failed to connect to '{conn_name}': {error_msg}")
+                return (conn_name, False, error_msg)
+
+        # Execute all connections in parallel
+        results = await asyncio.gather(
+            *[connect_single(name, pool) for name, pool in self.connections.items()],
+            return_exceptions=False
+        )
+
+        # Log results
+        for conn_name, success, error in results:
+            if success:
+                logger.info(f"Successfully connected to '{conn_name}'")
+            else:
+                logger.warning(f"Connection '{conn_name}' failed: {error}")
+
+    def get_connection(self, conn_name: str) -> DbConnPool:
+        """
+        Get a connection pool by name.
+
+        Args:
+            conn_name: Connection name (e.g., "default", "app", "etl")
+
+        Returns:
+            DbConnPool instance
+
+        Raises:
+            ValueError: If connection name doesn't exist
+        """
+        if conn_name not in self.connections:
+            available = ", ".join(f"'{name}'" for name in sorted(self.connections.keys()))
+            raise ValueError(
+                f"Connection '{conn_name}' not found. Available connections: {available}"
+            )
+
+        pool = self.connections[conn_name]
+
+        # Check if connection is valid
+        if not pool.is_valid:
+            error_msg = pool.last_error or "Unknown error"
+            raise ValueError(
+                f"Connection '{conn_name}' is not available: {obfuscate_password(error_msg)}"
+            )
+
+        return pool
+
+    async def close_all(self) -> None:
+        """Close all database connections."""
+        close_tasks = []
+        for conn_name, pool in self.connections.items():
+            logger.info(f"Closing connection '{conn_name}'...")
+            close_tasks.append(pool.close())
+
+        # Close all connections in parallel
+        await asyncio.gather(*close_tasks, return_exceptions=True)
+
+        self.connections.clear()
+        self._connection_urls.clear()
+        self._connection_descriptions.clear()
+
+    def get_connection_names(self) -> List[str]:
+        """Get list of all connection names."""
+        return list(self.connections.keys())
+
+    def get_connection_info(self) -> List[Dict[str, str]]:
+        """
+        Get information about all configured connections.
+
+        Returns:
+            List of dicts with 'name' and optional 'description' for each connection
+        """
+        info = []
+        for conn_name in sorted(self.connections.keys()):
+            conn_info = {"name": conn_name}
+            if conn_name in self._connection_descriptions:
+                conn_info["description"] = self._connection_descriptions[conn_name]
+            info.append(conn_info)
+        return info
 
 
 class SqlDriver:

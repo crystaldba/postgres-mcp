@@ -45,7 +45,7 @@ async def test_explain_query_integration():
         with patch("postgres_mcp.server.get_sql_driver"):
             # Patch the ExplainPlanTool
             with patch("postgres_mcp.server.ExplainPlanTool"):
-                result = await explain_query("SELECT * FROM users", hypothetical_indexes=None)
+                result = await explain_query(conn_name="default", sql="SELECT * FROM users", hypothetical_indexes=None)
 
                 # Verify result matches our expected plan data
                 assert isinstance(result, list)
@@ -67,7 +67,7 @@ async def test_explain_query_with_analyze_integration():
         with patch("postgres_mcp.server.get_sql_driver"):
             # Patch the ExplainPlanTool
             with patch("postgres_mcp.server.ExplainPlanTool"):
-                result = await explain_query("SELECT * FROM users", analyze=True, hypothetical_indexes=None)
+                result = await explain_query(conn_name="default", sql="SELECT * FROM users", analyze=True, hypothetical_indexes=None)
 
                 # Verify result matches our expected plan data
                 assert isinstance(result, list)
@@ -98,7 +98,7 @@ async def test_explain_query_with_hypothetical_indexes_integration():
         with patch("postgres_mcp.server.get_sql_driver", return_value=mock_safe_driver):
             # Patch the ExplainPlanTool
             with patch("postgres_mcp.server.ExplainPlanTool"):
-                result = await explain_query(test_sql, hypothetical_indexes=test_indexes)
+                result = await explain_query(conn_name="default", sql=test_sql, hypothetical_indexes=test_indexes)
 
                 # Verify result matches our expected plan data
                 assert isinstance(result, list)
@@ -129,7 +129,7 @@ async def test_explain_query_missing_hypopg_integration():
         with patch("postgres_mcp.server.get_sql_driver", return_value=mock_safe_driver):
             # Patch the ExplainPlanTool
             with patch("postgres_mcp.server.ExplainPlanTool"):
-                result = await explain_query(test_sql, hypothetical_indexes=test_indexes)
+                result = await explain_query(conn_name="default", sql=test_sql, hypothetical_indexes=test_indexes)
 
                 # Verify result
                 assert isinstance(result, list)
@@ -152,7 +152,7 @@ async def test_explain_query_error_handling_integration():
             "postgres_mcp.server.get_sql_driver",
             side_effect=Exception(error_message),
         ):
-            result = await explain_query("INVALID SQL")
+            result = await explain_query(conn_name="default", sql="INVALID SQL")
 
             # Verify error is correctly formatted
             assert isinstance(result, list)

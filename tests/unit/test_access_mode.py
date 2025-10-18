@@ -32,9 +32,9 @@ async def test_get_sql_driver_returns_correct_driver(access_mode, expected_drive
     """Test that get_sql_driver returns the correct driver type based on access mode."""
     with (
         patch("postgres_mcp.server.current_access_mode", access_mode),
-        patch("postgres_mcp.server.db_connection", mock_db_connection),
+        patch("postgres_mcp.server.connection_registry.get_connection", return_value=mock_db_connection),
     ):
-        driver = await get_sql_driver()
+        driver = await get_sql_driver(conn_name="default")
         assert isinstance(driver, expected_driver_type)
 
         # When in RESTRICTED mode, verify timeout is set
@@ -48,9 +48,9 @@ async def test_get_sql_driver_sets_timeout_in_restricted_mode(mock_db_connection
     """Test that get_sql_driver sets the timeout in restricted mode."""
     with (
         patch("postgres_mcp.server.current_access_mode", AccessMode.RESTRICTED),
-        patch("postgres_mcp.server.db_connection", mock_db_connection),
+        patch("postgres_mcp.server.connection_registry.get_connection", return_value=mock_db_connection),
     ):
-        driver = await get_sql_driver()
+        driver = await get_sql_driver(conn_name="default")
         assert isinstance(driver, SafeSqlDriver)
         assert driver.timeout == 30
         assert hasattr(driver, "sql_driver")
@@ -61,9 +61,9 @@ async def test_get_sql_driver_in_unrestricted_mode_no_timeout(mock_db_connection
     """Test that get_sql_driver in unrestricted mode is a regular SqlDriver."""
     with (
         patch("postgres_mcp.server.current_access_mode", AccessMode.UNRESTRICTED),
-        patch("postgres_mcp.server.db_connection", mock_db_connection),
+        patch("postgres_mcp.server.connection_registry.get_connection", return_value=mock_db_connection),
     ):
-        driver = await get_sql_driver()
+        driver = await get_sql_driver(conn_name="default")
         assert isinstance(driver, SqlDriver)
         assert not hasattr(driver, "timeout")
 
@@ -90,7 +90,7 @@ async def test_command_line_parsing():
 
         with (
             patch("postgres_mcp.server.current_access_mode", AccessMode.UNRESTRICTED),
-            patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
+            patch("postgres_mcp.server.connection_registry.discover_and_connect", AsyncMock()),
             patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()),
             patch("postgres_mcp.server.shutdown", AsyncMock()),
         ):
