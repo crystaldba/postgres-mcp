@@ -245,7 +245,7 @@ Each connection is identified by its name (the part after `DATABASE_URI_`, conve
 - Automatically displayed in the server context (visible to the AI without requiring a tool call)
 - Useful for guiding the AI to select the appropriate database
 
-When using tools, you'll specify which connection to use via the `conn_name` parameter:
+When using tools, the LLM will specify which connection to use via the `conn_name` parameter:
 - `list_schemas(conn_name="app")` - Lists schemas in the app database
 - `explain_query(conn_name="etl", sql="SELECT ...")` - Explains query in the ETL database
 
