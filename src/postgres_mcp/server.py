@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 import signal
 import sys
 from enum import Enum
@@ -595,6 +596,12 @@ async def main():
         default=8000,
         help="Port for SSE server (default: 8000)",
     )
+    parser.add_argument(
+        "--db",
+        action="append",
+        metavar="NAME=URL",
+        help="Database connection (can be repeated): --db prod=postgresql://... --db staging=postgresql://...",
+    )
 
     args = parser.parse_args()
 
@@ -614,7 +621,30 @@ async def main():
     # For backwards compatibility, support command-line database_url argument
     if args.database_url and "DATABASE_URI" not in os.environ:
         os.environ["DATABASE_URI"] = args.database_url
-        logger.info("Using command-line database URL as DATABASE_URI")
+        logger.info("Set default database connection from positional argument")
+
+    # Process --db arguments with validation
+    if args.db:
+        for db_spec in args.db:
+            if "=" not in db_spec:
+                logger.error(f"Invalid --db format: '{db_spec}'. Expected NAME=URL")
+                sys.exit(1)
+
+            name, url = db_spec.split("=", 1)
+            name = name.strip().upper()
+
+            # Validate name contains only alphanumeric and underscore
+            if not re.match(r"^[A-Z0-9_]+$", name):
+                logger.error(f"Invalid connection name '{name}'. Only alphanumeric characters and underscores allowed.")
+                sys.exit(1)
+
+            # Check if already set in environment (env vars take precedence)
+            env_var = f"DATABASE_URI_{name}" if name != "DEFAULT" else "DATABASE_URI"
+            if env_var in os.environ:
+                logger.info(f"Skipping --db {name}=... (already set via {env_var} environment variable)")
+            else:
+                os.environ[env_var] = url
+                logger.info(f"Set database connection '{name.lower()}' from command-line argument")
 
     try:
         await connection_registry.discover_and_connect()
