@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -181,9 +180,7 @@ class ConnectionRegistry:
         discovered = self.discover_connections()
 
         if not discovered:
-            raise ValueError(
-                "No database connections found. Please set DATABASE_URI or DATABASE_URI_* environment variables."
-            )
+            raise ValueError("No database connections found. Please set DATABASE_URI or DATABASE_URI_* environment variables.")
 
         logger.info(f"Discovered {len(discovered)} database connection(s): {', '.join(discovered.keys())}")
 
@@ -207,10 +204,7 @@ class ConnectionRegistry:
                 return (conn_name, False, error_msg)
 
         # Execute all connections in parallel
-        results = await asyncio.gather(
-            *[connect_single(name, pool) for name, pool in self.connections.items()],
-            return_exceptions=False
-        )
+        results = await asyncio.gather(*[connect_single(name, pool) for name, pool in self.connections.items()], return_exceptions=False)
 
         # Log results
         for conn_name, success, error in results:
@@ -234,18 +228,14 @@ class ConnectionRegistry:
         """
         if conn_name not in self.connections:
             available = ", ".join(f"'{name}'" for name in sorted(self.connections.keys()))
-            raise ValueError(
-                f"Connection '{conn_name}' not found. Available connections: {available}"
-            )
+            raise ValueError(f"Connection '{conn_name}' not found. Available connections: {available}")
 
         pool = self.connections[conn_name]
 
         # Check if connection is valid
         if not pool.is_valid:
             error_msg = pool.last_error or "Unknown error"
-            raise ValueError(
-                f"Connection '{conn_name}' is not available: {obfuscate_password(error_msg)}"
-            )
+            raise ValueError(f"Connection '{conn_name}' is not available: {obfuscate_password(error_msg)}")
 
         return pool
 
