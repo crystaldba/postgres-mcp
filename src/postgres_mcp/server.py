@@ -620,20 +620,6 @@ async def main():
         await connection_registry.discover_and_connect()
         conn_names = connection_registry.get_connection_names()
         logger.info(f"Successfully initialized {len(conn_names)} connection(s): {', '.join(conn_names)}")
-
-        # Update server context with available connections
-        conn_info = connection_registry.get_connection_info()
-        if conn_info:
-            instructions = ["Available database connections:"]
-            for info in conn_info:
-                if "description" in info:
-                    instructions.append(f"- {info['name']}: {info['description']}")
-                else:
-                    instructions.append(f"- {info['name']}")
-
-            # Set the server instructions to include connection information
-            mcp._instructions = "\n".join(instructions)
-            logger.info(f"Updated server context with {len(conn_info)} connection(s)")
     except Exception as e:
         logger.warning(
             f"Could not initialize database connections: {obfuscate_password(str(e))}",
