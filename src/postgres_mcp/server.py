@@ -33,10 +33,41 @@ from .sql import SqlDriver
 from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
 from .top_queries import TopQueriesCalc
+from .env_utils import discover_database_connections
+from .env_utils import discover_database_descriptions
 
-# Initialize FastMCP with default settings
-# Note: Server instructions will be updated after database connections are discovered
-mcp = FastMCP("postgres-mcp")
+
+INSTRUCTIONS_TEMPLATE = """\
+This PostgreSQL MCP Lite server gives (un)restricted DB access via one or more connection strings.
+
+Available database connections:
+{conn_list}
+"""
+
+
+def build_instructions() -> str:
+    """Build server instructions including available connections."""
+    # Discover connections from environment variables
+    conn_urls = discover_database_connections()
+    conn_descs = discover_database_descriptions()
+
+    # Build connection list
+    if not conn_urls:
+        conn_list = "- No connections configured (set DATABASE_URI environment variable)"
+    else:
+        conn_items = []
+        for name in sorted(conn_urls.keys()):
+            desc = conn_descs.get(name, "")
+            if desc:
+                conn_items.append(f"- '{name}': {desc}")
+            else:
+                conn_items.append(f"- '{name}'")
+        conn_list = "\n".join(conn_items)
+
+    instructions = INSTRUCTIONS_TEMPLATE.format(conn_list=conn_list)
+    return instructions
+
+mcp = FastMCP("postgres-mcp", instructions=build_instructions())
 
 # Constants
 PG_STAT_STATEMENTS = "pg_stat_statements"

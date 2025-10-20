@@ -16,6 +16,9 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from typing_extensions import LiteralString
 
+from ..env_utils import discover_database_connections
+from ..env_utils import discover_database_descriptions
+
 logger = logging.getLogger(__name__)
 
 
@@ -156,18 +159,7 @@ class ConnectionRegistry:
             - DATABASE_URI_APP -> "app"
             - DATABASE_URI_ETL -> "etl"
         """
-        discovered = {}
-
-        for env_var, url in os.environ.items():
-            if env_var == "DATABASE_URI":
-                discovered["default"] = url
-            elif env_var.startswith("DATABASE_URI_"):
-                # Extract postfix and lowercase it
-                postfix = env_var[len("DATABASE_URI_"):]
-                conn_name = postfix.lower()
-                discovered[conn_name] = url
-
-        return discovered
+        return discover_database_connections()
 
     def discover_descriptions(self) -> Dict[str, str]:
         """
@@ -179,18 +171,7 @@ class ConnectionRegistry:
             - DATABASE_DESC_APP -> "app"
             - DATABASE_DESC_ETL -> "etl"
         """
-        descriptions = {}
-
-        for env_var, desc in os.environ.items():
-            if env_var == "DATABASE_DESC":
-                descriptions["default"] = desc
-            elif env_var.startswith("DATABASE_DESC_"):
-                # Extract postfix and lowercase it
-                postfix = env_var[len("DATABASE_DESC_"):]
-                conn_name = postfix.lower()
-                descriptions[conn_name] = desc
-
-        return descriptions
+        return discover_database_descriptions()
 
     async def discover_and_connect(self) -> None:
         """
