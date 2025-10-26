@@ -539,6 +539,12 @@ async def main():
         default=8000,
         help="Port for SSE server (default: 8000)",
     )
+    parser.add_argument(
+        "--sse-path",
+        type=str,
+        default="/sse",
+        help="Path for SSE server (default: /sse)",
+    )
 
     args = parser.parse_args()
 
@@ -592,6 +598,7 @@ async def main():
         # Update FastMCP settings based on command line arguments
         mcp.settings.host = args.sse_host
         mcp.settings.port = args.sse_port
+        mcp.settings.sse_path = args.sse_path
         await mcp.run_sse_async()
 
 
