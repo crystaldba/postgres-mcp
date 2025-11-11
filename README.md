@@ -258,26 +258,26 @@ For Windsurf, the format in `mcp_config.json` is slightly different:
 
 ## Postgres Extension Installation (Optional)
 
-To enable index tuning and comprehensive performance analysis you need to load the `pg_statements` and `hypopg` extensions on your database.
+To enable index tuning and comprehensive performance analysis you need to load the `pg_stat_statements` and `hypopg` extensions on your database.
 
-- The `pg_statements` extension allows Postgres MCP Pro to analyze query execution statistics.
+- The `pg_stat_statements` extension allows Postgres MCP Pro to analyze query execution statistics.
 For example, this allows it to understand which queries are running slow or consuming significant resources.
 - The `hypopg` extension allows Postgres MCP Pro to simulate the behavior of the Postgres query planner after adding indexes.
 
 ### Installing extensions on AWS RDS, Azure SQL, or Google Cloud SQL
 
-If your Postgres database is running on a cloud provider managed service, the `pg_statements` and `hypopg` extensions should already be available on the system.
+If your Postgres database is running on a cloud provider managed service, the `pg_stat_statements` and `hypopg` extensions should already be available on the system.
 In this case, you can just run `CREATE EXTENSION` commands using a role with sufficient privileges:
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS pg_statements;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 CREATE EXTENSION IF NOT EXISTS hypopg;
 ```
 
 ### Installing extensions on self-managed Postgres
 
 If you are managing your own Postgres installation, you may need to do additional work.
-Before loading the `pg_statements` extension you must ensure that it is listed in the `shared_preload_libraries` in the Postgres configuration file.
+Before loading the `pg_stat_statements` extension you must ensure that it is listed in the `shared_preload_libraries` in the Postgres configuration file.
 The `hypopg` extension may also require additional system-level installation (e.g., via your package manager) because it does not always ship with Postgres.
 
 ## Usage Examples
