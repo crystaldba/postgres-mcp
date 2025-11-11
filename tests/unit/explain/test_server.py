@@ -46,7 +46,7 @@ async def test_explain_query_basic():
     # Use patch to replace the actual explain_query function with our own mock
     with patch.object(server, "explain_query", return_value=[mock_response]):
         # Call the patched function
-        result = await server.explain_query("SELECT * FROM users")
+        result = await server.explain_query(conn_name="default", sql="SELECT * FROM users")
 
         # Verify we get the expected result
         assert isinstance(result, list)
@@ -74,7 +74,7 @@ async def test_explain_query_analyze():
     # Use patch to replace the actual explain_query function with our own mock
     with patch.object(server, "explain_query", return_value=[mock_response]):
         # Call the patched function with analyze=True
-        result = await server.explain_query("SELECT * FROM users", analyze=True)
+        result = await server.explain_query(conn_name="default", sql="SELECT * FROM users", analyze=True)
 
         # Verify we get the expected result
         assert isinstance(result, list)
@@ -104,7 +104,7 @@ async def test_explain_query_hypothetical_indexes():
     # Use patch to replace the actual explain_query function with our own mock
     with patch.object(server, "explain_query", return_value=[mock_response]):
         # Call the patched function with hypothetical_indexes
-        result = await server.explain_query(test_sql, hypothetical_indexes=test_indexes)
+        result = await server.explain_query(conn_name="default", sql=test_sql, hypothetical_indexes=test_indexes)
 
         # Verify we get the expected result
         assert isinstance(result, list)
@@ -123,7 +123,7 @@ async def test_explain_query_error_handling():
     # Use patch to replace the actual function with our mock that returns an error
     with patch.object(server, "explain_query", return_value=[mock_response]):
         # Call the patched function
-        result = await server.explain_query("INVALID SQL")
+        result = await server.explain_query(conn_name="default", sql="INVALID SQL")
 
         # Verify error is formatted correctly
         assert isinstance(result, list)
