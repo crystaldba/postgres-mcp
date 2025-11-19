@@ -256,6 +256,16 @@ For Windsurf, the format in `mcp_config.json` is slightly different:
 }
 ```
 
+For local integration with your browser using, for example, [MCP for claude.ai](https://chromewebstore.google.com/detail/jbdhaamjibfahpekpnjeikanebpdpfpb?utm_source=item-share-cb), you may need to allow certain CORS origins, such as https://claude.ai. To do this, start the server with the `--cors-origin` parameter and provide the list of domains you want to whitelist.
+
+For example, with Docker run:
+
+```bash
+docker run -p 8000:8000 \
+  -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
+  crystaldba/postgres-mcp --access-mode=unrestricted --transport=sse --cors-origin=https://claude.ai
+```
+
 ## Postgres Extension Installation (Optional)
 
 To enable index tuning and comprehensive performance analysis you need to load the `pg_stat_statements` and `hypopg` extensions on your database.
