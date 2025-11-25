@@ -170,6 +170,9 @@ class SafeSqlDriver(SqlDriver):
         "trim_scale",
         "trunc",
         "width_bucket",
+        "percentile_cont",
+        "percentile_disc",
+        "mode",
         # Trigonometric functions
         "acos",
         "acosd",
