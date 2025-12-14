@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import sys
 
 from . import server
@@ -7,6 +8,14 @@ from . import top_queries
 
 def main():
     """Main entry point for the package."""
+    # Configure logging to use stderr to avoid interfering with stdio MCP transport
+    # The MCP protocol uses stdout for communication, so all logs must go to stderr
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        stream=sys.stderr,
+    )
+
     # As of version 3.3.0 Psycopg on Windows is not compatible with the default
     # ProactorEventLoop.
     # See: https://www.psycopg.org/psycopg3/docs/advanced/async.html#async

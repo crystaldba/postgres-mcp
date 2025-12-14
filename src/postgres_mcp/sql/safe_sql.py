@@ -657,6 +657,10 @@ class SafeSqlDriver(SqlDriver):
         "first_value",
         "last_value",
         "nth_value",
+        # Ordered-set aggregate functions (PostgreSQL 9.4+)
+        "percentile_cont",
+        "percentile_disc",
+        "mode",
     }
 
     ALLOWED_NODE_TYPES: ClassVar[set[type]] = ALLOWED_STMT_TYPES | {

@@ -93,17 +93,6 @@ echo "Executing command:" >&2
 echo "${processed_args[@]}" >&2
 echo "----------------" >&2
 
-# Execute the command with the processed arguments
-"${processed_args[@]}"
-
-# Capture exit code from the Python process
-exit_code=$?
-
-# If the Python process failed, print additional debug info
-if [ $exit_code -ne 0 ]; then
-    echo "ERROR: Command failed with exit code $exit_code" >&2
-    echo "Command was: ${processed_args[@]}" >&2
-fi
-
-# Return the exit code from the Python process
-exit $exit_code
+# Execute the command with the processed arguments using exec to replace the shell
+# This ensures proper signal handling (SIGTERM, SIGINT) and makes Python PID 1
+exec "${processed_args[@]}"

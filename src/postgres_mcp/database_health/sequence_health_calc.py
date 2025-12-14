@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from psycopg.sql import Identifier
+from psycopg.sql import Literal
 
 from ..sql import SafeSqlDriver
 from ..sql import SqlDriver
@@ -101,15 +102,23 @@ class SequenceHealthCalc:
             max_value = 2147483647 if seq["column_type"] == "integer" else 9223372036854775807
 
             # Get sequence attributes
+            # Note: has_sequence_privilege expects a text argument (sequence name as string)
+            # while FROM clause needs a properly quoted identifier
+            # Build the fully qualified sequence name for has_sequence_privilege
+            if schema:
+                seq_name_for_privilege = f'"{schema}"."{sequence}"'
+            else:
+                seq_name_for_privilege = f'"{sequence}"'
+
             attrs = await SafeSqlDriver.execute_param_query(
                 self.sql_driver,
                 """
                 SELECT
-                    has_sequence_privilege('{}', 'SELECT') AS readable,
+                    has_sequence_privilege({}, 'SELECT') AS readable,
                     last_value
                 FROM {}
                 """,
-                [Identifier(schema, sequence), Identifier(schema, sequence)],
+                [Literal(seq_name_for_privilege), Identifier(schema, sequence)],
             )
 
             if not attrs:
@@ -135,17 +144,51 @@ class SequenceHealthCalc:
         return sequence_metrics
 
     def _parse_sequence_name(self, default_value: str) -> tuple[str, str]:
-        """Parse schema and sequence name from default value expression."""
-        # Handle both formats:
-        # nextval('id_seq'::regclass)
-        # nextval(('id_seq'::text)::regclass)
+        """Parse schema and sequence name from default value expression.
 
+        Handles various formats including:
+        - nextval('id_seq'::regclass)
+        - nextval('public.id_seq'::regclass)
+        - nextval('"Schema"."Sequence_Name"'::regclass)
+        - nextval(('"Schema"."Sequence_Name"'::text)::regclass)
+        """
         # Remove nextval and cast parts
         clean_value = default_value.replace("nextval('", "").replace("'::regclass)", "")
         clean_value = clean_value.replace("('", "").replace("'::text)", "")
 
-        # Split into schema and sequence
-        parts = clean_value.split(".")
+        # Handle quoted identifiers (e.g., "Schema"."Table")
+        # Split on '.' but respect quoted identifiers
+        parts = []
+        current_part = ""
+        in_quotes = False
+
+        for char in clean_value:
+            if char == '"':
+                in_quotes = not in_quotes
+                # Keep the quotes for now, we'll strip them later
+                current_part += char
+            elif char == '.' and not in_quotes:
+                if current_part:
+                    parts.append(current_part)
+                current_part = ""
+            else:
+                current_part += char
+
+        if current_part:
+            parts.append(current_part)
+
+        # Strip double quotes from parts and handle empty parts
+        def strip_quotes(s: str) -> str:
+            s = s.strip()
+            if s.startswith('"') and s.endswith('"'):
+                return s[1:-1]
+            return s
+
+        parts = [strip_quotes(p) for p in parts if p.strip()]
+
         if len(parts) == 1:
             return "public", parts[0]  # Default to public schema
-        return parts[0], parts[1]
+        elif len(parts) >= 2:
+            return parts[0], parts[1]
+        else:
+            return "public", ""

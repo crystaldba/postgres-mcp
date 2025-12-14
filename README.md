@@ -194,6 +194,53 @@ The Postgres MCP Pro Docker image will automatically remap the hostname `localho
 ```
 
 
+##### If you are using `uvx`
+
+`uvx` is a convenient way to run Python packages directly without explicit installation:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "uvx",
+      "args": [
+        "postgres-mcp",
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
+      }
+    }
+  }
+}
+```
+
+
+##### If you are using WSL (Windows Subsystem for Linux)
+
+When running Claude Desktop on Windows with the MCP server in WSL, use `wsl` as the command:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "wsl",
+      "args": [
+        "uvx",
+        "postgres-mcp",
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
+      }
+    }
+  }
+}
+```
+
+Note: Ensure `uvx` is installed and available in your WSL environment's PATH.
+
+
 ##### Connection URI
 
 Replace `postgresql://...` with your [Postgres database connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS).
@@ -313,7 +360,7 @@ The [MCP standard](https://modelcontextprotocol.io/) defines various types of en
 
 Postgres MCP Pro provides functionality via [MCP tools](https://modelcontextprotocol.io/docs/concepts/tools) alone.
 We chose this approach because the [MCP client ecosystem](https://modelcontextprotocol.io/clients) has widespread support for MCP tools.
-This contrasts with the approach of other Postgres MCP servers, including the [Reference Postgres MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres), which use [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources) to expose schema information.
+This contrasts with the approach of other Postgres MCP servers, including the [Reference Postgres MCP Server](https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres), which use [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources) to expose schema information.
 
 
 Postgres MCP Pro Tools:
@@ -336,7 +383,7 @@ Postgres MCP Pro Tools:
 **Postgres MCP Servers**
 - [Query MCP](https://github.com/alexander-zuev/supabase-mcp-server). An MCP server for Supabase Postgres with a three-tier safety architecture and Supabase management API support.
 - [PG-MCP](https://github.com/stuzero/pg-mcp-server). An MCP server for PostgreSQL with flexible connection options, explain plans, extension context, and more.
-- [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres). A simple MCP Server implementation exposing schema information as MCP resources and executing read-only queries.
+- [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres). A simple MCP Server implementation exposing schema information as MCP resources and executing read-only queries.
 - [Supabase Postgres MCP Server](https://github.com/supabase-community/supabase-mcp). This MCP Server provides Supabase management features and is actively maintained by the Supabase community.
 - [Nile MCP Server](https://github.com/niledatabase/nile-mcp-server). An MCP server providing access to the management API for the Nile's multi-tenant Postgres service.
 - [Neon MCP Server](https://github.com/neondatabase-labs/mcp-server-neon). An MCP server providing access to the management API for Neon's serverless Postgres service.
@@ -524,7 +571,7 @@ We remain open to revising this decision in the future.
 
 ### Connection Configuration
 
-Like the [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres), Postgres MCP Pro takes Postgres connection information at startup.
+Like the [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres), Postgres MCP Pro takes Postgres connection information at startup.
 This is convenient for users who always connect to the same database but can be cumbersome when users switch databases.
 
 An alternative approach, taken by [PG-MCP](https://github.com/stuzero/pg-mcp-server), is provide connection details via MCP tool calls at the time of use.
@@ -549,7 +596,7 @@ However, we do not know whether other LLMs do so as reliably and capably.
 
 *Would it be better to provide schema information using [MCP resources](https://modelcontextprotocol.io/docs/concepts/resources) rather than [MCP tools](https://modelcontextprotocol.io/docs/concepts/tools)?*
 
-The [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres) uses resources to expose schema information rather than tools.
+The [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres) uses resources to expose schema information rather than tools.
 Navigating resources is similar to navigating a file system, so this approach is natural in many ways.
 However, resource support is less widespread than tool support in the MCP client ecosystem (see [example clients](https://modelcontextprotocol.io/clients)).
 In addition, while the MCP standard says that resources can be accessed by either AI agents or end-user humans, some clients only support human navigation of the resource tree.
@@ -570,7 +617,7 @@ While this is a good approach, many find this cumbersome in practice.
 Postgres does not provide a way to place a connection or session into read-only mode, so Postgres MCP Pro uses a more complex approach to ensure read-only SQL execution on top of a read-write connection.
 
 Postgres MCP Provides a read-only transaction mode that prevents data and schema modifications.
-Like the [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres), we use read-only transactions to provide protected SQL execution.
+Like the [Reference PostgreSQL MCP Server](https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres), we use read-only transactions to provide protected SQL execution.
 
 To make this mechanism robust, we need to ensure that the SQL does not somehow circumvent the read-only transaction mode, say by issuing a `COMMIT` or `ROLLBACK` statement and then beginning a new transaction.
 

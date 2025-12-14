@@ -143,10 +143,12 @@ class TopQueriesCalc:
                 # PostgreSQL 13 and newer
                 total_time_col = "total_exec_time"
                 mean_time_col = "mean_exec_time"
+                stddev_time_col = "stddev_exec_time"
             else:
                 # PostgreSQL 12 and older
                 total_time_col = "total_time"
                 mean_time_col = "mean_time"
+                stddev_time_col = "stddev_time"
 
             query = cast(
                 LiteralString,
@@ -158,7 +160,7 @@ class TopQueriesCalc:
                         rows,
                         {total_time_col} total_exec_time,
                         {mean_time_col} mean_exec_time,
-                        stddev_exec_time,
+                        {stddev_time_col} stddev_exec_time,
                         shared_blks_hit,
                         shared_blks_read,
                         shared_blks_dirtied,

@@ -39,6 +39,7 @@ mcp = FastMCP("postgres-mcp")
 # Constants
 PG_STAT_STATEMENTS = "pg_stat_statements"
 HYPOPG_EXTENSION = "hypopg"
+DEFAULT_QUERY_TIMEOUT = 30  # Default timeout in seconds for restricted mode
 
 ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResource]
 
@@ -55,6 +56,7 @@ class AccessMode(str, Enum):
 # Global variables
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
+current_query_timeout = DEFAULT_QUERY_TIMEOUT
 shutdown_in_progress = False
 
 
@@ -63,8 +65,8 @@ async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
     base_driver = SqlDriver(conn=db_connection)
 
     if current_access_mode == AccessMode.RESTRICTED:
-        logger.debug("Using SafeSqlDriver with restrictions (RESTRICTED mode)")
-        return SafeSqlDriver(sql_driver=base_driver, timeout=30)  # 30 second timeout
+        logger.debug(f"Using SafeSqlDriver with restrictions (RESTRICTED mode, timeout={current_query_timeout}s)")
+        return SafeSqlDriver(sql_driver=base_driver, timeout=current_query_timeout)
     else:
         logger.debug("Using unrestricted SqlDriver (UNRESTRICTED mode)")
         return base_driver
@@ -120,15 +122,27 @@ async def list_objects(
             rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
-                SELECT table_schema, table_name, table_type
-                FROM information_schema.tables
-                WHERE table_schema = {} AND table_type = {}
-                ORDER BY table_name
+                SELECT
+                    t.table_schema,
+                    t.table_name,
+                    t.table_type,
+                    obj_description((quote_ident(t.table_schema) || '.' || quote_ident(t.table_name))::regclass, 'pg_class') AS comment
+                FROM information_schema.tables t
+                WHERE t.table_schema = {} AND t.table_type = {}
+                ORDER BY t.table_name
                 """,
                 [schema_name, table_type],
             )
             objects = (
-                [{"schema": row.cells["table_schema"], "name": row.cells["table_name"], "type": row.cells["table_type"]} for row in rows]
+                [
+                    {
+                        "schema": row.cells["table_schema"],
+                        "name": row.cells["table_name"],
+                        "type": row.cells["table_type"],
+                        "comment": row.cells["comment"],
+                    }
+                    for row in rows
+                ]
                 if rows
                 else []
             )
@@ -185,14 +199,22 @@ async def get_object_details(
         sql_driver = await get_sql_driver()
 
         if object_type in ("table", "view"):
-            # Get columns
+            # Get columns with comments
             col_rows = await SafeSqlDriver.execute_param_query(
                 sql_driver,
                 """
-                SELECT column_name, data_type, is_nullable, column_default
-                FROM information_schema.columns
-                WHERE table_schema = {} AND table_name = {}
-                ORDER BY ordinal_position
+                SELECT
+                    c.column_name,
+                    c.data_type,
+                    c.is_nullable,
+                    c.column_default,
+                    col_description(
+                        (quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))::regclass,
+                        c.ordinal_position
+                    ) AS comment
+                FROM information_schema.columns c
+                WHERE c.table_schema = {} AND c.table_name = {}
+                ORDER BY c.ordinal_position
                 """,
                 [schema_name, object_name],
             )
@@ -203,6 +225,7 @@ async def get_object_details(
                         "data_type": r.cells["data_type"],
                         "is_nullable": r.cells["is_nullable"],
                         "default": r.cells["column_default"],
+                        "comment": r.cells["comment"],
                     }
                     for r in col_rows
                 ]
@@ -251,8 +274,21 @@ async def get_object_details(
 
             indexes = [{"name": r.cells["indexname"], "definition": r.cells["indexdef"]} for r in idx_rows] if idx_rows else []
 
+            # Get table/view comment
+            comment_rows = await SafeSqlDriver.execute_param_query(
+                sql_driver,
+                """
+                SELECT obj_description(
+                    (quote_ident({}) || '.' || quote_ident({}))::regclass,
+                    'pg_class'
+                ) AS comment
+                """,
+                [schema_name, object_name],
+            )
+            table_comment = comment_rows[0].cells["comment"] if comment_rows else None
+
             result = {
-                "basic": {"schema": schema_name, "name": object_name, "type": object_type},
+                "basic": {"schema": schema_name, "name": object_name, "type": object_type, "comment": table_comment},
                 "columns": columns,
                 "constraints": constraints_list,
                 "indexes": indexes,
@@ -539,12 +575,31 @@ async def main():
         default=8000,
         help="Port for SSE server (default: 8000)",
     )
+    parser.add_argument(
+        "--query-timeout",
+        type=int,
+        default=None,
+        help=f"Query timeout in seconds for restricted mode (default: {DEFAULT_QUERY_TIMEOUT}). Can also be set via QUERY_TIMEOUT env var.",
+    )
 
     args = parser.parse_args()
 
     # Store the access mode in the global variable
     global current_access_mode
     current_access_mode = AccessMode(args.access_mode)
+
+    # Set query timeout from CLI argument or environment variable
+    global current_query_timeout
+    if args.query_timeout is not None:
+        current_query_timeout = args.query_timeout
+    else:
+        env_timeout = os.environ.get("QUERY_TIMEOUT")
+        if env_timeout is not None:
+            try:
+                current_query_timeout = int(env_timeout)
+            except ValueError:
+                logger.warning(f"Invalid QUERY_TIMEOUT value '{env_timeout}', using default {DEFAULT_QUERY_TIMEOUT}")
+                current_query_timeout = DEFAULT_QUERY_TIMEOUT
 
     # Add the query tool with a description appropriate to the access mode
     if current_access_mode == AccessMode.UNRESTRICTED:
