@@ -106,6 +106,265 @@ async def list_schemas() -> ResponseType:
         return format_error_response(str(e))
 
 
+@mcp.resource("postgres://database/views")
+async def get_database_views() -> ResponseType:
+    """List all views in the database (excluding system schemas)."""
+    try:
+        logger.info("Listing database views (excluding system schemas)")
+        sql_driver = await get_sql_driver()
+        rows = await sql_driver.execute_query(
+            """
+            SELECT table_schema, table_name, table_type
+            FROM information_schema.tables
+            WHERE table_type = 'VIEW'
+            AND table_schema NOT LIKE 'pg_%'
+            AND table_schema != 'information_schema'
+            ORDER BY table_schema, table_name
+            """
+        )
+        views = [row.cells for row in rows] if rows else []
+        return format_text_response(views)
+    except Exception as e:
+        logger.error(f"Error listing views: {e}")
+        return format_error_response(str(e))
+
+
+@mcp.resource("postgres://database/tables")
+async def get_database_tables() -> ResponseType:
+    """List all tables in the database (excluding system schemas)."""
+    try:
+        logger.info("Listing database tables (excluding system schemas)")
+        sql_driver = await get_sql_driver()
+        rows = await sql_driver.execute_query(
+            """
+            SELECT table_schema, table_name, table_type
+            FROM information_schema.tables
+            WHERE table_type = 'BASE TABLE'
+            AND table_schema NOT LIKE 'pg_%'
+            AND table_schema != 'information_schema'
+            ORDER BY table_schema, table_name
+            """
+        )
+        tables = [row.cells for row in rows] if rows else []
+        return format_text_response(tables)
+    except Exception as e:
+        logger.error(f"Error listing tables: {e}")
+        return format_error_response(str(e))
+
+
+@mcp.resource("postgres://database/tables/schema")
+async def get_database_tables_schema() -> ResponseType:
+    """Get schema information for all tables in the database (excluding system schemas)."""
+    try:
+        logger.info("Getting schema for all database tables (excluding system schemas)")
+        sql_driver = await get_sql_driver()
+
+        table_rows = await sql_driver.execute_query(
+            """
+            SELECT table_schema, table_name
+            FROM information_schema.tables
+            WHERE table_type = 'BASE TABLE'
+            AND table_schema NOT LIKE 'pg_%'
+            AND table_schema != 'information_schema'
+            ORDER BY table_schema, table_name
+            """
+        )
+
+        if not table_rows:
+            return format_text_response([])
+
+        tables_schema = []
+        for row in table_rows:
+            schema_name = row.cells["table_schema"]
+            table_name = row.cells["table_name"]
+
+            try:
+                # Get columns for this table
+                col_rows = await SafeSqlDriver.execute_param_query(
+                    sql_driver,
+                    """
+                    SELECT column_name, data_type, is_nullable, column_default
+                    FROM information_schema.columns
+                    WHERE table_schema = {} AND table_name = {}
+                    ORDER BY ordinal_position
+                    """,
+                    [schema_name, table_name],
+                )
+
+                columns = []
+                if col_rows:
+                    for r in col_rows:
+                        columns.append({
+                            "column": r.cells["column_name"],
+                            "data_type": r.cells["data_type"],
+                            "is_nullable": r.cells["is_nullable"],
+                            "default": r.cells["column_default"],
+                        })
+
+                # Get constraints for this table
+                con_rows = await SafeSqlDriver.execute_param_query(
+                    sql_driver,
+                    """
+                    SELECT tc.constraint_name, tc.constraint_type, kcu.column_name
+                    FROM information_schema.table_constraints AS tc
+                    LEFT JOIN information_schema.key_column_usage AS kcu
+                      ON tc.constraint_name = kcu.constraint_name
+                     AND tc.table_schema = kcu.table_schema
+                    WHERE tc.table_schema = {} AND tc.table_name = {}
+                    """,
+                    [schema_name, table_name],
+                )
+
+                constraints = {}
+                if con_rows:
+                    for con_row in con_rows:
+                        cname = con_row.cells["constraint_name"]
+                        ctype = con_row.cells["constraint_type"]
+                        col = con_row.cells["column_name"]
+                        if cname not in constraints:
+                            constraints[cname] = {"type": ctype, "columns": []}
+                        if col:
+                            constraints[cname]["columns"].append(col)
+
+                constraints_list = [{"name": name, **data} for name, data in constraints.items()]
+
+                # Get indexes for this table
+                idx_rows = await SafeSqlDriver.execute_param_query(
+                    sql_driver,
+                    """
+                    SELECT indexname, indexdef
+                    FROM pg_indexes
+                    WHERE schemaname = {} AND tablename = {}
+                    """,
+                    [schema_name, table_name],
+                )
+
+                indexes = []
+                if idx_rows:
+                    for idx_row in idx_rows:
+                        indexes.append({
+                            "name": idx_row.cells["indexname"],
+                            "definition": idx_row.cells["indexdef"]
+                        })
+
+                table_info = {
+                    "schema": schema_name,
+                    "name": table_name,
+                    "type": "table",
+                    "columns": columns,
+                    "constraints": constraints_list,
+                    "indexes": indexes
+                }
+
+                tables_schema.append(table_info)
+
+            except Exception as e:
+                logger.error(f"Error getting schema for table {schema_name}.{table_name}: {e}")
+                # Continue with other tables even if one fails
+
+        return format_text_response(tables_schema)
+    except Exception as e:
+        logger.error(f"Error getting tables schema: {e}")
+        return format_error_response(str(e))
+
+
+@mcp.resource("postgres://database/views/schema")
+async def get_database_views_schema() -> ResponseType:
+    """Get schema information for all views in the database (excluding system schemas)."""
+    try:
+        logger.info("Getting schema for all database views (excluding system schemas)")
+        sql_driver = await get_sql_driver()
+
+        # First get all views
+        view_rows = await sql_driver.execute_query(
+            """
+            SELECT table_schema, table_name
+            FROM information_schema.tables
+            WHERE table_type = 'VIEW'
+            AND table_schema NOT LIKE 'pg_%'
+            AND table_schema != 'information_schema'
+            ORDER BY table_schema, table_name
+            """
+        )
+
+        if not view_rows:
+            return format_text_response([])
+
+        views_schema = []
+        for row in view_rows:
+            schema_name = row.cells["table_schema"]
+            view_name = row.cells["table_name"]
+
+            try:
+                # Get columns for this view
+                col_rows = await SafeSqlDriver.execute_param_query(
+                    sql_driver,
+                    """
+                    SELECT column_name, data_type, is_nullable, column_default
+                    FROM information_schema.columns
+                    WHERE table_schema = {} AND table_name = {}
+                    ORDER BY ordinal_position
+                    """,
+                    [schema_name, view_name],
+                )
+
+                columns = []
+                if col_rows:
+                    for r in col_rows:
+                        columns.append({
+                            "column": r.cells["column_name"],
+                            "data_type": r.cells["data_type"],
+                            "is_nullable": r.cells["is_nullable"],
+                            "default": r.cells["column_default"]})
+
+                # Views typically don't have constraints or indexes, but we can check
+                # Get constraints for this view (if any)
+                con_rows = await SafeSqlDriver.execute_param_query(
+                    sql_driver,
+                    """
+                    SELECT tc.constraint_name, tc.constraint_type, kcu.column_name
+                    FROM information_schema.table_constraints AS tc
+                    LEFT JOIN information_schema.key_column_usage AS kcu
+                      ON tc.constraint_name = kcu.constraint_name
+                     AND tc.table_schema = kcu.table_schema
+                    WHERE tc.table_schema = {} AND tc.table_name = {}
+                    """,
+                    [schema_name, view_name],
+                )
+
+                constraints = {}
+                if con_rows:
+                    for con_row in con_rows:
+                        cname = con_row.cells["constraint_name"]
+                        ctype = con_row.cells["constraint_type"]
+                        col = con_row.cells["column_name"]
+
+                        if cname not in constraints:
+                            constraints[cname] = {"type": ctype, "columns": []}
+                        if col:
+                            constraints[cname]["columns"].append(col)
+
+                constraints_list = [{"name": name, **data} for name, data in constraints.items()]
+                view_info = {
+                    "schema": schema_name,
+                    "name": view_name,
+                    "type": "view",
+                    "columns": columns,
+                    "constraints": constraints_list,
+                    # Views don't have indexes in PostgreSQL
+                    "indexes": []
+                }
+                views_schema.append(view_info)
+            except Exception as e:
+                logger.error(f"Error getting schema for view {schema_name}.{view_name}: {e}")
+                # Continue with other views even if one fails
+
+        return format_text_response(views_schema)
+    except Exception as e:
+        logger.error(f"Error getting views schema: {e}")
+        return format_error_response(str(e))
+
+
 @mcp.tool(description="List objects in a schema")
 async def list_objects(
     schema_name: str = Field(description="Schema name"),
