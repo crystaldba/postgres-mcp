@@ -6,7 +6,7 @@ import os
 import signal
 import sys
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, Optional
 from typing import List
 from typing import Literal
 from typing import Union
@@ -15,7 +15,7 @@ import mcp.types as types
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 from pydantic import validate_call
-
+from urllib.parse import urlparse, urlunparse
 from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
 
 from .artifacts import ErrorResult
@@ -56,6 +56,7 @@ class AccessMode(str, Enum):
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
 shutdown_in_progress = False
+db_connections_cache: Dict[str, DbConnPool] = {}
 
 
 async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
@@ -78,6 +79,111 @@ def format_text_response(text: Any) -> ResponseType:
 def format_error_response(error: str) -> ResponseType:
     """Format an error response."""
     return format_text_response(f"Error: {error}")
+
+
+async def get_current_database_name() -> str:
+    """Get the name of the currently connected database."""
+    try:
+        sql_driver = await get_sql_driver()
+        rows = await sql_driver.execute_query("SELECT current_database()")
+        if rows and len(rows) > 0:
+            return rows[0].cells.get("current_database", "")
+        return ""
+    except Exception as e:
+        logger.error(f"Error getting current database name: {e}")
+        return ""
+
+
+async def get_sql_driver_for_database(
+        database_name: str
+) -> Union[SqlDriver, SafeSqlDriver]:
+    """
+    Get SQL driver for a specific database.
+    Reuses the main db_connection if database_name matches.
+    Creates and caches new connections for other databases.
+    """
+    global db_connection, db_connections_cache
+
+    # Try to reuse main database connection
+    current_db = await get_current_database_name()
+    if database_name == current_db:
+        logger.debug(f"Reusing main connection for database: {database_name}")
+        return await get_sql_driver()
+
+    # Check cached connection
+    cached_driver = await _get_cached_driver(database_name)
+    if cached_driver:
+        return cached_driver
+
+    # Create new connection
+    return await _create_new_database_connection(database_name)
+
+
+async def _get_cached_driver(
+        database_name: str
+) -> Optional[Union[SqlDriver, SafeSqlDriver]]:
+    """Retrieve driver from cache if valid."""
+    if database_name not in db_connections_cache:
+        return None
+
+    cached_pool = db_connections_cache[database_name]
+
+    if cached_pool.is_valid:
+        logger.debug(f"Reusing cached connection for database: {database_name}")
+        return _wrap_driver_for_access_mode(SqlDriver(conn=cached_pool))
+
+    # Remove invalid cached connection
+    logger.warning(
+        f"Cached connection for {database_name} is invalid, removing from cache"
+    )
+    await cached_pool.close()
+    del db_connections_cache[database_name]
+    return None
+
+
+async def _create_new_database_connection(
+        database_name: str
+) -> Union[SqlDriver, SafeSqlDriver]:
+    """Create and cache a new database connection."""
+    # Validate base connection URL exists
+    if not db_connection.connection_url:
+        raise ValueError("No base connection URL available")
+
+    # Construct new database URL
+    new_url = _build_database_url(database_name)
+    logger.info(f"Creating new connection pool for database: {database_name}")
+
+    try:
+        # Create and cache new connection pool
+        new_pool = DbConnPool()
+        await new_pool.pool_connect(str(new_url))
+
+        db_connections_cache[database_name] = new_pool
+        return _wrap_driver_for_access_mode(SqlDriver(conn=new_pool))
+
+    except Exception as e:
+        logger.error(f"Error connecting to database {database_name}: {e}")
+        raise ValueError(
+            f"Cannot connect to database '{database_name}': "
+            f"{obfuscate_password(str(e))}"
+        )
+
+
+def _build_database_url(database_name: str) -> str:
+    """Build new database URL by replacing database name in base URL."""
+    parsed = urlparse(db_connection.connection_url)
+    # Replace database name (URL path section)
+    new_path = f"/{database_name}"
+    return str(urlunparse(parsed._replace(path=new_path)))
+
+
+def _wrap_driver_for_access_mode(
+        driver: SqlDriver
+) -> Union[SqlDriver, SafeSqlDriver]:
+    """Wrap driver with SafeSqlDriver if in restricted access mode."""
+    if current_access_mode == AccessMode.RESTRICTED:
+        return SafeSqlDriver(sql_driver=driver, timeout=30)
+    return driver
 
 
 @mcp.tool(description="List all schemas in the database")
@@ -106,41 +212,44 @@ async def list_schemas() -> ResponseType:
         return format_error_response(str(e))
 
 
-@mcp.resource("postgres://database/views")
-async def get_database_views() -> ResponseType:
-    """List all views in the database (excluding system schemas)."""
+@mcp.resource("postgres://database/{database_name}/views")
+async def get_database_views(database_name: str) -> ResponseType:
+    """List all views in a specific database (excluding system schemas)."""
     try:
-        logger.info("Listing database views (excluding system schemas)")
-        sql_driver = await get_sql_driver()
+        logger.info(f"Listing views in database: {database_name} (excluding system schemas)")
+
+        sql_driver = await get_sql_driver_for_database(database_name)
         rows = await sql_driver.execute_query(
             """
             SELECT table_schema, table_name, table_type
             FROM information_schema.tables
             WHERE table_type = 'VIEW'
-            AND table_schema NOT LIKE 'pg_%'
+            AND table_schema NOT LIKE 'pg_%%'
             AND table_schema != 'information_schema'
             ORDER BY table_schema, table_name
             """
         )
+
         views = [row.cells for row in rows] if rows else []
         return format_text_response(views)
     except Exception as e:
-        logger.error(f"Error listing views: {e}")
+        logger.error(f"Error listing views in database {database_name}: {e}")
         return format_error_response(str(e))
 
 
-@mcp.resource("postgres://database/tables")
-async def get_database_tables() -> ResponseType:
-    """List all tables in the database (excluding system schemas)."""
+@mcp.resource("postgres://database/{database_name}/tables")
+async def get_database_tables(database_name: str) -> ResponseType:
+    """List all tables in a specific database (excluding system schemas)."""
     try:
-        logger.info("Listing database tables (excluding system schemas)")
-        sql_driver = await get_sql_driver()
+        logger.info(f"Listing tables in database: {database_name} (excluding system schemas)")
+        sql_driver = await get_sql_driver_for_database(database_name)
+
         rows = await sql_driver.execute_query(
             """
             SELECT table_schema, table_name, table_type
             FROM information_schema.tables
             WHERE table_type = 'BASE TABLE'
-            AND table_schema NOT LIKE 'pg_%'
+            AND table_schema NOT LIKE 'pg_%%'
             AND table_schema != 'information_schema'
             ORDER BY table_schema, table_name
             """
@@ -148,23 +257,23 @@ async def get_database_tables() -> ResponseType:
         tables = [row.cells for row in rows] if rows else []
         return format_text_response(tables)
     except Exception as e:
-        logger.error(f"Error listing tables: {e}")
+        logger.error(f"Error listing tables in database {database_name}: {e}")
         return format_error_response(str(e))
 
 
-@mcp.resource("postgres://database/tables/schema")
-async def get_database_tables_schema() -> ResponseType:
-    """Get schema information for all tables in the database (excluding system schemas)."""
+@mcp.resource("postgres://database/{database_name}/tables/schema")
+async def get_database_tables_schema(database_name: str) -> ResponseType:
+    """Get schema information for all tables in a specific database (excluding system schemas)."""
     try:
-        logger.info("Getting schema for all database tables (excluding system schemas)")
-        sql_driver = await get_sql_driver()
+        logger.info(f"Getting schema for all tables in database: {database_name} (excluding system schemas)")
+        sql_driver = await get_sql_driver_for_database(database_name)
 
         table_rows = await sql_driver.execute_query(
             """
             SELECT table_schema, table_name
             FROM information_schema.tables
             WHERE table_type = 'BASE TABLE'
-            AND table_schema NOT LIKE 'pg_%'
+            AND table_schema NOT LIKE 'pg_%%'
             AND table_schema != 'information_schema'
             ORDER BY table_schema, table_name
             """
@@ -179,7 +288,6 @@ async def get_database_tables_schema() -> ResponseType:
             table_name = row.cells["table_name"]
 
             try:
-                # Get columns for this table
                 col_rows = await SafeSqlDriver.execute_param_query(
                     sql_driver,
                     """
@@ -201,7 +309,6 @@ async def get_database_tables_schema() -> ResponseType:
                             "default": r.cells["column_default"],
                         })
 
-                # Get constraints for this table
                 con_rows = await SafeSqlDriver.execute_param_query(
                     sql_driver,
                     """
@@ -228,7 +335,6 @@ async def get_database_tables_schema() -> ResponseType:
 
                 constraints_list = [{"name": name, **data} for name, data in constraints.items()]
 
-                # Get indexes for this table
                 idx_rows = await SafeSqlDriver.execute_param_query(
                     sql_driver,
                     """
@@ -248,6 +354,7 @@ async def get_database_tables_schema() -> ResponseType:
                         })
 
                 table_info = {
+                    "database": database_name,
                     "schema": schema_name,
                     "name": table_name,
                     "type": "table",
@@ -259,29 +366,27 @@ async def get_database_tables_schema() -> ResponseType:
                 tables_schema.append(table_info)
 
             except Exception as e:
-                logger.error(f"Error getting schema for table {schema_name}.{table_name}: {e}")
-                # Continue with other tables even if one fails
+                logger.error(f"Error getting schema for table {database_name}.{schema_name}.{table_name}: {e}")
 
         return format_text_response(tables_schema)
     except Exception as e:
-        logger.error(f"Error getting tables schema: {e}")
+        logger.error(f"Error getting tables schema for database {database_name}: {e}")
         return format_error_response(str(e))
 
 
-@mcp.resource("postgres://database/views/schema")
-async def get_database_views_schema() -> ResponseType:
-    """Get schema information for all views in the database (excluding system schemas)."""
+@mcp.resource("postgres://database/{database_name}/views/schema")
+async def get_database_views_schema(database_name: str) -> ResponseType:
+    """Get schema information for all views in a specific database (excluding system schemas)."""
     try:
-        logger.info("Getting schema for all database views (excluding system schemas)")
-        sql_driver = await get_sql_driver()
+        logger.info(f"Getting schema for all views in database: {database_name} (excluding system schemas)")
+        sql_driver = await get_sql_driver_for_database(database_name)
 
-        # First get all views
         view_rows = await sql_driver.execute_query(
             """
             SELECT table_schema, table_name
             FROM information_schema.tables
             WHERE table_type = 'VIEW'
-            AND table_schema NOT LIKE 'pg_%'
+            AND table_schema NOT LIKE 'pg_%%'
             AND table_schema != 'information_schema'
             ORDER BY table_schema, table_name
             """
@@ -296,7 +401,6 @@ async def get_database_views_schema() -> ResponseType:
             view_name = row.cells["table_name"]
 
             try:
-                # Get columns for this view
                 col_rows = await SafeSqlDriver.execute_param_query(
                     sql_driver,
                     """
@@ -315,10 +419,9 @@ async def get_database_views_schema() -> ResponseType:
                             "column": r.cells["column_name"],
                             "data_type": r.cells["data_type"],
                             "is_nullable": r.cells["is_nullable"],
-                            "default": r.cells["column_default"]})
+                            "default": r.cells["column_default"]
+                        })
 
-                # Views typically don't have constraints or indexes, but we can check
-                # Get constraints for this view (if any)
                 con_rows = await SafeSqlDriver.execute_param_query(
                     sql_driver,
                     """
@@ -345,23 +448,43 @@ async def get_database_views_schema() -> ResponseType:
                             constraints[cname]["columns"].append(col)
 
                 constraints_list = [{"name": name, **data} for name, data in constraints.items()]
+
                 view_info = {
+                    "database": database_name,
                     "schema": schema_name,
                     "name": view_name,
                     "type": "view",
                     "columns": columns,
                     "constraints": constraints_list,
-                    # Views don't have indexes in PostgreSQL
                     "indexes": []
                 }
                 views_schema.append(view_info)
-            except Exception as e:
-                logger.error(f"Error getting schema for view {schema_name}.{view_name}: {e}")
-                # Continue with other views even if one fails
 
+            except Exception as e:
+                logger.error(f"Error getting schema for view {database_name}.{schema_name}.{view_name}: {e}")
         return format_text_response(views_schema)
     except Exception as e:
-        logger.error(f"Error getting views schema: {e}")
+        logger.error(f"Error getting views schema for database {database_name}: {e}")
+        return format_error_response(str(e))
+
+@mcp.resource("postgres://{database_name}/info")
+async def get_database_info(database_name: str) -> ResponseType:
+    """Get current database information."""
+    try:
+        sql_driver = await get_sql_driver_for_database(database_name)
+        rows = await sql_driver.execute_query(
+            """
+            SELECT 
+                current_database() as database_name,
+                current_user as current_user,
+                version() as pg_version
+            """
+        )
+        info = rows[0].cells if rows else {}
+        info["connected_database"] = database_name
+        return format_text_response(info)
+    except Exception as e:
+        logger.error(f"Error getting database info: {e}")
         return format_error_response(str(e))
 
 
