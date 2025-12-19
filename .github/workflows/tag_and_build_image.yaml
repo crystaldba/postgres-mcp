@@ -91,7 +91,7 @@ jobs:
         with:
           platforms: linux/amd64
           context: .
-          file: docker/Dockerfile
+          file: Dockerfile
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/jarvis/postgresql_mcp_server:${{ needs.bump-version-and-tag.outputs.new_tag }}
