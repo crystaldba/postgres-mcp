@@ -13,6 +13,7 @@ from typing import Union
 
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import Field
 from pydantic import validate_call
 
@@ -80,7 +81,13 @@ def format_error_response(error: str) -> ResponseType:
     return format_text_response(f"Error: {error}")
 
 
-@mcp.tool(description="List all schemas in the database")
+@mcp.tool(
+    description="List all schemas in the database",
+    annotations=ToolAnnotations(
+        title="List Schemas",
+        readOnlyHint=True,
+    ),
+)
 async def list_schemas() -> ResponseType:
     """List all schemas in the database."""
     try:
@@ -106,7 +113,13 @@ async def list_schemas() -> ResponseType:
         return format_error_response(str(e))
 
 
-@mcp.tool(description="List objects in a schema")
+@mcp.tool(
+    description="List objects in a schema",
+    annotations=ToolAnnotations(
+        title="List Objects",
+        readOnlyHint=True,
+    ),
+)
 async def list_objects(
     schema_name: str = Field(description="Schema name"),
     object_type: str = Field(description="Object type: 'table', 'view', 'sequence', or 'extension'", default="table"),
@@ -174,7 +187,13 @@ async def list_objects(
         return format_error_response(str(e))
 
 
-@mcp.tool(description="Show detailed information about a database object")
+@mcp.tool(
+    description="Show detailed information about a database object",
+    annotations=ToolAnnotations(
+        title="Get Object Details",
+        readOnlyHint=True,
+    ),
+)
 async def get_object_details(
     schema_name: str = Field(description="Schema name"),
     object_name: str = Field(description="Object name"),
@@ -307,7 +326,13 @@ async def get_object_details(
         return format_error_response(str(e))
 
 
-@mcp.tool(description="Explains the execution plan for a SQL query, showing how the database will execute it and provides detailed cost estimates.")
+@mcp.tool(
+    description="Explains the execution plan for a SQL query, showing how the database will execute it and provides detailed cost estimates.",
+    annotations=ToolAnnotations(
+        title="Explain Query",
+        readOnlyHint=True,
+    ),
+)
 async def explain_query(
     sql: str = Field(description="SQL query to explain"),
     analyze: bool = Field(
@@ -402,7 +427,13 @@ async def execute_sql(
         return format_error_response(str(e))
 
 
-@mcp.tool(description="Analyze frequently executed queries in the database and recommend optimal indexes")
+@mcp.tool(
+    description="Analyze frequently executed queries in the database and recommend optimal indexes",
+    annotations=ToolAnnotations(
+        title="Analyze Workload Indexes",
+        readOnlyHint=True,
+    ),
+)
 @validate_call
 async def analyze_workload_indexes(
     max_index_size_mb: int = Field(description="Max index size in MB", default=10000),
@@ -423,7 +454,13 @@ async def analyze_workload_indexes(
         return format_error_response(str(e))
 
 
-@mcp.tool(description="Analyze a list of (up to 10) SQL queries and recommend optimal indexes")
+@mcp.tool(
+    description="Analyze a list of (up to 10) SQL queries and recommend optimal indexes",
+    annotations=ToolAnnotations(
+        title="Analyze Query Indexes",
+        readOnlyHint=True,
+    ),
+)
 @validate_call
 async def analyze_query_indexes(
     queries: list[str] = Field(description="List of Query strings to analyze"),
@@ -460,7 +497,11 @@ async def analyze_query_indexes(
     "- buffer - checks for buffer cache hit rates for indexes and tables\n"
     "- constraint - checks for invalid constraints\n"
     "- all - runs all checks\n"
-    "You can optionally specify a single health check or a comma-separated list of health checks. The default is 'all' checks."
+    "You can optionally specify a single health check or a comma-separated list of health checks. The default is 'all' checks.",
+    annotations=ToolAnnotations(
+        title="Analyze Database Health",
+        readOnlyHint=True,
+    ),
 )
 async def analyze_db_health(
     health_type: str = Field(
@@ -482,6 +523,10 @@ async def analyze_db_health(
 @mcp.tool(
     name="get_top_queries",
     description=f"Reports the slowest or most resource-intensive queries using data from the '{PG_STAT_STATEMENTS}' extension.",
+    annotations=ToolAnnotations(
+        title="Get Top Queries",
+        readOnlyHint=True,
+    ),
 )
 async def get_top_queries(
     sort_by: str = Field(
@@ -546,11 +591,25 @@ async def main():
     global current_access_mode
     current_access_mode = AccessMode(args.access_mode)
 
-    # Add the query tool with a description appropriate to the access mode
+    # Add the query tool with a description and annotations appropriate to the access mode
     if current_access_mode == AccessMode.UNRESTRICTED:
-        mcp.add_tool(execute_sql, description="Execute any SQL query")
+        mcp.add_tool(
+            execute_sql,
+            description="Execute any SQL query",
+            annotations=ToolAnnotations(
+                title="Execute SQL",
+                destructiveHint=True,
+            ),
+        )
     else:
-        mcp.add_tool(execute_sql, description="Execute a read-only SQL query")
+        mcp.add_tool(
+            execute_sql,
+            description="Execute a read-only SQL query",
+            annotations=ToolAnnotations(
+                title="Execute SQL (Read-Only)",
+                readOnlyHint=True,
+            ),
+        )
 
     logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
 
