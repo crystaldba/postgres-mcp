@@ -16,71 +16,21 @@ logger = logging.getLogger(__name__)
 ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResource]
 
 
-def dynamically_register_resources(mcp_instance, database_name: Optional[str] = None):  # type: ignore
-    """
-    Register consolidated resource handlers with the MCP instance.
-
-    Args:
-        mcp_instance: The FastMCP instance to register resources with
-        database_name: Optional specific database name. If None, registers dynamic resources.
-    """
-
-    if database_name:
-        logger.info(f"Registering static resources for database: {database_name}")
-        _register_static_resources(mcp_instance, database_name)
-    else:
-        logger.info("Registering dynamic resources with database name parameter")
-        _register_dynamic_resources(mcp_instance)
-
-
-def _register_static_resources(mcp_instance, db_name: str):  # type: ignore
-    """Register static resource paths for a specific database."""
-
-    tables = f"postgres://{db_name}/"
-    views = f"postgres://{db_name}/"
-
-    tables_uri = tables + "{schema_name}/tables"
-    views_uri = views + "{schema_name}/views"
-
-    logger.info(f"Registering static resource: {tables_uri}")
-    logger.info(f"Registering static resource: {views_uri}")
-
-    @mcp_instance.resource(tables_uri)  # type: ignore
-    async def get_database_tables_static(schema_name: str) -> ResponseType:
-        """
-        Get comprehensive information about all tables in the configured database.
-
-        Returns complete table information including schemas, columns with comments,
-        constraints, indexes, and statistics.
-        """
-        return await _get_tables_impl(db_name, schema_name)
-
-    @mcp_instance.resource(views_uri)  # type: ignore
-    async def get_database_views_static(schema_name: str) -> ResponseType:
-        """
-        Get comprehensive information about all views in the configured database.
-
-        Returns complete view information including schemas, columns with comments,
-        view definitions, and dependencies.
-        """
-        return await _get_views_impl(db_name, schema_name)
-
-
-def _register_dynamic_resources(mcp_instance):  # type: ignore
-    """Register dynamic resource paths with database name parameter."""
+def register_resource_templates(mcp_instance):  # type: ignore
+    """Register resource handlers with the MCP instance using template URIs."""
 
     tables_uri = "postgres://{database_name}/{schema_name}/tables"
     views_uri = "postgres://{database_name}/{schema_name}/views"
     databases_uri = "postgres://databases"
     schemas_uri = "postgres://{database_name}/schemas"
 
-    logger.info(f"Registering dynamic resource: {tables_uri}")
-    logger.info(f"Registering dynamic resource: {views_uri}")
-    logger.info(f"Registering dynamic resource: {databases_uri}")
-    logger.info(f"Registering dynamic resource: {schemas_uri}")
+    logger.info(f"Registering resource: {tables_uri}")
+    logger.info(f"Registering resource: {views_uri}")
+    logger.info(f"Registering resource: {databases_uri}")
+    logger.info(f"Registering resource: {schemas_uri}")
 
     @mcp_instance.resource(tables_uri)  # type: ignore
-    async def get_database_tables_dynamic(database_name: str, schema_name: Optional[str] = None) -> ResponseType:
+    async def get_database_tables(database_name: str, schema_name: Optional[str] = None) -> ResponseType:
         """
         Get comprehensive information about all tables in a specific database.
 
@@ -94,7 +44,7 @@ def _register_dynamic_resources(mcp_instance):  # type: ignore
         return await _get_tables_impl(database_name, schema_name)
 
     @mcp_instance.resource(views_uri)  # type: ignore
-    async def get_database_views_dynamic(database_name: str, schema_name: Optional[str] = None) -> ResponseType:
+    async def get_database_views(database_name: str, schema_name: Optional[str] = None) -> ResponseType:
         """
         Get comprehensive information about all views in a specific database.
 
@@ -108,7 +58,7 @@ def _register_dynamic_resources(mcp_instance):  # type: ignore
         return await _get_views_impl(database_name, schema_name)
 
     @mcp_instance.resource(databases_uri)  # type: ignore
-    async def get_all_databases_dynamic() -> ResponseType:
+    async def get_all_databases() -> ResponseType:
         """
         List all databases in the PostgreSQL server.
 
@@ -124,7 +74,7 @@ def _register_dynamic_resources(mcp_instance):  # type: ignore
         return await _get_databases_info_impl(None)
 
     @mcp_instance.resource(schemas_uri)  # type: ignore
-    async def get_all_schemas_dynamic(database_name: str) -> ResponseType:
+    async def get_all_schemas(database_name: str) -> ResponseType:
         """
         List all schemas in a specific PostgreSQL database.
 

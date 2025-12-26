@@ -26,7 +26,7 @@ from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from .index.llm_opt import LLMOptimizerTool
 from .index.presentation import TextPresentation
 from .moldes.model import AccessMode
-from .resource import dynamically_register_resources
+from .resource import register_resource_templates
 from .resource import format_error_response
 from .resource import format_text_response
 from .sql import SafeSqlDriver
@@ -441,7 +441,7 @@ async def main():
     logger.info(f"Database name: {database_name}")
 
     # Register all MCP resource handlers
-    dynamically_register_resources(mcp, database_name)
+    register_resource_templates(mcp)
 
     # Initialize database connection pool
     try:
