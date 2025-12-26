@@ -184,3 +184,5 @@ devenv.local.nix
 .pre-commit-config.yaml
 *.sql
 .idea
+!tests/db-sample-data/
+!tests/db-sample-data/*.sql
