@@ -3,6 +3,7 @@
 from .bind_params import ColumnCollector
 from .bind_params import SqlBindParams
 from .bind_params import TableAliasVisitor
+from .dml_only_sql import DmlOnlySqlDriver
 from .extension_utils import check_extension
 from .extension_utils import check_hypopg_installation_status
 from .extension_utils import check_postgres_version_requirement
@@ -17,6 +18,7 @@ from .sql_driver import obfuscate_password
 __all__ = [
     "ColumnCollector",
     "DbConnPool",
+    "DmlOnlySqlDriver",
     "IndexDefinition",
     "SafeSqlDriver",
     "SqlBindParams",
