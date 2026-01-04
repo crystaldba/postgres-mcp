@@ -168,7 +168,7 @@ async def test_create_table_blocked(dml_only_driver):
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -176,7 +176,7 @@ async def test_create_table_blocked(dml_only_driver):
 async def test_alter_table_blocked(dml_only_driver):
     """Test that ALTER TABLE statements are blocked"""
     query = "ALTER TABLE users ADD COLUMN age INTEGER"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -184,7 +184,7 @@ async def test_alter_table_blocked(dml_only_driver):
 async def test_drop_table_blocked(dml_only_driver):
     """Test that DROP TABLE statements are blocked"""
     query = "DROP TABLE users"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -192,7 +192,7 @@ async def test_drop_table_blocked(dml_only_driver):
 async def test_create_index_blocked(dml_only_driver):
     """Test that CREATE INDEX statements are blocked"""
     query = "CREATE INDEX idx_user_email ON users(email)"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -200,7 +200,7 @@ async def test_create_index_blocked(dml_only_driver):
 async def test_drop_index_blocked(dml_only_driver):
     """Test that DROP INDEX statements are blocked"""
     query = "DROP INDEX idx_user_email"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -208,7 +208,7 @@ async def test_drop_index_blocked(dml_only_driver):
 async def test_truncate_blocked(dml_only_driver):
     """Test that TRUNCATE statements are blocked"""
     query = "TRUNCATE TABLE users"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -216,7 +216,7 @@ async def test_truncate_blocked(dml_only_driver):
 async def test_create_extension_blocked(dml_only_driver):
     """Test that CREATE EXTENSION statements are blocked"""
     query = "CREATE EXTENSION IF NOT EXISTS pg_trgm"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -224,7 +224,7 @@ async def test_create_extension_blocked(dml_only_driver):
 async def test_drop_extension_blocked(dml_only_driver):
     """Test that DROP EXTENSION statements are blocked"""
     query = "DROP EXTENSION pg_trgm"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -232,7 +232,7 @@ async def test_drop_extension_blocked(dml_only_driver):
 async def test_vacuum_blocked(dml_only_driver):
     """Test that VACUUM statements are blocked"""
     query = "VACUUM users"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -240,7 +240,7 @@ async def test_vacuum_blocked(dml_only_driver):
 async def test_create_schema_blocked(dml_only_driver):
     """Test that CREATE SCHEMA statements are blocked"""
     query = "CREATE SCHEMA test_schema"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -248,7 +248,7 @@ async def test_create_schema_blocked(dml_only_driver):
 async def test_drop_schema_blocked(dml_only_driver):
     """Test that DROP SCHEMA statements are blocked"""
     query = "DROP SCHEMA test_schema"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -256,7 +256,7 @@ async def test_drop_schema_blocked(dml_only_driver):
 async def test_create_database_blocked(dml_only_driver):
     """Test that CREATE DATABASE statements are blocked"""
     query = "CREATE DATABASE test_db"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -264,7 +264,7 @@ async def test_create_database_blocked(dml_only_driver):
 async def test_drop_database_blocked(dml_only_driver):
     """Test that DROP DATABASE statements are blocked"""
     query = "DROP DATABASE test_db"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -272,7 +272,7 @@ async def test_drop_database_blocked(dml_only_driver):
 async def test_create_view_blocked(dml_only_driver):
     """Test that CREATE VIEW statements are blocked"""
     query = "CREATE VIEW active_users AS SELECT * FROM users WHERE status = 'active'"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -280,7 +280,7 @@ async def test_create_view_blocked(dml_only_driver):
 async def test_drop_view_blocked(dml_only_driver):
     """Test that DROP VIEW statements are blocked"""
     query = "DROP VIEW active_users"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -294,7 +294,7 @@ async def test_create_function_blocked(dml_only_driver):
     END;
     $$ LANGUAGE plpgsql
     """
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -302,7 +302,7 @@ async def test_create_function_blocked(dml_only_driver):
 async def test_drop_function_blocked(dml_only_driver):
     """Test that DROP FUNCTION statements are blocked"""
     query = "DROP FUNCTION get_user_count()"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -414,7 +414,7 @@ async def test_delete_with_exists(dml_only_driver, mock_sql_driver):
 async def test_invalid_sql_syntax(dml_only_driver):
     """Test that queries with invalid SQL syntax are blocked"""
     query = "INSERT INTO users (name email) VALUES ('John', 'john@example.com')"
-    with pytest.raises(ValueError, match="Failed to parse SQL statement"):
+    with pytest.raises(ValueError, match="SQL parsing failed"):
         await dml_only_driver.execute_query(query)
 
 
@@ -424,7 +424,7 @@ async def test_sql_injection_attempt(dml_only_driver):
     query = """
     SELECT * FROM users; DROP TABLE users;
     """
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -432,7 +432,7 @@ async def test_sql_injection_attempt(dml_only_driver):
 async def test_explain_analyze_blocked(dml_only_driver):
     """Test that EXPLAIN ANALYZE is blocked"""
     query = "EXPLAIN ANALYZE SELECT * FROM users"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="EXPLAIN ANALYZE is not supported in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -440,7 +440,7 @@ async def test_explain_analyze_blocked(dml_only_driver):
 async def test_set_statement_blocked(dml_only_driver):
     """Test that SET statements are blocked"""
     query = "SET search_path TO public"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -448,7 +448,7 @@ async def test_set_statement_blocked(dml_only_driver):
 async def test_begin_transaction_blocked(dml_only_driver):
     """Test that BEGIN TRANSACTION is blocked"""
     query = "BEGIN"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -456,7 +456,7 @@ async def test_begin_transaction_blocked(dml_only_driver):
 async def test_commit_blocked(dml_only_driver):
     """Test that COMMIT is blocked"""
     query = "COMMIT"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 
@@ -464,7 +464,7 @@ async def test_commit_blocked(dml_only_driver):
 async def test_rollback_blocked(dml_only_driver):
     """Test that ROLLBACK is blocked"""
     query = "ROLLBACK"
-    with pytest.raises(ValueError, match="Error validating query"):
+    with pytest.raises(ValueError, match="not allowed in DML_ONLY mode"):
         await dml_only_driver.execute_query(query)
 
 

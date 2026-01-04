@@ -7,8 +7,10 @@ from typing import ClassVar
 from typing import Optional
 
 import pglast
+from pglast.ast import DefElem
 from pglast.ast import DeleteStmt
 from pglast.ast import ExplainStmt
+from pglast.ast import FuncCall
 from pglast.ast import IndexElem
 from pglast.ast import InferClause
 from pglast.ast import InsertStmt
@@ -71,22 +73,22 @@ class DmlOnlySqlDriver(SqlDriver):
         """Recursively validate a node and all its children"""
         # Check if node type is allowed
         if not isinstance(node, tuple(self.ALLOWED_NODE_TYPES)):
-            raise ValueError(f"Node type {type(node)} is not allowed")
+            raise ValueError(f"Node type {type(node).__name__} is not allowed")
 
-        # Validate function calls (reuse logic from SafeSqlDriver)
-        if hasattr(node, "funcname") and node.funcname:
+        # Validate function calls (mirror SafeSqlDriver implementation)
+        if isinstance(node, FuncCall):
             func_name = ".".join([str(n.sval) for n in node.funcname]).lower() if node.funcname else ""
             # Strip pg_catalog schema if present
             match = SafeSqlDriver.PG_CATALOG_PATTERN.match(func_name)
             unqualified_name = match.group(1) if match else func_name
             if unqualified_name not in self.ALLOWED_FUNCTIONS:
-                raise ValueError(f"Function {func_name} is not allowed")
+                raise ValueError(f"Function {func_name} is not allowed in DML_ONLY mode")
 
         # Reject EXPLAIN ANALYZE statements
         if isinstance(node, ExplainStmt):
             for option in node.options or []:
-                if hasattr(option, "defname") and option.defname == "analyze":
-                    raise ValueError("EXPLAIN ANALYZE is not supported")
+                if isinstance(option, DefElem) and option.defname == "analyze":
+                    raise ValueError("EXPLAIN ANALYZE is not supported in DML_ONLY mode")
 
         # Recursively validate all attributes that might be nodes
         for attr_name in node.__slots__:
@@ -123,27 +125,27 @@ class DmlOnlySqlDriver(SqlDriver):
             parsed = pglast.parse_sql(query)
 
             # Validate each statement
-            try:
-                for stmt in parsed:
-                    if isinstance(stmt, RawStmt):
-                        # Check if the inner statement type is allowed
-                        if not isinstance(stmt.stmt, tuple(self.ALLOWED_STMT_TYPES)):
-                            raise ValueError(
-                                f"Only SELECT, INSERT, UPDATE, DELETE, EXPLAIN, and SHOW statements are allowed. "
-                                f"DDL operations are blocked. Received: {type(stmt.stmt).__name__}"
-                            )
-                    else:
-                        if not isinstance(stmt, tuple(self.ALLOWED_STMT_TYPES)):
-                            raise ValueError(
-                                f"Only SELECT, INSERT, UPDATE, DELETE, EXPLAIN, and SHOW statements are allowed. "
-                                f"DDL operations are blocked. Received: {type(stmt).__name__}"
-                            )
+            for stmt in parsed:
+                if isinstance(stmt, RawStmt):
+                    # Check if the inner statement type is allowed
+                    if not isinstance(stmt.stmt, tuple(self.ALLOWED_STMT_TYPES)):
+                        raise ValueError(
+                            f"Statement type {type(stmt.stmt).__name__} not allowed in DML_ONLY mode. "
+                            f"Only SELECT, INSERT, UPDATE, DELETE, EXPLAIN, and SHOW are permitted."
+                        )
+                    # Validate the inner statement node, not the RawStmt wrapper
+                    self._validate_node(stmt.stmt)
+                else:
+                    # Direct statement (not wrapped)
+                    if not isinstance(stmt, tuple(self.ALLOWED_STMT_TYPES)):
+                        raise ValueError(
+                            f"Statement type {type(stmt).__name__} not allowed in DML_ONLY mode. "
+                            f"Only SELECT, INSERT, UPDATE, DELETE, EXPLAIN, and SHOW are permitted."
+                        )
                     self._validate_node(stmt)
-            except Exception as e:
-                raise ValueError(f"Error validating query: {query}") from e
 
         except pglast.parser.ParseError as e:
-            raise ValueError("Failed to parse SQL statement") from e
+            raise ValueError(f"SQL parsing failed: {e!s}") from e
 
     async def execute_query(
         self,
@@ -165,8 +167,8 @@ class DmlOnlySqlDriver(SqlDriver):
                     )
             except asyncio.TimeoutError as e:
                 logger.warning(f"Query execution timed out after {self.timeout} seconds: {query[:100]}...")
-                raise ValueError(
-                    f"Query execution timed out after {self.timeout} seconds in DML_ONLY mode. "
+                raise TimeoutError(
+                    f"Query timed out after {self.timeout} seconds in DML_ONLY mode. "
                     "Consider simplifying your query or increasing the timeout."
                 ) from e
             except Exception as e:
