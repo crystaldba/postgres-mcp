@@ -133,6 +133,14 @@ class DmlOnlySqlDriver(SqlDriver):
                             f"Statement type {type(stmt.stmt).__name__} not allowed in DML_ONLY mode. "
                             f"Only SELECT, INSERT, UPDATE, DELETE, EXPLAIN, and SHOW are permitted."
                         )
+                    # Require WHERE clause for UPDATE and DELETE to prevent accidental data loss
+                    if isinstance(stmt.stmt, (UpdateStmt, DeleteStmt)):
+                        if not stmt.stmt.whereClause:
+                            stmt_type = "UPDATE" if isinstance(stmt.stmt, UpdateStmt) else "DELETE"
+                            raise ValueError(
+                                f"{stmt_type} statements require a WHERE clause in DML_ONLY mode. "
+                                "This prevents accidental deletion or modification of all rows."
+                            )
                     # Validate the inner statement node, not the RawStmt wrapper
                     self._validate_node(stmt.stmt)
                 else:
@@ -142,6 +150,14 @@ class DmlOnlySqlDriver(SqlDriver):
                             f"Statement type {type(stmt).__name__} not allowed in DML_ONLY mode. "
                             f"Only SELECT, INSERT, UPDATE, DELETE, EXPLAIN, and SHOW are permitted."
                         )
+                    # Require WHERE clause for UPDATE and DELETE
+                    if isinstance(stmt, (UpdateStmt, DeleteStmt)):
+                        if not stmt.whereClause:
+                            stmt_type = "UPDATE" if isinstance(stmt, UpdateStmt) else "DELETE"
+                            raise ValueError(
+                                f"{stmt_type} statements require a WHERE clause in DML_ONLY mode. "
+                                "This prevents accidental deletion or modification of all rows."
+                            )
                     self._validate_node(stmt)
 
         except pglast.parser.ParseError as e:

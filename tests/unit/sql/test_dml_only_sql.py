@@ -385,6 +385,7 @@ async def test_update_with_case(dml_only_driver, mock_sql_driver):
         WHEN total_orders > 10 THEN 'silver'
         ELSE 'bronze'
     END
+    WHERE id > 0
     """
     await dml_only_driver.execute_query(query)
     mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=False)
@@ -504,3 +505,24 @@ async def test_force_readonly_can_be_set(dml_only_driver, mock_sql_driver):
     await dml_only_driver.execute_query(query, force_readonly=True)
     # Verify that force_readonly=True is passed to the underlying driver
     mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
+
+
+# ========================================
+# Test WHERE Clause Requirement
+# ========================================
+
+
+@pytest.mark.asyncio
+async def test_delete_without_where_blocked(dml_only_driver):
+    """Test that DELETE without WHERE clause is blocked"""
+    query = "DELETE FROM users"
+    with pytest.raises(ValueError, match="DELETE statements require a WHERE clause"):
+        await dml_only_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_update_without_where_blocked(dml_only_driver):
+    """Test that UPDATE without WHERE clause is blocked"""
+    query = "UPDATE users SET status = 'inactive'"
+    with pytest.raises(ValueError, match="UPDATE statements require a WHERE clause"):
+        await dml_only_driver.execute_query(query)
