@@ -7,6 +7,7 @@ import pytest
 
 from postgres_mcp.server import AccessMode
 from postgres_mcp.server import get_sql_driver
+from postgres_mcp.sql.dml_only_sql import DmlOnlySqlDriver
 from postgres_mcp.sql.safe_sql import SafeSqlDriver
 from postgres_mcp.sql.sql_driver import DbConnPool
 from postgres_mcp.sql.sql_driver import SqlDriver
@@ -25,6 +26,7 @@ def mock_db_connection():
     [
         (AccessMode.UNRESTRICTED, SqlDriver),
         (AccessMode.RESTRICTED, SafeSqlDriver),
+        (AccessMode.DML_ONLY, DmlOnlySqlDriver),
     ],
 )
 @pytest.mark.asyncio
@@ -37,9 +39,8 @@ async def test_get_sql_driver_returns_correct_driver(access_mode, expected_drive
         driver = await get_sql_driver()
         assert isinstance(driver, expected_driver_type)
 
-        # When in RESTRICTED mode, verify timeout is set
-        if access_mode == AccessMode.RESTRICTED:
-            assert isinstance(driver, SafeSqlDriver)
+        # When in RESTRICTED or DML_ONLY mode, verify timeout is set
+        if access_mode in (AccessMode.RESTRICTED, AccessMode.DML_ONLY):
             assert driver.timeout == 30
 
 
@@ -66,6 +67,19 @@ async def test_get_sql_driver_in_unrestricted_mode_no_timeout(mock_db_connection
         driver = await get_sql_driver()
         assert isinstance(driver, SqlDriver)
         assert not hasattr(driver, "timeout")
+
+
+@pytest.mark.asyncio
+async def test_get_sql_driver_sets_timeout_in_dml_only_mode(mock_db_connection):
+    """Test that get_sql_driver sets the timeout in DML_ONLY mode."""
+    with (
+        patch("postgres_mcp.server.current_access_mode", AccessMode.DML_ONLY),
+        patch("postgres_mcp.server.db_connection", mock_db_connection),
+    ):
+        driver = await get_sql_driver()
+        assert isinstance(driver, DmlOnlySqlDriver)
+        assert driver.timeout == 30
+        assert hasattr(driver, "sql_driver")
 
 
 @pytest.mark.asyncio

@@ -203,9 +203,11 @@ Replace `postgresql://...` with your [Postgres database connection URI](https://
 
 Postgres MCP Pro supports multiple *access modes* to give you control over the operations that the AI agent can perform on the database:
 - **Unrestricted Mode**: Allows full read/write access to modify data and schema. It is suitable for development environments.
+- **DML Only Mode**: Allows data manipulation (INSERT, UPDATE, DELETE) but blocks schema changes (CREATE, ALTER, DROP). It is suitable for environments where you want to allow data modification but prevent schema changes.
 - **Restricted Mode**: Limits operations to read-only transactions and imposes constraints on resource utilization (presently only execution time). It is suitable for production environments.
 
 To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode=restricted` in the configuration examples above.
+To use DML only mode, use `--access-mode=dml_only`.
 
 
 #### Other MCP Clients
@@ -585,10 +587,12 @@ We reject any SQL that contains `commit` or `rollback` statements.
 Helpfully, the popular Postgres stored procedure languages, including PL/pgSQL and PL/Python, do not allow for `COMMIT` or `ROLLBACK` statements.
 If you have unsafe stored procedure languages enabled on your database, then our read-only protections could be circumvented.
 
-At present, Postgres MCP Pro provides two levels of protection for the database, one at either extreme of the convenience/safety spectrum.
+At present, Postgres MCP Pro provides three levels of protection for the database, spanning the convenience/safety spectrum.
 - "Unrestricted" provides maximum flexibility.
 It is suitable for development environments where speed and flexibility are paramount, and where there is no need to protect valuable or sensitive data.
-- "Restricted" provides a balance between flexibility and safety.
+- "DML Only" provides a middle ground, allowing data manipulation while protecting the schema from accidental or malicious changes.
+It is suitable for environments where you need to allow data modifications but want to prevent structural changes to the database.
+- "Restricted" provides maximum safety with read-only operations.
 It is suitable for production environments where the database is exposed to untrusted users, and where it is important to protect valuable or sensitive data.
 
 Unrestricted mode aligns with the approach of [Cursor's auto-run mode](https://docs.cursor.com/chat/tools#auto-run), where the AI agent operates with limited human oversight or approvals.
