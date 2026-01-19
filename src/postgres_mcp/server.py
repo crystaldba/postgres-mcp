@@ -5,11 +5,10 @@ import logging
 import os
 import signal
 import sys
-from enum import Enum
 from typing import Any
 from typing import List
 from typing import Literal
-from typing import Union
+from urllib.parse import urlparse
 
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
@@ -26,12 +25,16 @@ from .explain import ExplainPlanTool
 from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from .index.llm_opt import LLMOptimizerTool
 from .index.presentation import TextPresentation
-from .sql import DbConnPool
+from .moldes.model import AccessMode
+from .resource import register_resource_templates
+from .resource import format_error_response
+from .resource import format_text_response
 from .sql import SafeSqlDriver
-from .sql import SqlDriver
 from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
 from .top_queries import TopQueriesCalc
+from .utils import sql_driver as sql_driver_module  # Import the module to access global state
+from .utils.url import fix_connection_url
 
 # Initialize FastMCP with default settings
 mcp = FastMCP("postgres-mcp")
@@ -45,135 +48,6 @@ ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResou
 logger = logging.getLogger(__name__)
 
 
-class AccessMode(str, Enum):
-    """SQL access modes for the server."""
-
-    UNRESTRICTED = "unrestricted"  # Unrestricted access
-    RESTRICTED = "restricted"  # Read-only with safety features
-
-
-# Global variables
-db_connection = DbConnPool()
-current_access_mode = AccessMode.UNRESTRICTED
-shutdown_in_progress = False
-
-
-async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
-    """Get the appropriate SQL driver based on the current access mode."""
-    base_driver = SqlDriver(conn=db_connection)
-
-    if current_access_mode == AccessMode.RESTRICTED:
-        logger.debug("Using SafeSqlDriver with restrictions (RESTRICTED mode)")
-        return SafeSqlDriver(sql_driver=base_driver, timeout=30)  # 30 second timeout
-    else:
-        logger.debug("Using unrestricted SqlDriver (UNRESTRICTED mode)")
-        return base_driver
-
-
-def format_text_response(text: Any) -> ResponseType:
-    """Format a text response."""
-    return [types.TextContent(type="text", text=str(text))]
-
-
-def format_error_response(error: str) -> ResponseType:
-    """Format an error response."""
-    return format_text_response(f"Error: {error}")
-
-
-@mcp.tool(description="List all schemas in the database")
-async def list_schemas() -> ResponseType:
-    """List all schemas in the database."""
-    try:
-        sql_driver = await get_sql_driver()
-        rows = await sql_driver.execute_query(
-            """
-            SELECT
-                schema_name,
-                schema_owner,
-                CASE
-                    WHEN schema_name LIKE 'pg_%' THEN 'System Schema'
-                    WHEN schema_name = 'information_schema' THEN 'System Information Schema'
-                    ELSE 'User Schema'
-                END as schema_type
-            FROM information_schema.schemata
-            ORDER BY schema_type, schema_name
-            """
-        )
-        schemas = [row.cells for row in rows] if rows else []
-        return format_text_response(schemas)
-    except Exception as e:
-        logger.error(f"Error listing schemas: {e}")
-        return format_error_response(str(e))
-
-
-@mcp.tool(description="List objects in a schema")
-async def list_objects(
-    schema_name: str = Field(description="Schema name"),
-    object_type: str = Field(description="Object type: 'table', 'view', 'sequence', or 'extension'", default="table"),
-) -> ResponseType:
-    """List objects of a given type in a schema."""
-    try:
-        sql_driver = await get_sql_driver()
-
-        if object_type in ("table", "view"):
-            table_type = "BASE TABLE" if object_type == "table" else "VIEW"
-            rows = await SafeSqlDriver.execute_param_query(
-                sql_driver,
-                """
-                SELECT table_schema, table_name, table_type
-                FROM information_schema.tables
-                WHERE table_schema = {} AND table_type = {}
-                ORDER BY table_name
-                """,
-                [schema_name, table_type],
-            )
-            objects = (
-                [{"schema": row.cells["table_schema"], "name": row.cells["table_name"], "type": row.cells["table_type"]} for row in rows]
-                if rows
-                else []
-            )
-
-        elif object_type == "sequence":
-            rows = await SafeSqlDriver.execute_param_query(
-                sql_driver,
-                """
-                SELECT sequence_schema, sequence_name, data_type
-                FROM information_schema.sequences
-                WHERE sequence_schema = {}
-                ORDER BY sequence_name
-                """,
-                [schema_name],
-            )
-            objects = (
-                [{"schema": row.cells["sequence_schema"], "name": row.cells["sequence_name"], "data_type": row.cells["data_type"]} for row in rows]
-                if rows
-                else []
-            )
-
-        elif object_type == "extension":
-            # Extensions are not schema-specific
-            rows = await sql_driver.execute_query(
-                """
-                SELECT extname, extversion, extrelocatable
-                FROM pg_extension
-                ORDER BY extname
-                """
-            )
-            objects = (
-                [{"name": row.cells["extname"], "version": row.cells["extversion"], "relocatable": row.cells["extrelocatable"]} for row in rows]
-                if rows
-                else []
-            )
-
-        else:
-            return format_error_response(f"Unsupported object type: {object_type}")
-
-        return format_text_response(objects)
-    except Exception as e:
-        logger.error(f"Error listing objects: {e}")
-        return format_error_response(str(e))
-
-
 @mcp.tool(description="Show detailed information about a database object")
 async def get_object_details(
     schema_name: str = Field(description="Schema name"),
@@ -182,7 +56,7 @@ async def get_object_details(
 ) -> ResponseType:
     """Get detailed information about a database object."""
     try:
-        sql_driver = await get_sql_driver()
+        sql_driver = await sql_driver_module.get_sql_driver()
 
         if object_type in ("table", "view"):
             # Get columns
@@ -338,7 +212,7 @@ If there is no hypothetical index, you can pass an empty list.""",
         hypothetical_indexes: Optional list of indexes to simulate
     """
     try:
-        sql_driver = await get_sql_driver()
+        sql_driver = await sql_driver_module.get_sql_driver()
         explain_tool = ExplainPlanTool(sql_driver=sql_driver)
         result: ExplainPlanArtifact | ErrorResult | None = None
 
@@ -392,7 +266,7 @@ async def execute_sql(
 ) -> ResponseType:
     """Executes a SQL query against the database."""
     try:
-        sql_driver = await get_sql_driver()
+        sql_driver = await sql_driver_module.get_sql_driver()
         rows = await sql_driver.execute_query(sql)  # type: ignore
         if rows is None:
             return format_text_response("No results")
@@ -410,7 +284,7 @@ async def analyze_workload_indexes(
 ) -> ResponseType:
     """Analyze frequently executed queries in the database and recommend optimal indexes."""
     try:
-        sql_driver = await get_sql_driver()
+        sql_driver = await sql_driver_module.get_sql_driver()
         if method == "dta":
             index_tuning = DatabaseTuningAdvisor(sql_driver)
         else:
@@ -437,7 +311,7 @@ async def analyze_query_indexes(
         return format_error_response(f"Please provide a list of up to {MAX_NUM_INDEX_TUNING_QUERIES} queries to analyze.")
 
     try:
-        sql_driver = await get_sql_driver()
+        sql_driver = await sql_driver_module.get_sql_driver()
         if method == "dta":
             index_tuning = DatabaseTuningAdvisor(sql_driver)
         else:
@@ -474,7 +348,7 @@ async def analyze_db_health(
         health_type: Comma-separated list of health check types to perform.
                     Valid values: index, connection, vacuum, sequence, replication, buffer, constraint, all
     """
-    health_tool = DatabaseHealthTool(await get_sql_driver())
+    health_tool = DatabaseHealthTool(await sql_driver_module.get_sql_driver())
     result = await health_tool.health(health_type=health_type)
     return format_text_response(result)
 
@@ -492,7 +366,7 @@ async def get_top_queries(
     limit: int = Field(description="Number of queries to return when ranking based on mean_time or total_time", default=10),
 ) -> ResponseType:
     try:
-        sql_driver = await get_sql_driver()
+        sql_driver = await sql_driver_module.get_sql_driver()
         top_queries_tool = TopQueriesCalc(sql_driver=sql_driver)
 
         if sort_by == "resources":
@@ -542,29 +416,36 @@ async def main():
 
     args = parser.parse_args()
 
-    # Store the access mode in the global variable
-    global current_access_mode
-    current_access_mode = AccessMode(args.access_mode)
+    # Store the access mode in the global variable (in sql_driver_module)
+    sql_driver_module.current_access_mode = AccessMode(args.access_mode)
 
     # Add the query tool with a description appropriate to the access mode
-    if current_access_mode == AccessMode.UNRESTRICTED:
+    if sql_driver_module.current_access_mode == AccessMode.UNRESTRICTED:
         mcp.add_tool(execute_sql, description="Execute any SQL query")
     else:
         mcp.add_tool(execute_sql, description="Execute a read-only SQL query")
 
-    logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
+    logger.info(f"Starting PostgreSQL MCP Server in {sql_driver_module.current_access_mode.upper()} mode")
 
     # Get database URL from environment variable or command line
-    database_url = os.environ.get("DATABASE_URI", args.database_url)
+    database_url = os.environ.get("DATABASE_URI", args.database_url)  #
 
     if not database_url:
         raise ValueError(
             "Error: No database URL provided. Please specify via 'DATABASE_URI' environment variable or command-line argument.",
         )
+    database_url = fix_connection_url(database_url)
+
+    parsed_url = urlparse(database_url)
+    database_name = parsed_url.path.lstrip("/")
+    logger.info(f"Database name: {database_name}")
+
+    # Register all MCP resource handlers
+    register_resource_templates(mcp)
 
     # Initialize database connection pool
     try:
-        await db_connection.pool_connect(database_url)
+        await sql_driver_module.db_connection.pool_connect(database_url)
         logger.info("Successfully connected to database and initialized connection pool")
     except Exception as e:
         logger.warning(
@@ -597,21 +478,19 @@ async def main():
 
 async def shutdown(sig=None):
     """Clean shutdown of the server."""
-    global shutdown_in_progress
-
-    if shutdown_in_progress:
+    if sql_driver_module.shutdown_in_progress:
         logger.warning("Forcing immediate exit")
         # Use sys.exit instead of os._exit to allow for proper cleanup
         sys.exit(1)
 
-    shutdown_in_progress = True
+    sql_driver_module.shutdown_in_progress = True
 
     if sig:
         logger.info(f"Received exit signal {sig.name}")
 
     # Close database connections
     try:
-        await db_connection.close()
+        await sql_driver_module.db_connection.close()
         logger.info("Closed database connections")
     except Exception as e:
         logger.error(f"Error closing database connections: {e}")

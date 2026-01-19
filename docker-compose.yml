@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Sample PostgreSQL database with dvdrental sample data
+  sample-postgres:
+    image: postgres:16-alpine
+    container_name: sample-postgres-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dvdrental
+    ports:
+      - "5432:5432"
+    volumes:
+      # Initialize with sample data from a SQL file
+      - ./test/db-sample-data:/docker-entrypoint-initdb.d
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - postgres-mcp-network
+
+  # Postgres MCP Server
+  postgres-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: postgres-mcp-server
+    ports:
+      - "8000:8000"
+    environment:
+      # Connection string to the sample database
+      - DATABASE_URL=postgresql://postgres:postgres@sample-postgres:5432/dvdrental
+    depends_on:
+      sample-postgres:
+        condition: service_healthy
+    networks:
+      - postgres-mcp-network
+    # Override the entrypoint to connect to our sample database with SSE transport for MCP Inspector
+    command: ["--access-mode=unrestricted", "--transport=sse", "postgresql://postgres:postgres@sample-postgres:5432/dvdrental"]
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  postgres-mcp-network:
+    driver: bridge
