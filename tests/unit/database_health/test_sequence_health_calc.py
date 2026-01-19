@@ -35,7 +35,7 @@ class TestParseSequenceName:
 
     def test_uppercase_with_schema(self, calc):
         """Parse uppercase sequence with schema."""
-        schema, name = calc._parse_sequence_name("nextval('\"MySchema\".\"MySeq\"'::regclass)")
+        schema, name = calc._parse_sequence_name('nextval(\'"MySchema"."MySeq"\'::regclass)')
         assert schema == "MySchema"
         assert name == "MySeq"
 

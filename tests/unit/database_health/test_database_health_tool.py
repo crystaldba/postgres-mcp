@@ -22,7 +22,7 @@ async def setup_test_tables(sql_driver):
     async with conn_pool.connection() as conn:
         # Drop existing tables if they exist
         await conn.execute("DROP TABLE IF EXISTS test_orders")
-        await conn.execute("DROP TABLE IF EXISTS \"UpperCaseOrders\"")
+        await conn.execute('DROP TABLE IF EXISTS "UpperCaseOrders"')
         await conn.execute("DROP TABLE IF EXISTS test_customers")
         await conn.execute("DROP SEQUENCE IF EXISTS test_seq")
 
@@ -129,7 +129,7 @@ async def setup_test_tables(sql_driver):
         # Run ANALYZE to update statistics
         await conn.execute("ANALYZE test_customers")
         await conn.execute("ANALYZE test_orders")
-        await conn.execute("ANALYZE \"UpperCaseOrders\"")
+        await conn.execute('ANALYZE "UpperCaseOrders"')
 
 
 async def cleanup_test_tables(sql_driver):
@@ -138,7 +138,7 @@ async def cleanup_test_tables(sql_driver):
     try:
         async with conn_pool.connection() as conn:
             await conn.execute("DROP TABLE IF EXISTS test_orders")
-            await conn.execute("DROP TABLE IF EXISTS \"UpperCaseOrders\"")
+            await conn.execute('DROP TABLE IF EXISTS "UpperCaseOrders"')
             await conn.execute("DROP TABLE IF EXISTS test_customers")
             await conn.execute("DROP SEQUENCE IF EXISTS test_seq")
     finally:
