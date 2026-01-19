@@ -135,16 +135,21 @@ class SequenceHealthCalc:
         return sequence_metrics
 
     def _parse_sequence_name(self, default_value: str) -> tuple[str, str]:
-        """Parse schema and sequence name from default value expression."""
-        # Handle both formats:
-        # nextval('id_seq'::regclass)
-        # nextval(('id_seq'::text)::regclass)
+        """Parse schema and sequence name from default value expression.
 
+        Handles formats like:
+        - nextval('id_seq'::regclass)
+        - nextval(('id_seq'::text)::regclass)
+        - nextval('"UpperCaseSeq"'::regclass)
+        - nextval('"Schema"."Seq"'::regclass)
+
+        Note: Sequence names containing literal dots (e.g., "my.seq") are not
+        supported and will be incorrectly parsed as schema.name.
+        """
         # Remove nextval and cast parts
         clean_value = default_value.replace("nextval('", "").replace("'::regclass)", "")
         clean_value = clean_value.replace("('", "").replace("'::text)", "")
-        # We're going to feed these to sql.Identifier, so we need to remove quotes, or else
-        # they will be double quoted.
+        # Remove quotes so sql.Identifier can add them correctly
         clean_value = clean_value.replace('"', "")
 
         # Split into schema and sequence
