@@ -13,7 +13,7 @@ class TestParseSequenceName:
         """Create a SequenceHealthCalc instance with a mock driver."""
         # We only need the instance for calling _parse_sequence_name
         # which doesn't use the sql_driver
-        return SequenceHealthCalc(sql_driver=None)
+        return SequenceHealthCalc(sql_driver=None)  # type: ignore[arg-type]
 
     def test_simple_sequence(self, calc):
         """Parse simple unquoted sequence name."""
