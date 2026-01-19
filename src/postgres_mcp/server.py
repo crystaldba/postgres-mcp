@@ -6,12 +6,14 @@ import os
 import signal
 import sys
 from enum import Enum
+from pathlib import Path
 from typing import Any
 from typing import List
 from typing import Literal
 from typing import Union
 
 import mcp.types as types
+from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 from pydantic import validate_call
@@ -510,33 +512,49 @@ async def get_top_queries(
 
 
 async def main():
-    # Parse command line arguments
+    # Load environment variables from .env file
+    # Try multiple locations for the .env file
+    env_paths = [
+        Path.cwd() / ".env",  # Current working directory
+        Path(__file__).parent.parent.parent / ".env",  # Project root (relative to src/postgres_mcp/server.py)
+    ]
+    
+    for env_path in env_paths:
+        if env_path.exists():
+            load_dotenv(env_path)
+            logger.debug(f"Loaded environment variables from {env_path}")
+            break
+    else:
+        # No .env file found, which is fine - we can use direct env vars or CLI args
+        logger.debug("No .env file found, using environment variables or CLI arguments")
+
+    # Parse command line arguments with environment variable defaults
     parser = argparse.ArgumentParser(description="PostgreSQL MCP Server")
     parser.add_argument("database_url", help="Database connection URL", nargs="?")
     parser.add_argument(
         "--access-mode",
         type=str,
         choices=[mode.value for mode in AccessMode],
-        default=AccessMode.UNRESTRICTED.value,
+        default=os.getenv("ACCESS_MODE", AccessMode.UNRESTRICTED.value),
         help="Set SQL access mode: unrestricted (unrestricted) or restricted (read-only with protections)",
     )
     parser.add_argument(
         "--transport",
         type=str,
         choices=["stdio", "sse"],
-        default="stdio",
+        default=os.getenv("TRANSPORT", "stdio"),
         help="Select MCP transport: stdio (default) or sse",
     )
     parser.add_argument(
         "--sse-host",
         type=str,
-        default="localhost",
+        default=os.getenv("SSE_HOST", "localhost"),
         help="Host to bind SSE server to (default: localhost)",
     )
     parser.add_argument(
         "--sse-port",
         type=int,
-        default=8000,
+        default=int(os.getenv("SSE_PORT", "8000")),
         help="Port for SSE server (default: 8000)",
     )
 
@@ -554,12 +572,37 @@ async def main():
 
     logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
 
-    # Get database URL from environment variable or command line
-    database_url = os.environ.get("DATABASE_URI", args.database_url)
+    # Get database URL - precedence: CLI arg > DATABASE_URI > constructed from individual params
+    database_url = args.database_url
+    
+    if not database_url:
+        # Try DATABASE_URI environment variable
+        database_url = os.environ.get("DATABASE_URI")
+        
+    if not database_url:
+        # Try to construct from individual connection parameters
+        db_host = os.environ.get("DB_HOST")
+        db_port = os.environ.get("DB_PORT", "5432")
+        db_name = os.environ.get("DB_NAME")
+        db_user = os.environ.get("DB_USER")
+        db_password = os.environ.get("DB_PASSWORD")
+        db_sslmode = os.environ.get("DB_SSLMODE", "prefer")
+        
+        if all([db_host, db_name, db_user]):
+            # Construct the connection URL
+            if db_password:
+                database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode={db_sslmode}"
+            else:
+                database_url = f"postgresql://{db_user}@{db_host}:{db_port}/{db_name}?sslmode={db_sslmode}"
+            logger.debug("Constructed database URL from individual connection parameters")
 
     if not database_url:
         raise ValueError(
-            "Error: No database URL provided. Please specify via 'DATABASE_URI' environment variable or command-line argument.",
+            "Error: No database connection provided. Please specify via:\n"
+            "  1. Command-line argument: postgres-mcp 'postgresql://...'\n"
+            "  2. DATABASE_URI environment variable\n"
+            "  3. Individual connection parameters (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD)\n"
+            "  4. .env file with any of the above variables",
         )
 
     # Initialize database connection pool

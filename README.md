@@ -107,6 +107,49 @@ uv pip install postgres-mcp
 
 If you need to install `uv`, see the [uv installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
 
+### Environment Configuration
+
+Postgres MCP Pro supports configuration through environment variables, which can be provided via:
+1. A `.env` file (recommended for development)
+2. Direct environment variables
+3. Command-line arguments (take precedence over environment variables)
+
+#### Using .env Files
+
+1. Copy the `.env.example` file to `.env`:
+```bash
+cp .env.example .env
+```
+
+2. Edit the `.env` file with your configuration:
+```bash
+# Database connection
+DATABASE_URI=postgresql://username:password@localhost:5432/dbname
+
+# Or use individual connection parameters
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=dbname
+DB_USER=username
+DB_PASSWORD=password
+DB_SSLMODE=prefer
+
+# Server configuration
+ACCESS_MODE=restricted  # or unrestricted
+TRANSPORT=stdio  # or sse
+SSE_HOST=localhost  # for SSE transport
+SSE_PORT=8000  # for SSE transport
+
+# Optional: OpenAI API key for LLM-based index optimization
+OPENAI_API_KEY=your-api-key-here
+```
+
+The precedence order for configuration is:
+1. Command-line arguments (highest priority)
+2. Environment variables
+3. Values from `.env` file
+4. Default values (lowest priority)
+
 
 ### Configure Your AI Assistant
 
