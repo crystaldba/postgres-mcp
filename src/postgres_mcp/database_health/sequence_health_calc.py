@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 
 from psycopg.sql import Identifier
@@ -146,9 +147,13 @@ class SequenceHealthCalc:
         Note: Sequence names containing literal dots (e.g., "my.seq") are not
         supported and will be incorrectly parsed as schema.name.
         """
-        # Remove nextval and cast parts
-        clean_value = default_value.replace("nextval('", "").replace("'::regclass)", "")
-        clean_value = clean_value.replace("('", "").replace("'::text)", "")
+        # Extract the sequence reference from inside the single quotes
+        # Handles both nextval('...') and nextval(('...'::text)::regclass)
+        match = re.search(r"nextval\(\(?'([^']+)'", default_value)
+        if not match:
+            return "public", ""
+
+        clean_value = match.group(1)
         # Remove quotes so sql.Identifier can add them correctly
         clean_value = clean_value.replace('"', "")
 
