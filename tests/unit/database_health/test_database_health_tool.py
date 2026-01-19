@@ -22,6 +22,7 @@ async def setup_test_tables(sql_driver):
     async with conn_pool.connection() as conn:
         # Drop existing tables if they exist
         await conn.execute("DROP TABLE IF EXISTS test_orders")
+        await conn.execute('DROP TABLE IF EXISTS "UpperCaseOrders"')
         await conn.execute("DROP TABLE IF EXISTS test_customers")
         await conn.execute("DROP SEQUENCE IF EXISTS test_seq")
 
@@ -40,6 +41,7 @@ async def setup_test_tables(sql_driver):
         """
         )
 
+        # Lowercase table name (original test case)
         await conn.execute(
             """
             CREATE TABLE test_orders (
@@ -47,6 +49,18 @@ async def setup_test_tables(sql_driver):
                 customer_id INTEGER REFERENCES test_customers(id),
                 total DECIMAL NOT NULL CHECK (total >= 0),
                 status TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """
+        )
+
+        # Uppercase table name to test quoted identifier handling (PR #94 fix)
+        await conn.execute(
+            """
+            CREATE TABLE "UpperCaseOrders" (
+                id SERIAL PRIMARY KEY,
+                customer_id INTEGER REFERENCES test_customers(id),
+                amount DECIMAL NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """
@@ -101,9 +115,21 @@ async def setup_test_tables(sql_driver):
         """
         )
 
+        # Insert data into uppercase table to test sequence handling
+        await conn.execute(
+            """
+            INSERT INTO "UpperCaseOrders" (customer_id, amount)
+            SELECT
+                (random() * 99)::int + 1,
+                (random() * 500)::decimal
+            FROM generate_series(1, 100) i
+        """
+        )
+
         # Run ANALYZE to update statistics
         await conn.execute("ANALYZE test_customers")
         await conn.execute("ANALYZE test_orders")
+        await conn.execute('ANALYZE "UpperCaseOrders"')
 
 
 async def cleanup_test_tables(sql_driver):
@@ -112,6 +138,7 @@ async def cleanup_test_tables(sql_driver):
     try:
         async with conn_pool.connection() as conn:
             await conn.execute("DROP TABLE IF EXISTS test_orders")
+            await conn.execute('DROP TABLE IF EXISTS "UpperCaseOrders"')
             await conn.execute("DROP TABLE IF EXISTS test_customers")
             await conn.execute("DROP SEQUENCE IF EXISTS test_seq")
     finally:
