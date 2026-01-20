@@ -221,7 +221,7 @@ async def test_resource_queries_pg12(mock_pg12_driver, mock_extension_installed)
     calc = TopQueriesCalc(sql_driver=mock_pg12_driver)
 
     # Get resource queries
-    result = await calc.get_top_resource_queries(frac_threshold=0.05)
+    _result = await calc.get_top_resource_queries(frac_threshold=0.05)
 
     # Get the executed query from the mock
     call_args = str(mock_pg12_driver.execute_query.call_args)
@@ -241,7 +241,7 @@ async def test_resource_queries_pg13(mock_pg13_driver, mock_extension_installed)
     calc = TopQueriesCalc(sql_driver=mock_pg13_driver)
 
     # Get resource queries
-    result = await calc.get_top_resource_queries(frac_threshold=0.05)
+    _result = await calc.get_top_resource_queries(frac_threshold=0.05)
 
     # Get the executed query from the mock
     call_args = str(mock_pg13_driver.execute_query.call_args)
