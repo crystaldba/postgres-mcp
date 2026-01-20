@@ -234,6 +234,7 @@ Many MCP clients have similar configuration files to Claude Desktop, and you can
 - If you are using Cursor, you can use navigate from the `Command Palette` to `Cursor Settings`, then open the `MCP` tab to access the configuration file.
 - If you are using Windsurf, you can navigate to from the `Command Palette` to `Open Windsurf Settings Page` to access the configuration file.
 - If you are using Goose run `goose configure`, then select `Add Extension`.
+- If you are using Qodo Gen, open the Chat panel, click `Connect more tools`, click `+ Add new MCP`, then add the new configuration.
 
 ## SSE Transport
 
