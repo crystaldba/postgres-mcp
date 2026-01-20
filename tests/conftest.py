@@ -17,7 +17,7 @@ def event_loop_policy():
     return asyncio.DefaultEventLoopPolicy()
 
 
-@pytest.fixture(scope="class", params=["postgres:15", "postgres:16"])
+@pytest.fixture(scope="class", params=["postgres:12", "postgres:15", "postgres:16"])
 def test_postgres_connection_string(request) -> Generator[tuple[str, str], None, None]:
     yield from create_postgres_container(request.param)
 

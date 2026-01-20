@@ -139,14 +139,21 @@ class TopQueriesCalc:
             logger.debug(f"PostgreSQL version: {pg_version}")
 
             # Column names changed in PostgreSQL 13
+            # Also, wal_bytes was added in PostgreSQL 13
             if pg_version >= 13:
                 # PostgreSQL 13 and newer
                 total_time_col = "total_exec_time"
                 mean_time_col = "mean_exec_time"
+                stddev_time_col = "stddev_exec_time"
+                wal_bytes_col = "wal_bytes"
+                wal_bytes_frac = "wal_bytes / NULLIF(SUM(wal_bytes) OVER (), 0) AS total_wal_bytes_frac"
             else:
                 # PostgreSQL 12 and older
                 total_time_col = "total_time"
                 mean_time_col = "mean_time"
+                stddev_time_col = "stddev_time"
+                wal_bytes_col = "0 AS wal_bytes"  # Column doesn't exist in PG12
+                wal_bytes_frac = "0 AS total_wal_bytes_frac"
 
             query = cast(
                 LiteralString,
@@ -156,18 +163,23 @@ class TopQueriesCalc:
                         query,
                         calls,
                         rows,
-                        {total_time_col} total_exec_time,
-                        {mean_time_col} mean_exec_time,
-                        stddev_exec_time,
+                        {total_time_col} AS total_exec_time,
+                        {mean_time_col} AS mean_exec_time,
+                        {stddev_time_col} AS stddev_exec_time,
                         shared_blks_hit,
                         shared_blks_read,
                         shared_blks_dirtied,
-                        wal_bytes,
-                        total_exec_time / SUM(total_exec_time) OVER () AS total_exec_time_frac,
-                        (shared_blks_hit + shared_blks_read) / SUM(shared_blks_hit + shared_blks_read) OVER () AS shared_blks_accessed_frac,
-                        shared_blks_read / SUM(shared_blks_read) OVER () AS shared_blks_read_frac,
-                        shared_blks_dirtied / SUM(shared_blks_dirtied) OVER () AS shared_blks_dirtied_frac,
-                        wal_bytes / SUM(wal_bytes) OVER () AS total_wal_bytes_frac
+                        {wal_bytes_col},
+                        {total_time_col} / NULLIF(SUM({total_time_col}) OVER (), 0)
+                            AS total_exec_time_frac,
+                        (shared_blks_hit + shared_blks_read)
+                            / NULLIF(SUM(shared_blks_hit + shared_blks_read) OVER (), 0)
+                            AS shared_blks_accessed_frac,
+                        shared_blks_read / NULLIF(SUM(shared_blks_read) OVER (), 0)
+                            AS shared_blks_read_frac,
+                        shared_blks_dirtied / NULLIF(SUM(shared_blks_dirtied) OVER (), 0)
+                            AS shared_blks_dirtied_frac,
+                        {wal_bytes_frac}
                     FROM pg_stat_statements
                 )
                 SELECT
