@@ -1,10 +1,7 @@
 # ruff: noqa: B008
 import argparse
-import asyncio
 import logging
 import os
-import signal
-import sys
 from enum import Enum
 from typing import Any
 from typing import List
@@ -56,7 +53,6 @@ class AccessMode(str, Enum):
 # Global variables
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
-shutdown_in_progress = False
 
 
 async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
@@ -633,47 +629,24 @@ async def main():
             "The MCP server will start but database operations will fail until a valid connection is established.",
         )
 
-    # Set up proper shutdown handling
+    # Run the server with the selected transport, with proper cleanup on exit
     try:
-        loop = asyncio.get_running_loop()
-        signals = (signal.SIGTERM, signal.SIGINT)
-        for s in signals:
-            loop.add_signal_handler(s, lambda s=s: asyncio.create_task(shutdown(s)))
-    except NotImplementedError:
-        # Windows doesn't support signals properly
-        logger.warning("Signal handling not supported on Windows")
-        pass
-
-    # Run the server with the selected transport (always async)
-    if args.transport == "stdio":
-        await mcp.run_stdio_async()
-    else:
-        # Update FastMCP settings based on command line arguments
-        mcp.settings.host = args.sse_host
-        mcp.settings.port = args.sse_port
-        await mcp.run_sse_async()
+        if args.transport == "stdio":
+            await mcp.run_stdio_async()
+        else:
+            mcp.settings.host = args.sse_host
+            mcp.settings.port = args.sse_port
+            await mcp.run_sse_async()
+    finally:
+        # Clean up database connections on exit
+        await cleanup()
 
 
-async def shutdown(sig=None):
-    """Clean shutdown of the server."""
-    global shutdown_in_progress
-
-    if shutdown_in_progress:
-        logger.warning("Forcing immediate exit")
-        # Use sys.exit instead of os._exit to allow for proper cleanup
-        sys.exit(1)
-
-    shutdown_in_progress = True
-
-    if sig:
-        logger.info(f"Received exit signal {sig.name}")
-
-    # Close database connections
+async def cleanup():
+    """Clean up resources on server shutdown."""
+    logger.info("Shutting down server...")
     try:
         await db_connection.close()
         logger.info("Closed database connections")
     except Exception as e:
         logger.error(f"Error closing database connections: {e}")
-
-    # Exit with appropriate status code
-    sys.exit(128 + sig if sig is not None else 0)

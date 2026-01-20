@@ -13,7 +13,11 @@ def main():
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    asyncio.run(server.main())
+    try:
+        asyncio.run(server.main())
+    except KeyboardInterrupt:
+        # Handle Ctrl+C gracefully without printing a traceback
+        pass
 
 
 # Optionally expose other important items at package level
