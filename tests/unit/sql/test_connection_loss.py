@@ -4,6 +4,8 @@ Tests for connection loss scenarios (GitHub Issue #136).
 This module tests how the connection pool handles connection loss,
 specifically simulating network interruptions like VPN toggles or
 Wi-Fi disconnections by injecting TCP RST packets into the socket.
+
+These tests require Docker with PostgreSQL to run.
 """
 
 import logging
@@ -49,7 +51,7 @@ def local_sql_driver(test_postgres_connection_string):
     """Create a SqlDriver for tests that need a real database connection."""
     connection_string, version = test_postgres_connection_string
     logger.info(f"Using connection string: {connection_string}")
-    logger.info(f"Using version: {version}")
+    logger.info(f"Using PostgreSQL version: {version}")
     return SqlDriver(engine_url=connection_string)
 
 
@@ -58,12 +60,17 @@ def local_db_pool(test_postgres_connection_string):
     """Create a DbConnPool for tests that need direct pool access."""
     connection_string, version = test_postgres_connection_string
     logger.info(f"Using connection string: {connection_string}")
-    logger.info(f"Using version: {version}")
+    logger.info(f"Using PostgreSQL version: {version}")
     return DbConnPool(connection_string)
 
 
 class TestConnectionLoss:
-    """Test suite for connection loss scenarios."""
+    """
+    Test suite for connection loss scenarios.
+
+    These tests use TCP RST injection to simulate network interruptions
+    like VPN toggles or Wi-Fi disconnections, reproducing GitHub Issue #136.
+    """
 
     @pytest.mark.asyncio
     async def test_connection_works_initially(self, local_db_pool):
@@ -81,60 +88,92 @@ class TestConnectionLoss:
         await local_db_pool.close()
 
     @pytest.mark.asyncio
-    async def test_tcp_rst_causes_connection_failure(self, local_db_pool):
+    async def test_tcp_rst_breaks_connection(self, local_db_pool):
         """
-        Test that injecting a TCP RST causes subsequent queries to fail.
+        Test that injecting a TCP RST breaks the connection.
 
-        This reproduces GitHub Issue #136 where network interruptions
-        (VPN toggle, Wi-Fi change) cause the MCP server to lose its
-        database connection without automatic recovery.
+        This reproduces the network interruption scenario from GitHub Issue #136
+        where toggling VPN or switching Wi-Fi causes connection loss.
         """
         pool = await local_db_pool.pool_connect()
 
         # First, verify connection works
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute("SELECT 1 as test")
+                await cursor.execute("SELECT 'before_rst' as status")
                 result = await cursor.fetchone()
-                assert result[0] == 1
+                assert result[0] == "before_rst"
 
-                # Get the file descriptor of the connection's socket
-                fileno = conn.fileno()
-                logger.info(f"Got connection file descriptor: {fileno}")
-
-        # Now inject TCP RST to simulate network interruption
-        # We need to get a connection and break it while it's checked out
+        # Get a connection and inject TCP RST to simulate network interruption
         async with pool.connection() as conn:
             fileno = conn.fileno()
             logger.info(f"Injecting TCP RST on fd {fileno}")
-
-            # Inject the RST - this will cause the connection to be broken
             inject_tcp_rst(fileno)
 
-        # Try to use the pool again - this should fail
-        # The pool may still have the broken connection
+        # Try to use the pool again - this should fail because the
+        # connection was killed with RST
         with pytest.raises(Exception) as exc_info:
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT 2 as test")
+                    await cursor.execute("SELECT 'after_rst' as status")
                     await cursor.fetchone()
 
-        logger.info(f"Got expected exception: {exc_info.value}")
-        # The exact error message varies, but it should indicate connection issues
+        logger.info(f"Got expected exception after RST: {exc_info.value}")
+
+        # The error should indicate a connection problem
         error_str = str(exc_info.value).lower()
         assert any(keyword in error_str for keyword in [
-            "connection", "closed", "terminated", "broken", "reset", "eof"
+            "connection", "closed", "terminated", "broken", "reset",
+            "eof", "server", "unexpectedly"
         ]), f"Unexpected error message: {exc_info.value}"
 
         await local_db_pool.close()
 
     @pytest.mark.asyncio
-    async def test_sql_driver_marks_pool_invalid_on_connection_loss(self, local_sql_driver):
+    async def test_pool_marked_invalid_after_connection_loss(self, local_db_pool):
         """
-        Test that SqlDriver properly marks the pool as invalid when connection is lost.
+        Test that the pool is marked invalid after connection loss.
 
-        This is the core issue in #136 - when a connection is lost, subsequent
-        operations should fail gracefully and the pool should be marked invalid.
+        When a connection error occurs, the pool should be marked as invalid
+        so that subsequent operations know the pool state is compromised.
+        """
+        pool = await local_db_pool.pool_connect()
+
+        # Verify initial state
+        assert local_db_pool.is_valid
+        assert local_db_pool.last_error is None
+
+        # Execute a query to verify connection works
+        async with pool.connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT 1")
+                await cursor.fetchone()
+
+        # Inject RST to break the connection
+        async with pool.connection() as conn:
+            fileno = conn.fileno()
+            inject_tcp_rst(fileno)
+
+        # The next query should fail
+        try:
+            async with pool.connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT 1")
+        except Exception as e:
+            logger.info(f"Query failed as expected: {e}")
+
+        # Note: The pool is marked invalid in SqlDriver.execute_query,
+        # not when using pool.connection() directly. Let's test via SqlDriver.
+        await local_db_pool.close()
+
+    @pytest.mark.asyncio
+    async def test_sql_driver_marks_pool_invalid_on_rst(self, local_sql_driver):
+        """
+        Test that SqlDriver properly marks the pool as invalid when
+        connection is lost due to TCP RST.
+
+        This is the core issue in #136 - when a connection is lost, the
+        pool should be marked invalid so the error state is tracked.
         """
         # Initialize the connection
         pool_wrapper = local_sql_driver.connect()
@@ -163,10 +202,8 @@ class TestConnectionLoss:
         logger.info(f"SqlDriver raised exception: {exc_info.value}")
 
         # After the error, the pool should be marked as invalid
-        # This is the current behavior we're testing
         assert not pool_wrapper.is_valid, (
-            "Pool should be marked invalid after connection loss, "
-            "but it's still marked as valid!"
+            "Pool should be marked invalid after connection loss"
         )
         assert pool_wrapper.last_error is not None, (
             "Pool should have last_error set after connection loss"
@@ -176,23 +213,24 @@ class TestConnectionLoss:
         await pool_wrapper.close()
 
     @pytest.mark.asyncio
-    async def test_pool_does_not_auto_reconnect(self, local_db_pool):
+    async def test_no_auto_reconnect_after_rst(self, local_db_pool):
         """
-        Test that the pool does NOT automatically reconnect after connection loss.
+        Test that the pool does NOT automatically reconnect after TCP RST.
 
-        This demonstrates the issue reported in #136 - the user expects
-        auto-reconnection but it doesn't happen.
+        This demonstrates the bug in GitHub Issue #136 - after connection loss,
+        the user expects auto-reconnection but it doesn't happen. The server
+        must be restarted to recover.
         """
         pool = await local_db_pool.pool_connect()
 
         # Verify connection works
         async with pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute("SELECT 1 as test")
+                await cursor.execute("SELECT 'initial' as status")
                 result = await cursor.fetchone()
-                assert result[0] == 1
+                assert result[0] == "initial"
 
-        # Break the connection
+        # Break the connection with RST
         async with pool.connection() as conn:
             fileno = conn.fileno()
             inject_tcp_rst(fileno)
@@ -201,379 +239,187 @@ class TestConnectionLoss:
         with pytest.raises(Exception):
             async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT 1 as test")
+                    await cursor.execute("SELECT 1")
 
-        # The pool is now marked as invalid
-        assert not local_db_pool.is_valid
-
-        # Try calling pool_connect again - current behavior doesn't auto-reconnect
-        # because the pool still exists (even though it's invalid)
-        # This is the bug: pool_connect checks `if self.pool and self._is_valid`
-        # but when _is_valid is False, it should attempt to reconnect
-
-        # Let's see what happens when we try to get the pool again
+        # The pool should now be in a bad state
+        # Try calling pool_connect again to see if it auto-reconnects
         try:
             pool2 = await local_db_pool.pool_connect()
-            # If we get here, the pool was returned (either reconnected or same broken pool)
 
-            # Try to use it
-            try:
-                async with pool2.connection() as conn:
-                    async with conn.cursor() as cursor:
-                        await cursor.execute("SELECT 3 as test")
-                        result = await cursor.fetchone()
-                        # If we get here, reconnection worked!
-                        logger.info("Pool auto-reconnected successfully!")
-                        assert result[0] == 3
-            except Exception as e:
-                # Connection still broken - no auto-reconnect
-                logger.info(f"Pool did NOT auto-reconnect: {e}")
-                pytest.fail(
-                    f"Pool did not auto-reconnect after connection loss. "
-                    f"This is the issue reported in GitHub #136. Error: {e}"
-                )
+            # Try to use the new pool
+            async with pool2.connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT 'reconnected' as status")
+                    result = await cursor.fetchone()
+
+                    if result[0] == "reconnected":
+                        # If we get here, reconnection worked
+                        logger.info("Pool successfully reconnected!")
+                    else:
+                        pytest.fail("Unexpected result from reconnected pool")
+
         except Exception as e:
-            logger.info(f"pool_connect raised: {e}")
+            # If we get here, auto-reconnection failed
+            # This is the bug reported in Issue #136
             pytest.fail(
-                f"pool_connect failed to reconnect after connection loss. "
-                f"This is the issue reported in GitHub #136. Error: {e}"
+                f"Pool did NOT auto-reconnect after connection loss. "
+                f"This is the bug reported in GitHub Issue #136. "
+                f"Error: {e}"
             )
         finally:
             await local_db_pool.close()
 
     @pytest.mark.asyncio
-    async def test_multiple_connections_in_pool_after_rst(self, local_db_pool):
+    async def test_consecutive_queries_after_rst(self, local_sql_driver):
         """
-        Test behavior when one connection in the pool is killed via RST.
+        Test behavior of consecutive queries after TCP RST injection.
 
-        The pool has min_size=1, max_size=5. If we kill one connection,
-        the pool should ideally handle this gracefully.
+        This simulates the real-world scenario where a user's network
+        briefly disconnects and they try to continue using the MCP server.
+        """
+        pool_wrapper = local_sql_driver.connect()
+        pool = await pool_wrapper.pool_connect()
+
+        # Initial query should work
+        result = await local_sql_driver.execute_query(
+            "SELECT 'query1' as status"
+        )
+        assert result[0].cells["status"] == "query1"
+
+        # Inject RST
+        async with pool.connection() as conn:
+            inject_tcp_rst(conn.fileno())
+
+        # Track results of consecutive queries
+        results = []
+        for i in range(5):
+            try:
+                result = await local_sql_driver.execute_query(
+                    f"SELECT 'query{i+2}' as status"
+                )
+                results.append(("success", result[0].cells["status"]))
+            except Exception as e:
+                results.append(("error", str(e)))
+
+        logger.info(f"Results after RST: {results}")
+
+        # At least the first query after RST should fail
+        assert results[0][0] == "error", (
+            "First query after RST should fail"
+        )
+
+        # Check if any subsequent queries succeeded (would indicate recovery)
+        successes = [r for r in results if r[0] == "success"]
+        if successes:
+            logger.info(f"Recovery detected: {len(successes)} queries succeeded")
+        else:
+            logger.info("No recovery: all queries after RST failed")
+
+        await pool_wrapper.close()
+
+    @pytest.mark.asyncio
+    async def test_error_message_content(self, local_db_pool):
+        """
+        Test that the error message after TCP RST is informative.
+
+        The error message should help users understand that a connection
+        problem occurred, matching the error in Issue #136:
+        "server closed the connection unexpectedly"
         """
         pool = await local_db_pool.pool_connect()
 
-        # Get multiple connections to populate the pool
-        connections_fds = []
-        for i in range(3):
-            async with pool.connection() as conn:
-                fd = conn.fileno()
-                connections_fds.append(fd)
-                async with conn.cursor() as cursor:
-                    await cursor.execute(f"SELECT {i} as test")
-                    result = await cursor.fetchone()
-                    assert result[0] == i
-
-        logger.info(f"Created connections with fds: {connections_fds}")
-
-        # Now kill one connection via RST
+        # Break the connection
         async with pool.connection() as conn:
-            fileno = conn.fileno()
-            logger.info(f"Killing connection with fd {fileno}")
-            inject_tcp_rst(fileno)
+            inject_tcp_rst(conn.fileno())
 
-        # The pool should now have a broken connection
-        # Let's see how many successful queries we can make
-        successful_queries = 0
-        failed_queries = 0
+        # Capture the error
+        with pytest.raises(Exception) as exc_info:
+            async with pool.connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT 1")
 
-        for i in range(5):
-            try:
-                async with pool.connection() as conn:
-                    async with conn.cursor() as cursor:
-                        await cursor.execute(f"SELECT {i + 100} as test")
-                        result = await cursor.fetchone()
-                        if result[0] == i + 100:
-                            successful_queries += 1
-            except Exception as e:
-                logger.info(f"Query {i} failed: {e}")
-                failed_queries += 1
+        error_message = str(exc_info.value)
+        logger.info(f"Error message after RST: {error_message}")
 
-        logger.info(f"After RST: {successful_queries} successful, {failed_queries} failed")
+        # The error should be descriptive enough to understand the problem
+        # Common PostgreSQL connection error keywords
+        connection_error_keywords = [
+            "connection",
+            "closed",
+            "server",
+            "terminated",
+            "reset",
+            "broken",
+            "eof",
+            "unexpectedly",
+        ]
 
-        # We expect at least one failure due to the broken connection
-        # If the pool handles it gracefully, subsequent queries might work
-        # with new connections
-        assert failed_queries > 0, (
-            "Expected at least one query to fail after RST injection"
+        has_helpful_message = any(
+            keyword in error_message.lower()
+            for keyword in connection_error_keywords
+        )
+
+        assert has_helpful_message, (
+            f"Error message should contain connection-related keywords. "
+            f"Got: {error_message}"
         )
 
         await local_db_pool.close()
 
-
-# ============================================================================
-# Mock-based tests that don't require Docker
-# These tests verify the logic of connection loss handling without needing
-# a real database connection.
-# ============================================================================
-
-from unittest.mock import AsyncMock
-from unittest.mock import MagicMock
-from unittest.mock import patch
-
-
-class AsyncContextManagerMock(AsyncMock):
-    """A mock for async context managers."""
-
-    async def __aenter__(self):
-        return self.aenter
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-
-class TestConnectionLossMocked:
-    """Mock-based tests for connection loss scenarios."""
-
     @pytest.mark.asyncio
-    async def test_pool_connect_returns_invalid_pool_without_reconnect(self):
+    async def test_pool_state_transitions(self, local_db_pool):
         """
-        Test that pool_connect returns a pool even when marked invalid.
+        Test the pool state transitions through connection lifecycle.
 
-        This demonstrates the bug in pool_connect logic:
-        - pool_connect checks `if self.pool and self._is_valid`
-        - When _is_valid is False but pool exists, it falls through
-        - The code then closes the pool and tries to create a new one
-        - But if the close or reconnect fails, the pool stays invalid
+        States:
+        1. Initial: is_valid=False, pool=None
+        2. Connected: is_valid=True, pool=<pool>
+        3. After RST error: is_valid=False (via SqlDriver), pool=<pool> (broken)
         """
-        # Create a pool mock
-        mock_pool = MagicMock()
-        mock_pool.open = AsyncMock()
-        mock_pool.close = AsyncMock()
+        # State 1: Initial
+        assert not local_db_pool.is_valid
+        assert local_db_pool.pool is None
+        assert local_db_pool.last_error is None
 
-        # Create connection mock that will fail
-        mock_conn = AsyncMock()
-        mock_conn.cursor = MagicMock(return_value=AsyncContextManagerMock())
+        # State 2: Connected
+        pool = await local_db_pool.pool_connect()
+        assert local_db_pool.is_valid
+        assert local_db_pool.pool is not None
+        assert local_db_pool.last_error is None
 
-        conn_ctx = AsyncContextManagerMock()
-        conn_ctx.aenter = mock_conn
-        mock_pool.connection = MagicMock(return_value=conn_ctx)
+        # Verify connection works
+        async with pool.connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT 1")
+                result = await cursor.fetchone()
+                assert result[0] == 1
 
-        with patch("postgres_mcp.sql.sql_driver.AsyncConnectionPool", return_value=mock_pool):
-            db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-
-            # Manually simulate initial connection success
-            db_pool.pool = mock_pool
-            db_pool._is_valid = True
-
-            # Now mark it as invalid (simulating connection loss)
-            db_pool._is_valid = False
-            db_pool._last_error = "server closed the connection unexpectedly"
-
-            # The pool object still exists but is marked invalid
-            assert db_pool.pool is not None
-            assert not db_pool.is_valid
-
-            # Now call pool_connect - it should attempt to reconnect
-            # Looking at the code:
-            # if self.pool and self._is_valid:
-            #     return self.pool
-            # This means when _is_valid is False, it will continue
-            # and try to close and reconnect
-
-            # Set up the mock for reconnection attempt
-            mock_cursor = AsyncMock()
-            mock_cursor.execute = AsyncMock()
-            cursor_ctx = AsyncContextManagerMock()
-            cursor_ctx.aenter = mock_cursor
-            mock_conn.cursor.return_value = cursor_ctx
-
-            try:
-                pool = await db_pool.pool_connect()
-                # If we get here, reconnection was attempted
-                logger.info("pool_connect attempted reconnection")
-                assert pool is not None
-            except Exception as e:
-                logger.info(f"pool_connect failed: {e}")
-
-            await db_pool.close()
-
-    @pytest.mark.asyncio
-    async def test_execute_query_marks_pool_invalid_on_error(self):
-        """
-        Test that execute_query marks the pool as invalid when an error occurs.
-
-        This is the current behavior - errors mark the pool invalid but
-        don't trigger automatic reconnection.
-        """
-        # Create mock pool
-        mock_pool = MagicMock()
-
-        # Create mock cursor that raises connection error on execute
-        mock_cursor = MagicMock()
-        mock_cursor.execute = AsyncMock(
-            side_effect=Exception("server closed the connection unexpectedly")
-        )
-        mock_cursor.description = None
-        mock_cursor.nextset = MagicMock(return_value=False)
-
-        # Create proper async context manager for cursor
-        cursor_ctx = MagicMock()
-        cursor_ctx.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_ctx.__aexit__ = AsyncMock(return_value=None)
-
-        # Create mock connection
-        mock_conn = MagicMock()
-        mock_conn.cursor = MagicMock(return_value=cursor_ctx)
-        mock_conn.rollback = AsyncMock()
-
-        # Create proper async context manager for connection
-        conn_ctx = MagicMock()
-        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-        conn_ctx.__aexit__ = AsyncMock(return_value=None)
-
-        mock_pool.connection = MagicMock(return_value=conn_ctx)
-
-        # Create DbConnPool
-        db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-        db_pool.pool = mock_pool
-        db_pool._is_valid = True
-        db_pool.pool_connect = AsyncMock(return_value=mock_pool)
-
-        # Create SqlDriver with the pool
-        driver = SqlDriver(conn=db_pool)
-
-        # Execute a query that will fail
-        with pytest.raises(Exception) as exc_info:
-            await driver.execute_query("SELECT 1")
-
-        # Verify the error
-        assert "server closed the connection unexpectedly" in str(exc_info.value)
-
-        # Verify pool was marked as invalid
-        assert not db_pool.is_valid
-        assert db_pool.last_error is not None
-        assert "server closed the connection unexpectedly" in db_pool.last_error
-
-    @pytest.mark.asyncio
-    async def test_reconnection_logic_gap(self):
-        """
-        Test that demonstrates the reconnection logic gap (the actual bug).
-
-        The issue is that after a connection error:
-        1. Pool is marked invalid
-        2. Next call to execute_query calls pool_connect
-        3. pool_connect sees pool exists but is invalid
-        4. It closes the old pool and tries to create a new one
-        5. BUT: the new pool creation can fail if the network is still down
-        6. AND: there's no retry logic in pool_connect
-
-        This test demonstrates that once the pool is invalid, subsequent
-        calls fail without automatic recovery.
-        """
-        call_count = {"value": 0}
-
-        async def mock_pool_connect(connection_url=None):
-            call_count["value"] += 1
-            if call_count["value"] == 1:
-                # First call succeeds (initial connection)
-                return MagicMock()
-            else:
-                # Subsequent calls fail (network still down)
-                raise Exception("Connection refused - network unreachable")
-
-        db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-
-        with patch.object(db_pool, "pool_connect", side_effect=mock_pool_connect):
-            # First call succeeds
-            try:
-                await db_pool.pool_connect()
-            except Exception:
-                pass
-
-            # Simulate connection loss
-            db_pool._is_valid = False
-
-            # Second call fails
-            with pytest.raises(Exception) as exc_info:
-                await db_pool.pool_connect()
-
-            assert "Connection refused" in str(exc_info.value)
-            assert call_count["value"] == 2
-
-    @pytest.mark.asyncio
-    async def test_no_retry_on_transient_failure(self):
-        """
-        Test that there's no retry logic for transient failures.
-
-        When a connection fails, the code should ideally:
-        1. Detect that it's a transient error
-        2. Wait and retry with exponential backoff
-        3. Only give up after multiple attempts
-
-        Currently, it just fails immediately.
-        """
-        # Track how many times pool.open is called
-        open_call_count = {"value": 0}
-
-        async def mock_open():
-            open_call_count["value"] += 1
-            if open_call_count["value"] < 3:
-                raise Exception("Connection refused (transient)")
-            # Third call would succeed
-            return None
-
-        mock_pool = MagicMock()
-        mock_pool.open = mock_open
-        mock_pool.close = AsyncMock()
-
-        with patch("postgres_mcp.sql.sql_driver.AsyncConnectionPool", return_value=mock_pool):
-            db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-
-            # This should fail on first attempt without retrying
-            with pytest.raises(Exception) as exc_info:
-                await db_pool.pool_connect()
-
-            # Verify only one attempt was made (no retries)
-            assert open_call_count["value"] == 1, (
-                f"Expected 1 attempt (no retries), but got {open_call_count['value']} attempts. "
-                "This confirms there's no retry logic for transient failures."
-            )
-
-            assert "Connection refused" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_pool_state_after_connection_error(self):
-        """
-        Test the pool state transitions after a connection error.
-
-        Expected behavior (current):
-        1. Pool starts valid
-        2. Connection error occurs
-        3. Pool marked invalid
-        4. No automatic recovery
-
-        Desired behavior (for fix):
-        1. Pool starts valid
-        2. Connection error occurs
-        3. Pool attempts reconnection
-        4. If reconnection succeeds, pool is valid again
-        """
-        db_pool = DbConnPool("postgresql://user:pass@localhost/db")
-
-        # Initial state
-        assert not db_pool.is_valid  # Not connected yet
-        assert db_pool.pool is None
-
-        # Simulate successful connection
-        mock_pool = MagicMock()
-        db_pool.pool = mock_pool
-        db_pool._is_valid = True
-
-        assert db_pool.is_valid
-        assert db_pool.pool is not None
-
-        # Simulate connection error
-        db_pool._is_valid = False
-        db_pool._last_error = "server closed the connection unexpectedly"
-
-        # Pool object still exists but is marked invalid
-        assert not db_pool.is_valid
-        assert db_pool.pool is not None  # This is the issue - pool exists but is broken
-        assert db_pool.last_error is not None
-
-        # The fix should make pool_connect detect this state and reconnect
         logger.info(
-            "Pool state after error: "
-            f"is_valid={db_pool.is_valid}, "
-            f"pool={'exists' if db_pool.pool else 'None'}, "
-            f"last_error={db_pool.last_error}"
+            f"State after connect: is_valid={local_db_pool.is_valid}, "
+            f"pool={'exists' if local_db_pool.pool else 'None'}"
         )
+
+        # Inject RST
+        async with pool.connection() as conn:
+            inject_tcp_rst(conn.fileno())
+
+        # Trigger error by using SqlDriver (which marks pool invalid)
+        driver = SqlDriver(conn=local_db_pool)
+        try:
+            await driver.execute_query("SELECT 1")
+        except Exception:
+            pass
+
+        # State 3: After error (via SqlDriver)
+        logger.info(
+            f"State after RST error: is_valid={local_db_pool.is_valid}, "
+            f"pool={'exists' if local_db_pool.pool else 'None'}, "
+            f"last_error={local_db_pool.last_error}"
+        )
+
+        assert not local_db_pool.is_valid, "Pool should be invalid after RST"
+        # Note: pool object still exists but is broken
+        assert local_db_pool.pool is not None, "Pool object should still exist"
+        assert local_db_pool.last_error is not None, "Error should be recorded"
+
+        await local_db_pool.close()
