@@ -1,10 +1,50 @@
 """Tests for CORS support in SSE transport."""
 
+import multiprocessing
+import socket
+import time
+
 import pytest
+import requests
 from starlette.middleware.cors import CORSMiddleware
 from starlette.testclient import TestClient
 
 from postgres_mcp.server import mcp
+
+
+def find_free_port():
+    """Find a free port to use for testing."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        return s.getsockname()[1]
+
+
+def run_server(port: int, cors_origins: list[str]):
+    """Run the MCP server in a subprocess."""
+    import asyncio
+
+    import uvicorn
+    from starlette.middleware.cors import CORSMiddleware
+
+    from postgres_mcp.server import mcp
+
+    starlette_app = mcp.sse_app()
+    if cors_origins:
+        starlette_app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["*"],
+        )
+
+    config = uvicorn.Config(
+        starlette_app,
+        host="127.0.0.1",
+        port=port,
+        log_level="error",
+    )
+    server = uvicorn.Server(config)
+    asyncio.run(server.serve())
 
 
 @pytest.fixture
@@ -134,3 +174,87 @@ class TestCorsDisabled:
             content="test",
         )
         assert response.headers.get("access-control-allow-origin") is None
+
+
+class TestCorsEndToEnd:
+    """End-to-end tests that start an actual server process."""
+
+    def test_server_with_cors_enabled(self):
+        """Test that a real server with CORS returns correct headers."""
+        port = find_free_port()
+        cors_origins = ["https://claude.ai", "https://example.com"]
+
+        # Start server in subprocess
+        proc = multiprocessing.Process(target=run_server, args=(port, cors_origins))
+        proc.start()
+
+        try:
+            # Wait for server to start
+            for _ in range(50):
+                try:
+                    requests.options(f"http://127.0.0.1:{port}/sse", timeout=0.1)
+                    break
+                except requests.exceptions.ConnectionError:
+                    time.sleep(0.1)
+            else:
+                pytest.fail("Server did not start in time")
+
+            # Test allowed origin
+            response = requests.options(
+                f"http://127.0.0.1:{port}/sse",
+                headers={
+                    "Origin": "https://claude.ai",
+                    "Access-Control-Request-Method": "GET",
+                },
+                timeout=5,
+            )
+            assert response.headers.get("access-control-allow-origin") == "https://claude.ai"
+
+            # Test disallowed origin
+            response = requests.options(
+                f"http://127.0.0.1:{port}/sse",
+                headers={
+                    "Origin": "https://malicious.com",
+                    "Access-Control-Request-Method": "GET",
+                },
+                timeout=5,
+            )
+            assert response.headers.get("access-control-allow-origin") is None
+
+        finally:
+            proc.terminate()
+            proc.join(timeout=5)
+
+    def test_server_without_cors(self):
+        """Test that a server without CORS does not return CORS headers."""
+        port = find_free_port()
+
+        # Start server without CORS
+        proc = multiprocessing.Process(target=run_server, args=(port, []))
+        proc.start()
+
+        try:
+            # Wait for server to start
+            for _ in range(50):
+                try:
+                    requests.options(f"http://127.0.0.1:{port}/sse", timeout=0.1)
+                    break
+                except requests.exceptions.ConnectionError:
+                    time.sleep(0.1)
+            else:
+                pytest.fail("Server did not start in time")
+
+            # Test that no CORS headers are returned
+            response = requests.options(
+                f"http://127.0.0.1:{port}/sse",
+                headers={
+                    "Origin": "https://claude.ai",
+                    "Access-Control-Request-Method": "GET",
+                },
+                timeout=5,
+            )
+            assert response.headers.get("access-control-allow-origin") is None
+
+        finally:
+            proc.terminate()
+            proc.join(timeout=5)
