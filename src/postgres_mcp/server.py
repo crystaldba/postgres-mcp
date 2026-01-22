@@ -568,9 +568,9 @@ async def main():
     parser.add_argument(
         "--transport",
         type=str,
-        choices=["stdio", "sse"],
+        choices=["stdio", "sse", "streamable-http"],
         default="stdio",
-        help="Select MCP transport: stdio (default) or sse",
+        help="Select MCP transport: stdio (default), sse, or streamable-http",
     )
     parser.add_argument(
         "--sse-host",
@@ -583,6 +583,18 @@ async def main():
         type=int,
         default=8000,
         help="Port for SSE server (default: 8000)",
+    )
+    parser.add_argument(
+        "--streamable-http-host",
+        type=str,
+        default="localhost",
+        help="Host to bind streamable HTTP server to (default: localhost)",
+    )
+    parser.add_argument(
+        "--streamable-http-port",
+        type=int,
+        default=8000,
+        help="Port for streamable HTTP server (default: 8000)",
     )
 
     args = parser.parse_args()
@@ -647,11 +659,14 @@ async def main():
     # Run the server with the selected transport (always async)
     if args.transport == "stdio":
         await mcp.run_stdio_async()
-    else:
-        # Update FastMCP settings based on command line arguments
+    elif args.transport == "sse":
         mcp.settings.host = args.sse_host
         mcp.settings.port = args.sse_port
         await mcp.run_sse_async()
+    elif args.transport == "streamable-http":
+        mcp.settings.host = args.streamable_http_host
+        mcp.settings.port = args.streamable_http_port
+        await mcp.run_streamable_http_async()
 
 
 async def shutdown(sig=None):
