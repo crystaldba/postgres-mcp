@@ -8,6 +8,8 @@
 [![Twitter Follow](https://img.shields.io/twitter/follow/auto_dba?style=flat)](https://x.com/auto_dba)
 [![Contributors](https://img.shields.io/github/contributors/crystaldba/postgres-mcp)](https://github.com/crystaldba/postgres-mcp/graphs/contributors)
 
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/crystaldba/postgres-mcp)](https://archestra.ai/mcp-catalog/crystaldba__postgres-mcp)
+
 <h3>A Postgres MCP server with index tuning, explain plans, health checks, and safe sql execution.</h3>
 
 <div class="toc">
