@@ -12,6 +12,12 @@ dependencies = [
     "attrs>=25.4.0",
     "psycopg-pool>=3.3.0",
     "instructor>=1.14.4",
+    # Security: override transitive dependency versions (see Dependabot alerts)
+    "h11>=0.16.0",
+    "aiohttp>=3.13.3",
+    "urllib3>=2.6.3",
+    "starlette>=0.49.1",
+    "requests>=2.32.4",
 ]
 license = "mit"
 license-files = ["LICENSE"]
