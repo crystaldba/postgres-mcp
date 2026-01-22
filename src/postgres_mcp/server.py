@@ -600,7 +600,7 @@ async def main():
         starlette_app = mcp.sse_app()
 
         if args.cors_origins:
-            logger.info(f"Enabling CORS for origins: {", ".join(args.cors_origins)}")
+            logger.info(f"Enabling CORS for origins: {', '.join(args.cors_origins)}")
             starlette_app.add_middleware(
                 CORSMiddleware,
                 allow_origins=args.cors_origins,
