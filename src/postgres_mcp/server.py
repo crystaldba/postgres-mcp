@@ -12,15 +12,11 @@ from typing import Literal
 from typing import Union
 
 import mcp.types as types
-from mcp.server.fastmcp import FastMCP
-
-from starlette.middleware.cors import CORSMiddleware
-from starlette.middleware import Middleware
-
 import uvicorn
-
+from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 from pydantic import validate_call
+from starlette.middleware.cors import CORSMiddleware
 
 from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
 
@@ -602,7 +598,7 @@ async def main():
         await mcp.run_stdio_async()
     else:
         starlette_app = mcp.sse_app()
-        
+
         if args.cors_origins:
             logger.info(f"Enabling CORS for origins: {", ".join(args.cors_origins)}")
             starlette_app.add_middleware(
@@ -620,7 +616,6 @@ async def main():
         )
         server = uvicorn.Server(config)
         await server.serve()
-
 
 
 async def shutdown(sig=None):
