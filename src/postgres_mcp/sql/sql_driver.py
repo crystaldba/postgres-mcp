@@ -99,7 +99,7 @@ class DbConnPool:
             # Test the connection pool by executing a simple query
             async with self.pool.connection() as conn:
                 async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT 1")
+                    await cursor.execute("SELECT 1 AS x FROM (VALUES (1)) AS t(x)")
 
             self._is_valid = True
             self._last_error = None
