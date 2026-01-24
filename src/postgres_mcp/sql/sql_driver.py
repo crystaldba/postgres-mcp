@@ -86,11 +86,13 @@ class DbConnPool:
 
         try:
             # Configure connection pool with appropriate settings
+            # Use autocommit=True to avoid implicit transactions (needed for XTDB compatibility)
             self.pool = AsyncConnectionPool(
                 conninfo=url,
                 min_size=1,
                 max_size=5,
                 open=False,  # Don't connect immediately, let's do it explicitly
+                kwargs={"autocommit": True},
             )
 
             # Open the pool explicitly
@@ -222,13 +224,27 @@ class SqlDriver:
             raise e
 
     async def _execute_with_connection(self, connection, query, params, force_readonly) -> Optional[List[RowResult]]:
-        """Execute query with the given connection."""
+        """Execute query with the given connection.
+
+        With autocommit=True on the connection pool:
+        - Read-only queries run directly (no transaction needed)
+        - Write queries (INSERT/UPDATE/DELETE) need explicit READ WRITE transaction for XTDB
+        - force_readonly=True wraps in READ ONLY transaction for safety
+        """
         transaction_started = False
+        query_upper = query.strip().upper()
+        is_write_query = any(query_upper.startswith(kw) for kw in ("INSERT", "UPDATE", "DELETE", "ERASE"))
+
         try:
             async with connection.cursor(row_factory=dict_row) as cursor:
-                # Start read-only transaction
+                # Determine transaction mode
                 if force_readonly:
+                    # Explicit read-only transaction for safety
                     await cursor.execute("BEGIN TRANSACTION READ ONLY")
+                    transaction_started = True
+                elif is_write_query:
+                    # XTDB requires explicit READ WRITE transaction for DML
+                    await cursor.execute("START TRANSACTION READ WRITE")
                     transaction_started = True
 
                 if params:
@@ -240,11 +256,9 @@ class SqlDriver:
                 while cursor.nextset():
                     pass
 
-                if cursor.description is None:  # No results (like DDL statements)
-                    if not force_readonly:
+                if cursor.description is None:  # No results (like DML statements)
+                    if transaction_started:
                         await cursor.execute("COMMIT")
-                    elif transaction_started:
-                        await cursor.execute("ROLLBACK")
                         transaction_started = False
                     return None
 
@@ -252,10 +266,11 @@ class SqlDriver:
                 rows = await cursor.fetchall()
 
                 # End the transaction appropriately
-                if not force_readonly:
-                    await cursor.execute("COMMIT")
-                elif transaction_started:
-                    await cursor.execute("ROLLBACK")
+                if transaction_started:
+                    if force_readonly:
+                        await cursor.execute("ROLLBACK")
+                    else:
+                        await cursor.execute("COMMIT")
                     transaction_started = False
 
                 return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
