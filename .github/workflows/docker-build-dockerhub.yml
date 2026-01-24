@@ -1,6 +1,6 @@
-# act -W ../.github/workflows/docker-build-dockerhub.yml -s DOCKERHUB_USERNAME -s DOCKERHUB_TOKEN -s GITHUB_TOKEN="$(gh auth token)"
+# act -W ../.github/workflows/docker-build-dockerhub.yml -s GITHUB_TOKEN="$(gh auth token)"
 ---
-name: Build and Push Docker Image to DockerHub
+name: Build and Push Docker Image to GitHub Registry
 
 on:
   push:
@@ -12,6 +12,10 @@ on:
         description: "Version to release (without v prefix)"
         required: true
         default: ""
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   prepare:
@@ -33,6 +37,9 @@ jobs:
   build-and-push:
     needs: prepare
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,7 +67,7 @@ jobs:
         id: docker_meta
         uses: docker/metadata-action@v5
         with:
-          images: crystaldba/postgres-mcp
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ needs.prepare.outputs.version }}
             type=raw,value=latest
@@ -70,11 +77,12 @@ jobs:
           echo "check pwd: $(pwd)"
           echo "check ls: $(ls -lta)"
 
-      - name: Login to DockerHub
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -84,5 +92,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
-          cache-from: type=registry,ref=crystaldba/postgres-mcp:buildcache
-          cache-to: type=registry,ref=crystaldba/postgres-mcp:buildcache,mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
