@@ -9,6 +9,7 @@ from .extension_utils import check_postgres_version_requirement
 from .extension_utils import get_postgres_version
 from .extension_utils import reset_postgres_version_cache
 from .index import IndexDefinition
+from .readonly_sql import ReadOnlySqlDriver
 from .safe_sql import SafeSqlDriver
 from .sql_driver import DbConnPool
 from .sql_driver import SqlDriver
@@ -18,6 +19,7 @@ __all__ = [
     "ColumnCollector",
     "DbConnPool",
     "IndexDefinition",
+    "ReadOnlySqlDriver",
     "SafeSqlDriver",
     "SqlBindParams",
     "SqlDriver",

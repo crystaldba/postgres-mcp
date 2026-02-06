@@ -222,9 +222,11 @@ Replace `postgresql://...` with your [Postgres database connection URI](https://
 
 Postgres MCP Pro supports multiple *access modes* to give you control over the operations that the AI agent can perform on the database:
 - **Unrestricted Mode**: Allows full read/write access to modify data and schema. It is suitable for development environments.
-- **Restricted Mode**: Limits operations to read-only transactions and imposes constraints on resource utilization (presently only execution time). It is suitable for production environments.
+- **Restricted Mode**: Limits operations to read-only transactions and imposes constraints on resource utilization (presently only execution time). Uses pglast to parse and validate SQL before execution. It is suitable for production environments.
+- **Readonly Mode**: Enforces read-only transactions at the database level without SQL validation. This allows complex queries (nested CTEs, `PERCENTILE_CONT ... WITHIN GROUP`, complex window functions) that pglast may reject, while still preventing writes via PostgreSQL's `READ ONLY` transaction mode. Note that multi-statement queries containing `COMMIT; DROP TABLE ...` will not be caught by SQL validation — protection relies solely on the database transaction.
 
 To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode=restricted` in the configuration examples above.
+To use readonly mode, replace `--access-mode=unrestricted` with `--access-mode=readonly`.
 
 
 #### Other MCP Clients
@@ -605,11 +607,15 @@ We reject any SQL that contains `commit` or `rollback` statements.
 Helpfully, the popular Postgres stored procedure languages, including PL/pgSQL and PL/Python, do not allow for `COMMIT` or `ROLLBACK` statements.
 If you have unsafe stored procedure languages enabled on your database, then our read-only protections could be circumvented.
 
-At present, Postgres MCP Pro provides two levels of protection for the database, one at either extreme of the convenience/safety spectrum.
+At present, Postgres MCP Pro provides three levels of protection for the database.
 - "Unrestricted" provides maximum flexibility.
 It is suitable for development environments where speed and flexibility are paramount, and where there is no need to protect valuable or sensitive data.
-- "Restricted" provides a balance between flexibility and safety.
+- "Restricted" provides maximum safety.
 It is suitable for production environments where the database is exposed to untrusted users, and where it is important to protect valuable or sensitive data.
+- "Readonly" provides a middle ground between Unrestricted and Restricted.
+It enforces read-only transactions at the database level (via `BEGIN TRANSACTION READ ONLY`) without pglast SQL validation.
+This allows complex queries that pglast rejects, while still preventing writes.
+However, multi-statement queries like `COMMIT; DROP TABLE` are not caught by SQL validation — protection relies solely on the database transaction.
 
 Unrestricted mode aligns with the approach of [Cursor's auto-run mode](https://docs.cursor.com/chat/tools#auto-run), where the AI agent operates with limited human oversight or approvals.
 We expect auto-run to be deployed in development environments where the consequences of mistakes are low, where databases do not contain valuable or sensitive data, and where they can be recreated or restored from backups when needed.
