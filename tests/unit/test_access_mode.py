@@ -7,6 +7,7 @@ import pytest
 
 from postgres_mcp.server import AccessMode
 from postgres_mcp.server import get_sql_driver
+from postgres_mcp.sql.readonly_sql import ReadOnlySqlDriver
 from postgres_mcp.sql.safe_sql import SafeSqlDriver
 from postgres_mcp.sql.sql_driver import DbConnPool
 from postgres_mcp.sql.sql_driver import SqlDriver
@@ -25,6 +26,7 @@ def mock_db_connection():
     [
         (AccessMode.UNRESTRICTED, SqlDriver),
         (AccessMode.RESTRICTED, SafeSqlDriver),
+        (AccessMode.READONLY, ReadOnlySqlDriver),
     ],
 )
 @pytest.mark.asyncio
@@ -40,6 +42,11 @@ async def test_get_sql_driver_returns_correct_driver(access_mode, expected_drive
         # When in RESTRICTED mode, verify timeout is set
         if access_mode == AccessMode.RESTRICTED:
             assert isinstance(driver, SafeSqlDriver)
+            assert driver.timeout == 30
+
+        # When in READONLY mode, verify timeout is set
+        if access_mode == AccessMode.READONLY:
+            assert isinstance(driver, ReadOnlySqlDriver)
             assert driver.timeout == 30
 
 
@@ -110,5 +117,47 @@ async def test_command_line_parsing():
 
     finally:
         # Restore original values
+        sys.argv = original_argv
+        asyncio.run = original_run
+
+
+@pytest.mark.asyncio
+async def test_command_line_parsing_readonly():
+    """Test that --access-mode=readonly correctly sets the access mode."""
+    import sys
+
+    from postgres_mcp.server import main
+
+    # Mock sys.argv and asyncio.run
+    original_argv = sys.argv
+    original_run = asyncio.run
+
+    try:
+        sys.argv = [
+            "postgres_mcp",
+            "postgresql://user:password@localhost/db",
+            "--access-mode=readonly",
+        ]
+        asyncio.run = AsyncMock()
+
+        with (
+            patch("postgres_mcp.server.current_access_mode", AccessMode.UNRESTRICTED),
+            patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
+            patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()),
+            patch("postgres_mcp.server.shutdown", AsyncMock()),
+        ):
+            import postgres_mcp.server
+
+            postgres_mcp.server.current_access_mode = AccessMode.UNRESTRICTED
+
+            try:
+                await main()
+            except Exception:
+                pass
+
+            # Verify the mode was changed to READONLY
+            assert postgres_mcp.server.current_access_mode == AccessMode.READONLY
+
+    finally:
         sys.argv = original_argv
         asyncio.run = original_run

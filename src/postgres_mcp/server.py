@@ -28,6 +28,7 @@ from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from .index.llm_opt import LLMOptimizerTool
 from .index.presentation import TextPresentation
 from .sql import DbConnPool
+from .sql import ReadOnlySqlDriver
 from .sql import SafeSqlDriver
 from .sql import SqlDriver
 from .sql import check_hypopg_installation_status
@@ -51,6 +52,7 @@ class AccessMode(str, Enum):
 
     UNRESTRICTED = "unrestricted"  # Unrestricted access
     RESTRICTED = "restricted"  # Read-only with safety features
+    READONLY = "readonly"  # Read-only at DB level, no SQL validation
 
 
 # Global variables
@@ -59,13 +61,16 @@ current_access_mode = AccessMode.UNRESTRICTED
 shutdown_in_progress = False
 
 
-async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
+async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver, ReadOnlySqlDriver]:
     """Get the appropriate SQL driver based on the current access mode."""
     base_driver = SqlDriver(conn=db_connection)
 
     if current_access_mode == AccessMode.RESTRICTED:
         logger.debug("Using SafeSqlDriver with restrictions (RESTRICTED mode)")
         return SafeSqlDriver(sql_driver=base_driver, timeout=30)  # 30 second timeout
+    elif current_access_mode == AccessMode.READONLY:
+        logger.debug("Using ReadOnlySqlDriver (READONLY mode)")
+        return ReadOnlySqlDriver(sql_driver=base_driver, timeout=30)  # 30 second timeout
     else:
         logger.debug("Using unrestricted SqlDriver (UNRESTRICTED mode)")
         return base_driver
@@ -563,7 +568,7 @@ async def main():
         type=str,
         choices=[mode.value for mode in AccessMode],
         default=AccessMode.UNRESTRICTED.value,
-        help="Set SQL access mode: unrestricted (unrestricted) or restricted (read-only with protections)",
+        help="Set SQL access mode: unrestricted, restricted (read-only + SQL validation), or readonly (read-only, no SQL validation)",
     )
     parser.add_argument(
         "--transport",
