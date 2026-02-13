@@ -865,15 +865,22 @@ class SafeSqlDriver(SqlDriver):
         "postgis_topology",
     }
 
-    def __init__(self, sql_driver: SqlDriver, timeout: float | None = None):
+    def __init__(
+        self,
+        sql_driver: SqlDriver,
+        timeout: float | None = None,
+        allowed_function_prefixes: tuple[str, ...] = (),
+    ):
         """Initialize with an underlying SQL driver and optional timeout.
 
         Args:
             sql_driver: The underlying SQL driver to wrap
             timeout: Optional timeout in seconds for query execution
+            allowed_function_prefixes: Lowercase prefixes to allow beyond ALLOWED_FUNCTIONS
         """
         self.sql_driver = sql_driver
         self.timeout = timeout
+        self.allowed_function_prefixes = allowed_function_prefixes
 
     def _validate_node(self, node: Node) -> None:
         """Recursively validate a node and all its children"""
@@ -900,7 +907,8 @@ class SafeSqlDriver(SqlDriver):
             match = self.PG_CATALOG_PATTERN.match(func_name)
             unqualified_name = match.group(1) if match else func_name
             if unqualified_name not in self.ALLOWED_FUNCTIONS:
-                raise ValueError(f"Function {func_name} is not allowed")
+                if not any(unqualified_name.startswith(p) for p in self.allowed_function_prefixes):
+                    raise ValueError(f"Function {func_name} is not allowed")
 
         # Reject SELECT statements with locking clauses
         if isinstance(node, SelectStmt) and getattr(node, "lockingClause", None):
