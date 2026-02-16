@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 
 from psycopg.sql import Identifier
@@ -135,14 +136,26 @@ class SequenceHealthCalc:
         return sequence_metrics
 
     def _parse_sequence_name(self, default_value: str) -> tuple[str, str]:
-        """Parse schema and sequence name from default value expression."""
-        # Handle both formats:
-        # nextval('id_seq'::regclass)
-        # nextval(('id_seq'::text)::regclass)
+        """Parse schema and sequence name from default value expression.
 
-        # Remove nextval and cast parts
-        clean_value = default_value.replace("nextval('", "").replace("'::regclass)", "")
-        clean_value = clean_value.replace("('", "").replace("'::text)", "")
+        Handles formats like:
+        - nextval('id_seq'::regclass)
+        - nextval(('id_seq'::text)::regclass)
+        - nextval('"UpperCaseSeq"'::regclass)
+        - nextval('"Schema"."Seq"'::regclass)
+
+        Note: Sequence names containing literal dots (e.g., "my.seq") are not
+        supported and will be incorrectly parsed as schema.name.
+        """
+        # Extract the sequence reference from inside the single quotes
+        # Handles both nextval('...') and nextval(('...'::text)::regclass)
+        match = re.search(r"nextval\(\(?'([^']+)'", default_value)
+        if not match:
+            return "public", ""
+
+        clean_value = match.group(1)
+        # Remove quotes so sql.Identifier can add them correctly
+        clean_value = clean_value.replace('"', "")
 
         # Split into schema and sequence
         parts = clean_value.split(".")

@@ -212,3 +212,43 @@ async def test_error_handling(mock_pg13_driver, mock_extension_installed):
 
     # Check that the error is properly reported
     assert "Error getting slow queries: Database error" in result
+
+
+@pytest.mark.asyncio
+async def test_resource_queries_pg12(mock_pg12_driver, mock_extension_installed):
+    """Test resource queries on PostgreSQL 12 uses correct column names (stddev_time, no wal_bytes)."""
+    # Create the TopQueriesCalc instance with the mock driver
+    calc = TopQueriesCalc(sql_driver=mock_pg12_driver)
+
+    # Get resource queries
+    _result = await calc.get_top_resource_queries(frac_threshold=0.05)
+
+    # Get the executed query from the mock
+    call_args = str(mock_pg12_driver.execute_query.call_args)
+
+    # Verify PG12 column names are used (aliased to consistent output names)
+    assert "stddev_time AS stddev_exec_time" in call_args, "Should use stddev_time aliased for PG12"
+    assert "total_time AS total_exec_time" in call_args, "Should use total_time aliased for PG12"
+    assert "mean_time AS mean_exec_time" in call_args, "Should use mean_time aliased for PG12"
+    # wal_bytes should be replaced with 0 for PG12
+    assert "0 AS wal_bytes" in call_args, "Should use 0 AS wal_bytes for PG12"
+
+
+@pytest.mark.asyncio
+async def test_resource_queries_pg13(mock_pg13_driver, mock_extension_installed):
+    """Test resource queries on PostgreSQL 13 uses correct column names (stddev_exec_time, wal_bytes)."""
+    # Create the TopQueriesCalc instance with the mock driver
+    calc = TopQueriesCalc(sql_driver=mock_pg13_driver)
+
+    # Get resource queries
+    _result = await calc.get_top_resource_queries(frac_threshold=0.05)
+
+    # Get the executed query from the mock
+    call_args = str(mock_pg13_driver.execute_query.call_args)
+
+    # Verify PG13 column names are used
+    assert "stddev_exec_time" in call_args, "Should use stddev_exec_time for PG13"
+    assert "total_exec_time" in call_args, "Should use total_exec_time for PG13"
+    assert "mean_exec_time" in call_args, "Should use mean_exec_time for PG13"
+    # wal_bytes should be the actual column for PG13
+    assert "wal_bytes" in call_args, "Should use wal_bytes column for PG13"
