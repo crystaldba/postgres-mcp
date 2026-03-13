@@ -231,11 +231,15 @@ To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode
 
 Postgres MCP Pro includes DNS rebinding protection to secure the server against certain types of attacks.
 By default, the server allows connections from common local and Docker hostnames.
-You can customize this behavior using environment variables:
+Transport security applies only to network transports (`sse` and `streamable-http`), not `stdio`.
 
-- **`MCP_ENABLE_DNS_REBINDING_PROTECTION`**: Controls whether DNS rebinding protection is enabled. Set to `false` to disable. Default: `true`.
-- **`MCP_ALLOWED_HOSTS`**: Comma-separated list of allowed host patterns. Default: `localhost:*,127.0.0.1:*,0.0.0.0:*,postgres-mcp-server:*,host.docker.internal:*`.
-- **`MCP_ALLOWED_ORIGINS`**: Comma-separated list of allowed origins. Default: empty (allows any origin).
+You can customize this behavior using CLI flags or environment variables (env vars take precedence over CLI flags):
+
+| CLI Flag | Environment Variable | Description | Default |
+|---|---|---|---|
+| `--disable-dns-rebinding-protection` | `MCP_ENABLE_DNS_REBINDING_PROTECTION` | Enable/disable DNS rebinding protection | Enabled |
+| `--allowed-hosts` | `MCP_ALLOWED_HOSTS` | Comma-separated allowed host patterns | `localhost:*,127.0.0.1:*,0.0.0.0:*,postgres-mcp-server:*,host.docker.internal:*` |
+| `--allowed-origins` | `MCP_ALLOWED_ORIGINS` | Comma-separated allowed origins | Empty (allows any origin) |
 
 For example, to restrict allowed hosts in your configuration:
 

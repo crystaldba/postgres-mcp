@@ -35,29 +35,8 @@ from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
 from .top_queries import TopQueriesCalc
 
-# Initialize FastMCP with transport security settings
-# Configure to allow requests from localhost, 127.0.0.1, and Docker container names
-# These can be customized via environment variables:
-# - MCP_ENABLE_DNS_REBINDING_PROTECTION: Set to "false" to disable (default: "true")
-# - MCP_ALLOWED_HOSTS: Comma-separated list of allowed hosts (default: localhost:*,127.0.0.1:*,0.0.0.0:*,postgres-mcp-server:*,host.docker.internal:*)
-# - MCP_ALLOWED_ORIGINS: Comma-separated list of allowed origins (default: empty, allows any origin)
-
-dns_rebinding_protection = os.environ.get("MCP_ENABLE_DNS_REBINDING_PROTECTION", "true").lower() == "true"
-
-default_allowed_hosts = "localhost:*,127.0.0.1:*,0.0.0.0:*,postgres-mcp-server:*,host.docker.internal:*"
-allowed_hosts_str = os.environ.get("MCP_ALLOWED_HOSTS", default_allowed_hosts)
-allowed_hosts = [host.strip() for host in allowed_hosts_str.split(",") if host.strip()]
-
-allowed_origins_str = os.environ.get("MCP_ALLOWED_ORIGINS", "")
-allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
-
-transport_security = TransportSecuritySettings(
-    enable_dns_rebinding_protection=dns_rebinding_protection,
-    allowed_hosts=allowed_hosts,
-    allowed_origins=allowed_origins,
-)
-
-mcp = FastMCP("postgres-mcp", transport_security=transport_security)
+# Initialize FastMCP with default settings
+mcp = FastMCP("postgres-mcp")
 
 # Constants
 PG_STAT_STATEMENTS = "pg_stat_statements"
@@ -618,6 +597,24 @@ async def main():
         default=8000,
         help="Port for streamable HTTP server (default: 8000)",
     )
+    parser.add_argument(
+        "--disable-dns-rebinding-protection",
+        action="store_true",
+        default=False,
+        help="Disable DNS rebinding protection (not recommended for production)",
+    )
+    parser.add_argument(
+        "--allowed-hosts",
+        type=str,
+        default=None,
+        help="Comma-separated allowed Host header values for DNS rebinding protection (e.g. 'localhost:*,127.0.0.1:*')",
+    )
+    parser.add_argument(
+        "--allowed-origins",
+        type=str,
+        default=None,
+        help="Comma-separated allowed Origin header values for DNS rebinding protection (e.g. 'http://localhost:*')",
+    )
 
     args = parser.parse_args()
 
@@ -677,6 +674,20 @@ async def main():
         # Windows doesn't support signals properly
         logger.warning("Signal handling not supported on Windows")
         pass
+
+    # Apply transport security settings (SSE and streamable-http only)
+    if args.transport in ("sse", "streamable-http"):
+        dns_env = os.environ.get("MCP_ENABLE_DNS_REBINDING_PROTECTION")
+        protection_off = dns_env.lower() in ("false", "0", "no") if dns_env else args.disable_dns_rebinding_protection
+        hosts = os.environ.get("MCP_ALLOWED_HOSTS", args.allowed_hosts)
+        origins = os.environ.get("MCP_ALLOWED_ORIGINS", args.allowed_origins)
+
+        if protection_off or hosts or origins:
+            mcp.settings.transport_security = TransportSecuritySettings(
+                enable_dns_rebinding_protection=not protection_off,
+                **{"allowed_hosts": [h.strip() for h in hosts.split(",") if h.strip()]} if hosts else {},
+                **{"allowed_origins": [o.strip() for o in origins.split(",") if o.strip()]} if origins else {},
+            )
 
     # Run the server with the selected transport (always async)
     if args.transport == "stdio":
