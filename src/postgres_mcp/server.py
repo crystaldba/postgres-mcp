@@ -82,7 +82,10 @@ def format_error_response(error: str) -> ResponseType:
 
 
 @mcp.tool(
-    description="List all schemas in the database",
+    description="List all schemas in the database, returning each schema's name, owner, and type (system or user).\n\n"
+    "Use when the user wants to explore available schemas before querying tables or views.\n"
+    "Do not use when you already know the schema name and need to list its objects (use list_objects instead).\n"
+    "Raises an error if the database connection is unavailable.",
     annotations=ToolAnnotations(
         title="List Schemas",
         readOnlyHint=True,
@@ -114,7 +117,11 @@ async def list_schemas() -> ResponseType:
 
 
 @mcp.tool(
-    description="List objects in a schema",
+    description="List objects of a given type within a specific schema.\n\n"
+    "Use when the user wants to discover tables, views, sequences, or extensions in a known schema.\n"
+    "Do not use when you need column-level details or indexes for a specific object (use get_object_details instead).\n"
+    "Accepts 'schema_name' (required) and 'object_type' (optional, default 'table'). e.g., schema_name='public', object_type='view'.\n"
+    "Raises an error if the schema does not exist or the object_type is unsupported.",
     annotations=ToolAnnotations(
         title="List Objects",
         readOnlyHint=True,
@@ -188,7 +195,11 @@ async def list_objects(
 
 
 @mcp.tool(
-    description="Show detailed information about a database object",
+    description="Retrieve detailed metadata for a specific database object, including columns, constraints, and indexes.\n\n"
+    "Use when the user wants to inspect a table's structure, check column types, or review existing indexes before writing queries.\n"
+    "Do not use when you only need a list of object names (use list_objects instead) or when you want to run a query (use execute_sql instead).\n"
+    "Accepts 'schema_name' (required), 'object_name' (required), and 'object_type' (optional, default 'table'). e.g., schema_name='public', object_name='users'.\n"
+    "Raises an error if the object does not exist or the object_type is unsupported.",
     annotations=ToolAnnotations(
         title="Get Object Details",
         readOnlyHint=True,
@@ -327,7 +338,12 @@ async def get_object_details(
 
 
 @mcp.tool(
-    description="Explains the execution plan for a SQL query, showing how the database will execute it and provides detailed cost estimates.",
+    description="Explain the execution plan for a SQL query, showing how PostgreSQL will execute it with detailed cost estimates.\n\n"
+    "Use when the user wants to understand query performance, identify sequential scans, or test hypothetical indexes before creating them.\n"
+    "Do not use when you want to actually run a query and get data (use execute_sql instead) or when you need index recommendations across the whole workload (use analyze_workload_indexes instead).\n"
+    "Accepts 'sql' (required), 'analyze' (optional, runs the query for real statistics), and 'hypothetical_indexes' (optional, simulates indexes via HypoPG without creating them). "
+    "Cannot combine analyze=True with 'hypothetical_indexes'.\n"
+    "Raises an error if the SQL is invalid, or if HypoPG extension is not installed when using hypothetical indexes.",
     annotations=ToolAnnotations(
         title="Explain Query",
         readOnlyHint=True,
@@ -428,7 +444,11 @@ async def execute_sql(
 
 
 @mcp.tool(
-    description="Analyze frequently executed queries in the database and recommend optimal indexes",
+    description="Analyze the database workload by examining frequently executed queries from pg_stat_statements and recommend optimal indexes.\n\n"
+    "Use when the user wants to improve overall database performance by finding missing indexes across all active queries.\n"
+    "Do not use when you have specific queries to optimize (use analyze_query_indexes instead) or when you just need the execution plan for one query (use explain_query instead).\n"
+    "Accepts 'max_index_size_mb' (optional, default 10000) and 'method' (optional, 'dta' for algorithmic analysis or 'llm' for LLM-based recommendations).\n"
+    "Requires the pg_stat_statements extension to be installed. Raises an error if the extension is missing or the database connection fails.",
     annotations=ToolAnnotations(
         title="Analyze Workload Indexes",
         readOnlyHint=True,
@@ -455,7 +475,11 @@ async def analyze_workload_indexes(
 
 
 @mcp.tool(
-    description="Analyze a list of (up to 10) SQL queries and recommend optimal indexes",
+    description="Analyze a list of specific SQL queries (up to 10) and recommend optimal indexes for them.\n\n"
+    "Use when the user has particular slow queries and wants targeted index recommendations.\n"
+    "Do not use when you want to analyze the entire database workload automatically (use analyze_workload_indexes instead).\n"
+    "Accepts 'queries' (required, list of SQL strings), 'max_index_size_mb' (optional, default 10000), and 'method' (optional, 'dta' or 'llm').\n"
+    "Raises an error if the query list is empty or exceeds 10 queries.",
     annotations=ToolAnnotations(
         title="Analyze Query Indexes",
         readOnlyHint=True,
@@ -488,16 +512,13 @@ async def analyze_query_indexes(
 
 
 @mcp.tool(
-    description="Analyzes database health. Here are the available health checks:\n"
-    "- index - checks for invalid, duplicate, and bloated indexes\n"
-    "- connection - checks the number of connection and their utilization\n"
-    "- vacuum - checks vacuum health for transaction id wraparound\n"
-    "- sequence - checks sequences at risk of exceeding their maximum value\n"
-    "- replication - checks replication health including lag and slots\n"
-    "- buffer - checks for buffer cache hit rates for indexes and tables\n"
-    "- constraint - checks for invalid constraints\n"
-    "- all - runs all checks\n"
-    "You can optionally specify a single health check or a comma-separated list of health checks. The default is 'all' checks.",
+    description="Run diagnostic health checks on the PostgreSQL database and report issues.\n\n"
+    "Use when the user wants to identify database problems such as bloated indexes, connection saturation, or replication lag.\n"
+    "Do not use when you need index recommendations for specific queries (use analyze_query_indexes instead) or when you need to inspect a single table's structure (use get_object_details instead).\n"
+    "Available checks: index (invalid/duplicate/bloated), connection (count and utilization), vacuum (transaction ID wraparound), "
+    "sequence (near max value), replication (lag and slots), buffer (cache hit rates), constraint (invalid constraints), or all.\n"
+    "Accepts 'health_type' (optional, default 'all'). Pass a single check name or comma-separated list. e.g., health_type='index,vacuum'.\n"
+    "Raises an error if the database connection is unavailable.",
     annotations=ToolAnnotations(
         title="Analyze Database Health",
         readOnlyHint=True,
@@ -522,7 +543,11 @@ async def analyze_db_health(
 
 @mcp.tool(
     name="get_top_queries",
-    description=f"Reports the slowest or most resource-intensive queries using data from the '{PG_STAT_STATEMENTS}' extension.",
+    description=f"Report the slowest or most resource-intensive queries using data from the '{PG_STAT_STATEMENTS}' extension.\n\n"
+    "Use when the user wants to find performance bottlenecks by identifying queries that consume the most time or resources.\n"
+    "Do not use when you need index recommendations (use analyze_workload_indexes instead) or when you want to explain a specific query's plan (use explain_query instead).\n"
+    "Accepts 'sort_by' (optional: 'resources', 'total_time', or 'mean_time', default 'resources') and 'limit' (optional, default 10).\n"
+    f"Requires the {PG_STAT_STATEMENTS} extension. Raises an error if the extension is not installed.",
     annotations=ToolAnnotations(
         title="Get Top Queries",
         readOnlyHint=True,
@@ -607,7 +632,11 @@ async def main():
     if current_access_mode == AccessMode.UNRESTRICTED:
         mcp.add_tool(
             execute_sql,
-            description="Execute any SQL query",
+            description="Execute any SQL query against the connected PostgreSQL database and return the results.\n\n"
+            "Use when the user wants to run SELECT, INSERT, UPDATE, DELETE, or DDL statements directly.\n"
+            "Do not use when you only need to understand how a query will perform (use explain_query instead).\n"
+            "Accepts 'sql' (required). e.g., sql=\"SELECT * FROM users LIMIT 10\".\n"
+            "Raises an error if the SQL syntax is invalid or the query fails.",
             annotations=ToolAnnotations(
                 title="Execute SQL",
                 destructiveHint=True,
@@ -616,7 +645,11 @@ async def main():
     else:
         mcp.add_tool(
             execute_sql,
-            description="Execute a read-only SQL query",
+            description="Execute a read-only SQL query against the connected PostgreSQL database and return the results.\n\n"
+            "Use when the user wants to run SELECT queries or other read-only statements to inspect data.\n"
+            "Do not use when you only need to understand how a query will perform (use explain_query instead).\n"
+            "Accepts 'sql' (required). e.g., sql=\"SELECT * FROM users LIMIT 10\".\n"
+            "Write operations (INSERT, UPDATE, DELETE, DDL) are blocked in this mode. Raises an error if the query is not read-only or the SQL syntax is invalid.",
             annotations=ToolAnnotations(
                 title="Execute SQL (Read-Only)",
                 readOnlyHint=True,
