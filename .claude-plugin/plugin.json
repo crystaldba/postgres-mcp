@@ -1,0 +1,24 @@
+{
+  "name": "postgres-mcp",
+  "description": "PostgreSQL MCP tools for database querying, index tuning, explain plans, and health checks. Includes a skill that teaches optimal tool sequencing for schema discovery, performance analysis, and index optimization.",
+  "version": "0.3.0",
+  "author": {
+    "name": "Crystal DBA",
+    "url": "https://www.crystaldba.ai"
+  },
+  "repository": "https://github.com/crystaldba/postgres-mcp",
+  "homepage": "https://github.com/crystaldba/postgres-mcp",
+  "license": "MIT",
+  "keywords": [
+    "postgresql",
+    "postgres",
+    "database",
+    "mcp",
+    "index-tuning",
+    "query-optimization",
+    "health-checks",
+    "explain-plan",
+    "dba"
+  ],
+  "category": "databases"
+}
