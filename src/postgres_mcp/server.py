@@ -82,7 +82,7 @@ def format_error_response(error: str) -> ResponseType:
 
 
 @mcp.tool(
-    description="List all schemas in the database",
+    description="List all schemas in the PostgreSQL database with their owners and types.",
     annotations=ToolAnnotations(
         title="List Schemas",
         readOnlyHint=True,
@@ -114,7 +114,7 @@ async def list_schemas() -> ResponseType:
 
 
 @mcp.tool(
-    description="List objects in a schema",
+    description="List tables, views, materialized views, sequences, or extensions in a PostgreSQL schema. Returns names and comments/descriptions for each object.",
     annotations=ToolAnnotations(
         title="List Objects",
         readOnlyHint=True,
@@ -232,7 +232,7 @@ async def list_objects(
 
 
 @mcp.tool(
-    description="Show detailed information about a database object",
+    description="Show columns (with types, nullability, defaults, and comments), constraints, indexes, and the table/view comment for a PostgreSQL object. Use this BEFORE writing queries to understand the schema.",
     annotations=ToolAnnotations(
         title="Get Object Details",
         readOnlyHint=True,
@@ -414,7 +414,7 @@ async def get_object_details(
 
 
 @mcp.tool(
-    description="Explains the execution plan for a SQL query, showing how the database will execute it and provides detailed cost estimates.",
+    description="Explains the PostgreSQL execution plan for a SQL query, showing how the database will execute it and provides detailed cost estimates.",
     annotations=ToolAnnotations(
         title="Explain Query",
         readOnlyHint=True,
@@ -515,7 +515,7 @@ async def execute_sql(
 
 
 @mcp.tool(
-    description="Analyze frequently executed queries in the database and recommend optimal indexes",
+    description="Analyze frequently executed PostgreSQL queries and recommend optimal indexes.",
     annotations=ToolAnnotations(
         title="Analyze Workload Indexes",
         readOnlyHint=True,
@@ -542,7 +542,7 @@ async def analyze_workload_indexes(
 
 
 @mcp.tool(
-    description="Analyze a list of (up to 10) SQL queries and recommend optimal indexes",
+    description="Analyze a list of (up to 10) PostgreSQL queries and recommend optimal indexes.",
     annotations=ToolAnnotations(
         title="Analyze Query Indexes",
         readOnlyHint=True,
@@ -575,7 +575,7 @@ async def analyze_query_indexes(
 
 
 @mcp.tool(
-    description="Analyzes database health. Here are the available health checks:\n"
+    description="Analyzes PostgreSQL database health. Here are the available health checks:\n"
     "- index - checks for invalid, duplicate, and bloated indexes\n"
     "- connection - checks the number of connection and their utilization\n"
     "- vacuum - checks vacuum health for transaction id wraparound\n"
@@ -703,7 +703,7 @@ async def main():
     else:
         mcp.add_tool(
             execute_sql,
-            description="Execute a read-only SQL query",
+            description="Execute a read-only SQL query against the PostgreSQL database and return the results.",
             annotations=ToolAnnotations(
                 title="Execute SQL (Read-Only)",
                 readOnlyHint=True,
