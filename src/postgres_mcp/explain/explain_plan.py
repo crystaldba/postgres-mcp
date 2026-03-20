@@ -7,6 +7,10 @@ import re
 from typing import TYPE_CHECKING
 from typing import Any
 
+import pglast
+from pglast.ast import RawStmt
+from pglast.ast import SelectStmt
+
 from ..artifacts import ErrorResult
 from ..artifacts import ExplainPlanArtifact
 from ..sql import IndexDefinition
@@ -65,6 +69,11 @@ class ExplainPlanTool:
         Returns:
             ExplainPlanArtifact or ErrorResult
         """
+        # Validate input to prevent SQL injection via f-string concatenation
+        validation_error = self._validate_explain_input(sql_query, analyze=do_analyze)
+        if validation_error:
+            return ErrorResult(validation_error)
+
         modified_sql_query, use_generic_plan = await self.replace_query_parameters_if_needed(sql_query)
         return await self._run_explain_query(modified_sql_query, analyze=do_analyze, generic_plan=use_generic_plan)
 
@@ -94,6 +103,11 @@ class ExplainPlanTool:
             ExplainPlanArtifact or ErrorResult
         """
         try:
+            # Validate input SQL to prevent injection
+            validation_error = self._validate_explain_input(sql_query)
+            if validation_error:
+                return ErrorResult(validation_error)
+
             # Validate index definitions format
             if not isinstance(hypothetical_indexes, list):
                 return ErrorResult(f"Expected list of index definitions, got {type(hypothetical_indexes)}")
@@ -141,6 +155,44 @@ class ExplainPlanTool:
         except Exception as e:
             logger.error(f"Error in explain_with_hypothetical_indexes: {e}", exc_info=True)
             return ErrorResult(f"Error generating explain plan with hypothetical indexes: {e}")
+
+    @staticmethod
+    def _validate_explain_input(sql_query: str, analyze: bool = False) -> str | None:
+        """Validate that the SQL input for EXPLAIN is a single, safe statement.
+
+        Parses the input with pglast to prevent SQL injection via the f-string
+        concatenation used to build EXPLAIN queries. This ensures the
+        readOnlyHint=True annotation on explain_query is honored regardless
+        of the server access mode.
+
+        Args:
+            sql_query: The SQL query to validate
+            analyze: Whether EXPLAIN ANALYZE will be used (restricts to SELECT)
+
+        Returns:
+            None if valid, or an error message string if invalid
+        """
+        if not sql_query or not sql_query.strip():
+            return "SQL query cannot be empty"
+
+        try:
+            parsed = pglast.parse_sql(sql_query)
+        except pglast.parser.ParseError as e:
+            return f"Invalid SQL syntax: {e}"
+
+        # Reject multi-statement input to prevent injection via semicolons
+        if len(parsed) != 1:
+            return f"EXPLAIN input must be a single SQL statement, got {len(parsed)} statements"
+
+        # When EXPLAIN ANALYZE is used, the query is actually executed.
+        # Restrict to SELECT statements to prevent data modification.
+        if analyze:
+            stmt = parsed[0]
+            inner = stmt.stmt if isinstance(stmt, RawStmt) else stmt
+            if not isinstance(inner, SelectStmt):
+                return "EXPLAIN ANALYZE is only supported for SELECT queries to prevent unintended data modification"
+
+        return None
 
     def _has_bind_variables(self, query: str) -> bool:
         """Check if a query contains bind variables ($1, $2, etc)."""
@@ -201,6 +253,11 @@ class ExplainPlanTool:
             The explain plan as a dictionary
         """
         try:
+            # Validate input SQL to prevent injection via f-string concatenation
+            validation_error = self._validate_explain_input(query_text)
+            if validation_error:
+                raise ValueError(validation_error)
+
             # Create the indexes query
             create_indexes_query = "SELECT hypopg_reset();"
             if len(indexes) > 0:
