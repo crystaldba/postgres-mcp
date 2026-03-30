@@ -22,6 +22,10 @@
 
 </div>
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/crystaldba-postgres-mcp).
+
 ## Overview
 
 **Postgres MCP Pro** is an open source Model Context Protocol (MCP) server built to support you and your AI agents throughout the **entire development process**—from initial coding, through testing and deployment, and to production tuning and maintenance.
