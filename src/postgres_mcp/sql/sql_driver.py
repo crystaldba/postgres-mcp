@@ -68,8 +68,15 @@ class DbConnPool:
         self._is_valid = False
         self._last_error = None
 
-    async def pool_connect(self, connection_url: Optional[str] = None) -> AsyncConnectionPool:
-        """Initialize connection pool with retry logic."""
+    async def pool_connect(self, connection_url: Optional[str] = None, autocommit: bool = False) -> AsyncConnectionPool:
+        """Initialize connection pool with retry logic.
+
+        Args:
+            connection_url: PostgreSQL connection URL
+            autocommit: When True, connections use autocommit mode (no implicit BEGIN).
+                        Useful for database proxies (e.g. QueryPie) that block
+                        transaction control statements.
+        """
         # If we already have a valid pool, return it
         if self.pool and self._is_valid:
             return self.pool
@@ -86,11 +93,13 @@ class DbConnPool:
 
         try:
             # Configure connection pool with appropriate settings
+            pool_kwargs = {"autocommit": True} if autocommit else {}
             self.pool = AsyncConnectionPool(
                 conninfo=url,
                 min_size=1,
                 max_size=5,
                 open=False,  # Don't connect immediately, let's do it explicitly
+                kwargs=pool_kwargs,
             )
 
             # Open the pool explicitly
@@ -223,11 +232,12 @@ class SqlDriver:
 
     async def _execute_with_connection(self, connection, query, params, force_readonly) -> Optional[List[RowResult]]:
         """Execute query with the given connection."""
+        is_autocommit = connection.autocommit
         transaction_started = False
         try:
             async with connection.cursor(row_factory=dict_row) as cursor:
-                # Start read-only transaction
-                if force_readonly:
+                # Start read-only transaction (skip in autocommit mode)
+                if force_readonly and not is_autocommit:
                     await cursor.execute("BEGIN TRANSACTION READ ONLY")
                     transaction_started = True
 
@@ -241,28 +251,30 @@ class SqlDriver:
                     pass
 
                 if cursor.description is None:  # No results (like DDL statements)
-                    if not force_readonly:
-                        await cursor.execute("COMMIT")
-                    elif transaction_started:
-                        await cursor.execute("ROLLBACK")
-                        transaction_started = False
+                    if not is_autocommit:
+                        if not force_readonly:
+                            await cursor.execute("COMMIT")
+                        elif transaction_started:
+                            await cursor.execute("ROLLBACK")
+                            transaction_started = False
                     return None
 
                 # Get results from the last statement only
                 rows = await cursor.fetchall()
 
-                # End the transaction appropriately
-                if not force_readonly:
-                    await cursor.execute("COMMIT")
-                elif transaction_started:
-                    await cursor.execute("ROLLBACK")
-                    transaction_started = False
+                # End the transaction appropriately (skip in autocommit mode)
+                if not is_autocommit:
+                    if not force_readonly:
+                        await cursor.execute("COMMIT")
+                    elif transaction_started:
+                        await cursor.execute("ROLLBACK")
+                        transaction_started = False
 
                 return [SqlDriver.RowResult(cells=dict(row)) for row in rows]
 
         except Exception as e:
             # Try to roll back the transaction if it's still active
-            if transaction_started:
+            if transaction_started and not is_autocommit:
                 try:
                     await connection.rollback()
                 except Exception as rollback_error:

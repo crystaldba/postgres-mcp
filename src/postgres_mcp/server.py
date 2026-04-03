@@ -596,6 +596,14 @@ async def main():
         default=8000,
         help="Port for streamable HTTP server (default: 8000)",
     )
+    parser.add_argument(
+        "--autocommit",
+        action="store_true",
+        default=False,
+        help="Use autocommit mode, disabling implicit transactions (BEGIN/COMMIT/ROLLBACK). "
+        "Useful for database proxies that block transaction control statements. "
+        "Can also be set via DATABASE_AUTOCOMMIT environment variable (true/1/yes).",
+    )
 
     args = parser.parse_args()
 
@@ -633,9 +641,15 @@ async def main():
             "Error: No database URL provided. Please specify via 'DATABASE_URI' environment variable or command-line argument.",
         )
 
+    # Determine autocommit mode from CLI flag or environment variable
+    use_autocommit = args.autocommit or os.environ.get("DATABASE_AUTOCOMMIT", "").lower() in ("true", "1", "yes")
+
+    if use_autocommit:
+        logger.info("Autocommit mode enabled - transactions (BEGIN/COMMIT/ROLLBACK) will be skipped")
+
     # Initialize database connection pool
     try:
-        await db_connection.pool_connect(database_url)
+        await db_connection.pool_connect(database_url, autocommit=use_autocommit)
         logger.info("Successfully connected to database and initialized connection pool")
     except Exception as e:
         logger.warning(

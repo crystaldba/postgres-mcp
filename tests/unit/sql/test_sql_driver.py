@@ -365,3 +365,105 @@ async def test_engine_url_connection():
         # Verify driver state
         assert driver.is_pool is True
         assert driver.conn is not None
+
+
+def _make_autocommit_connection(autocommit=True, has_results=True):
+    """Create a properly mocked async connection for _execute_with_connection tests."""
+    cursor = AsyncMock()
+    cursor.nextset = MagicMock(return_value=False)
+    cursor.fetchall = AsyncMock(return_value=[
+        {"id": 1, "name": "test1"},
+        {"id": 2, "name": "test2"},
+    ])
+    cursor.description = ["column1", "column2"] if has_results else None
+
+    cursor_ctx = AsyncMock()
+    cursor_ctx.__aenter__ = AsyncMock(return_value=cursor)
+    cursor_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    connection = MagicMock()
+    connection.autocommit = autocommit
+    connection.cursor = MagicMock(return_value=cursor_ctx)
+    connection.rollback = AsyncMock()
+
+    return connection, cursor
+
+
+@pytest.mark.asyncio
+async def test_execute_query_autocommit_skips_transaction():
+    """Test that autocommit mode skips BEGIN/COMMIT/ROLLBACK statements."""
+    connection, cursor = _make_autocommit_connection(autocommit=True)
+
+    driver = SqlDriver(conn=connection)
+
+    result = await driver._execute_with_connection(
+        connection, "SELECT * FROM test", None, force_readonly=True
+    )
+
+    # Verify no transaction statements were issued
+    for c in cursor.execute.call_args_list:
+        sql = c[0][0] if c[0] else ""
+        assert "BEGIN" not in sql, "BEGIN should not be called in autocommit mode"
+        assert "COMMIT" not in sql, "COMMIT should not be called in autocommit mode"
+        assert "ROLLBACK" not in sql, "ROLLBACK should not be called in autocommit mode"
+
+    # Verify the actual query was still executed
+    assert call("SELECT * FROM test") in cursor.execute.call_args_list
+
+    # Verify results were returned
+    assert result is not None
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_query_autocommit_no_results():
+    """Test autocommit mode with DDL statements that return no results."""
+    connection, cursor = _make_autocommit_connection(autocommit=True, has_results=False)
+
+    driver = SqlDriver(conn=connection)
+
+    result = await driver._execute_with_connection(
+        connection, "CREATE TABLE test (id int)", None, force_readonly=False
+    )
+
+    # Verify no transaction statements were issued
+    for c in cursor.execute.call_args_list:
+        sql = c[0][0] if c[0] else ""
+        assert "COMMIT" not in sql, "COMMIT should not be called in autocommit mode"
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_execute_query_non_autocommit_uses_transaction():
+    """Test that non-autocommit mode still uses BEGIN/COMMIT/ROLLBACK as before."""
+    connection, cursor = _make_autocommit_connection(autocommit=False)
+
+    driver = SqlDriver(conn=connection)
+
+    await driver._execute_with_connection(
+        connection, "SELECT * FROM test", None, force_readonly=True
+    )
+
+    # Verify transaction statements WERE issued
+    assert call("BEGIN TRANSACTION READ ONLY") in cursor.execute.call_args_list
+    assert call("ROLLBACK") in cursor.execute.call_args_list
+
+
+@pytest.mark.asyncio
+async def test_execute_query_autocommit_error_skips_rollback():
+    """Test that autocommit mode skips rollback on error."""
+    connection, cursor = _make_autocommit_connection(autocommit=True)
+
+    # Make query execution fail
+    cursor.execute = AsyncMock(side_effect=Exception("Query failed"))
+
+    driver = SqlDriver(conn=connection)
+
+    with pytest.raises(Exception, match="Query failed"):
+        await driver._execute_with_connection(
+            connection, "SELECT * FROM test", None, force_readonly=True
+        )
+
+    # Verify rollback was NOT called (autocommit mode)
+    connection.rollback.assert_not_awaited()

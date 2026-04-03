@@ -226,6 +226,30 @@ Postgres MCP Pro supports multiple *access modes* to give you control over the o
 
 To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode=restricted` in the configuration examples above.
 
+#### Autocommit Mode
+
+Some database proxies (e.g. [QueryPie](https://www.querypie.com/), [PgBouncer](https://www.pgbouncer.org/) in transaction mode) block explicit transaction control statements (`BEGIN`, `COMMIT`, `ROLLBACK`). The `--autocommit` flag disables implicit transactions so that each statement executes independently:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "uvx",
+      "args": [
+        "postgres-mcp",
+        "--access-mode=restricted",
+        "--autocommit"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
+      }
+    }
+  }
+}
+```
+
+You can also enable autocommit via the `DATABASE_AUTOCOMMIT` environment variable (`true`, `1`, or `yes`).
+
 
 #### Other MCP Clients
 
