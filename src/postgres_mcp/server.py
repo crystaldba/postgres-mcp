@@ -24,6 +24,7 @@ from .artifacts import ExplainPlanArtifact
 from .database_health import DatabaseHealthTool
 from .database_health import HealthType
 from .explain import ExplainPlanTool
+from .formatter import format_to_excel
 from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from .index.llm_opt import LLMOptimizerTool
 from .index.presentation import TextPresentation
@@ -554,6 +555,43 @@ async def get_top_queries(
         return format_error_response(str(e))
 
 
+# Tool function declaration without decorator - registered dynamically based on access mode (like execute_sql)
+@validate_call
+async def execute_sql_xlsx(
+    sql: str = Field(description="SQL query to execute and export to Excel"),
+    max_rows: int = Field(
+        description="Maximum number of rows to export. Rows beyond this limit are truncated.",
+        default=10000,
+    ),
+) -> ResponseType:
+    """Executes a SQL query and exports results to an Excel file."""
+    try:
+        sql_driver = await get_sql_driver()
+        rows = await sql_driver.execute_query(sql)  # type: ignore
+        if rows is None or len(rows) == 0:
+            return format_text_response("Query returned no results. No Excel file was created.")
+
+        truncated = len(rows) > max_rows
+        row_dicts = [r.cells for r in rows[:max_rows]]
+        columns = list(row_dicts[0].keys())
+        file_path = format_to_excel(rows=row_dicts, columns=columns)
+
+        result_parts = [
+            f"Excel file created: {file_path}",
+            f"Rows exported: {len(row_dicts)}" + (f" (truncated from {len(rows)})" if truncated else ""),
+            f"Columns: {', '.join(columns)}",
+        ]
+        if truncated:
+            result_parts.append(
+                f"Warning: Result set exceeded the max_rows limit of {max_rows}. "
+                f"Add a LIMIT clause to your query or increase max_rows to export more rows."
+            )
+        return format_text_response("\n".join(result_parts))
+    except Exception as e:
+        logger.error(f"Error executing query for Excel export: {e}")
+        return format_error_response(str(e))
+
+
 async def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="PostgreSQL MCP Server")
@@ -619,6 +657,28 @@ async def main():
             description="Execute a read-only SQL query",
             annotations=ToolAnnotations(
                 title="Execute SQL (Read-Only)",
+                readOnlyHint=True,
+            ),
+        )
+
+    # Add the xlsx export tool with a description and annotations appropriate to the access mode
+    if current_access_mode == AccessMode.UNRESTRICTED:
+        mcp.add_tool(
+            execute_sql_xlsx,
+            description="Executes a SQL query and exports results to an Excel (.xlsx) file. "
+            "Use this when the user wants to save query results as a spreadsheet.",
+            annotations=ToolAnnotations(
+                title="Execute SQL to Excel",
+                destructiveHint=True,
+            ),
+        )
+    else:
+        mcp.add_tool(
+            execute_sql_xlsx,
+            description="Executes a read-only SQL query and exports results to an Excel (.xlsx) file. "
+            "Use this when the user wants to save query results as a spreadsheet.",
+            annotations=ToolAnnotations(
+                title="Execute SQL to Excel (Read-Only)",
                 readOnlyHint=True,
             ),
         )

@@ -349,6 +349,7 @@ Postgres MCP Pro Tools:
 | `analyze_workload_indexes` | Analyzes the database workload to identify resource-intensive queries, then recommends optimal indexes for them. |
 | `analyze_query_indexes` | Analyzes a list of specific SQL queries (up to 10) and recommends optimal indexes for them. |
 | `analyze_db_health` | Performs comprehensive health checks including: buffer cache hit rates, connection health, constraint validation, index health (duplicate/unused/invalid), sequence limits, and vacuum health. |
+| `execute_sql_xlsx` | Executes a SQL query and exports the results to an Excel (.xlsx) file. Supports a configurable row limit to prevent excessive output. |
 
 
 ## Related Projects
