@@ -110,6 +110,39 @@ def test_format_to_excel_empty_rows():
         assert ws.max_row == 1  # header only
 
 
+def test_format_to_excel_serializes_complex_types():
+    """format_to_excel serializes dict and list values to JSON strings."""
+    rows = [
+        {"id": 1, "json_col": {"key": "value"}, "arr_col": [1, 2, 3]},
+    ]
+    columns = ["id", "json_col", "arr_col"]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = format_to_excel(rows, columns, output_dir=tmpdir)
+
+        from openpyxl import load_workbook
+
+        wb = load_workbook(path)
+        ws = wb.active
+        # dict -> JSON string
+        assert ws["B2"].value == '{"key": "value"}'
+        # list -> JSON string
+        assert ws["C2"].value == "[1, 2, 3]"
+
+
+def test_format_to_excel_filename_is_unique():
+    """format_to_excel generates unique filenames to avoid concurrent overwrites."""
+    rows = [{"a": 1}]
+    columns = ["a"]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path1 = format_to_excel(rows, columns, output_dir=tmpdir)
+        path2 = format_to_excel(rows, columns, output_dir=tmpdir)
+        assert path1 != path2
+        os.unlink(path1)
+        os.unlink(path2)
+
+
 # ---------------------------------------------------------------------------
 # execute_sql_xlsx tool tests
 # ---------------------------------------------------------------------------
@@ -184,44 +217,45 @@ async def test_execute_sql_xlsx_none_results(mock_db_connection):
 
 
 @pytest.mark.asyncio
-async def test_execute_sql_xlsx_row_truncation(mock_db_connection):
-    """execute_sql_xlsx truncates rows exceeding max_rows and warns."""
-    rows = [MockRowResult({"id": i, "val": f"row_{i}"}) for i in range(150)]
+async def test_execute_sql_xlsx_injects_limit(mock_db_connection):
+    """execute_sql_xlsx injects LIMIT max_rows when not present in SQL."""
     mock_driver = AsyncMock()
-    mock_driver.execute_query = AsyncMock(return_value=rows)
+    mock_driver.execute_query = AsyncMock(return_value=[
+        MockRowResult({"id": 1}),
+        MockRowResult({"id": 2}),
+    ])
 
     with (
         patch("postgres_mcp.server.current_access_mode", AccessMode.UNRESTRICTED),
         patch("postgres_mcp.server.db_connection", mock_db_connection),
         patch("postgres_mcp.server.get_sql_driver", return_value=mock_driver),
     ):
-        result = await server.execute_sql_xlsx("SELECT * FROM big_table", max_rows=100)
+        await server.execute_sql_xlsx("SELECT * FROM users", max_rows=100)
 
-    assert len(result) == 1
-    text = result[0].text
-    assert "truncated from 150" in text
-    assert "Rows exported: 100" in text
-    assert "Warning:" in text
+    # Verify LIMIT was injected
+    called_sql = mock_driver.execute_query.call_args[0][0]
+    assert "LIMIT 100" in called_sql
+    assert "SELECT * FROM users LIMIT 100" == called_sql
 
 
 @pytest.mark.asyncio
-async def test_execute_sql_xlsx_no_truncation_under_limit(mock_db_connection):
-    """execute_sql_xlsx does not warn when rows are under max_rows."""
-    rows = [MockRowResult({"id": i}) for i in range(50)]
+async def test_execute_sql_xlsx_preserves_existing_limit(mock_db_connection):
+    """execute_sql_xlsx does not inject LIMIT when user already provided one."""
     mock_driver = AsyncMock()
-    mock_driver.execute_query = AsyncMock(return_value=rows)
+    mock_driver.execute_query = AsyncMock(return_value=[
+        MockRowResult({"id": 1}),
+    ])
 
     with (
         patch("postgres_mcp.server.current_access_mode", AccessMode.UNRESTRICTED),
         patch("postgres_mcp.server.db_connection", mock_db_connection),
         patch("postgres_mcp.server.get_sql_driver", return_value=mock_driver),
     ):
-        result = await server.execute_sql_xlsx("SELECT * FROM table", max_rows=100)
+        await server.execute_sql_xlsx("SELECT * FROM users LIMIT 50", max_rows=100)
 
-    text = result[0].text
-    assert "truncated" not in text.lower()
-    assert "Warning" not in text
-    assert "Rows exported: 50" in text
+    called_sql = mock_driver.execute_query.call_args[0][0]
+    # Should NOT inject LIMIT when user already has one
+    assert called_sql == "SELECT * FROM users LIMIT 50"
 
 
 @pytest.mark.asyncio
@@ -240,3 +274,17 @@ async def test_execute_sql_xlsx_query_error(mock_db_connection):
     assert len(result) == 1
     assert result[0].text.startswith("Error:")
     assert "Connection lost" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_sql_xlsx_max_rows_zero_rejected():
+    """execute_sql_xlsx rejects max_rows=0 via validation."""
+    with pytest.raises(Exception):  # noqa: B017
+        await server.execute_sql_xlsx("SELECT 1", max_rows=0)
+
+
+@pytest.mark.asyncio
+async def test_execute_sql_xlsx_max_rows_negative_rejected():
+    """execute_sql_xlsx rejects negative max_rows via validation."""
+    with pytest.raises(Exception):  # noqa: B017
+        await server.execute_sql_xlsx("SELECT 1", max_rows=-5)

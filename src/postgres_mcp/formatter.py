@@ -1,12 +1,17 @@
 """Excel formatter for query results."""
 
+import json
 import os
 import tempfile
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import Any
 
-if TYPE_CHECKING:
-    pass
+
+def _serialize_cell(value: Any) -> Any:
+    """Serialize non-scalar PostgreSQL types (json/jsonb/array) to JSON strings."""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    return value
 
 
 def format_to_excel(rows: list[dict], columns: list[str], output_dir: str | None = None) -> str:
@@ -20,6 +25,8 @@ def format_to_excel(rows: list[dict], columns: list[str], output_dir: str | None
     Returns:
         Path to the created Excel file.
     """
+    import uuid
+
     from openpyxl import Workbook
 
     if output_dir is None:
@@ -28,7 +35,8 @@ def format_to_excel(rows: list[dict], columns: list[str], output_dir: str | None
     os.makedirs(output_dir, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"query_{timestamp}.xlsx"
+    unique_suffix = uuid.uuid4().hex[:8]
+    filename = f"query_{timestamp}_{unique_suffix}.xlsx"
     filepath = os.path.join(output_dir, filename)
 
     wb = Workbook()
@@ -38,9 +46,9 @@ def format_to_excel(rows: list[dict], columns: list[str], output_dir: str | None
     # Write header row
     ws.append(columns)
 
-    # Write data rows
+    # Write data rows, serializing complex types before appending
     for row in rows:
-        ws.append([row.get(col) for col in columns])
+        ws.append([_serialize_cell(row.get(col)) for col in columns])
 
     # Auto-adjust column widths
     for column in ws.columns:

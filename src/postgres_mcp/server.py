@@ -562,30 +562,36 @@ async def execute_sql_xlsx(
     max_rows: int = Field(
         description="Maximum number of rows to export. Rows beyond this limit are truncated.",
         default=10000,
+        ge=1,
     ),
 ) -> ResponseType:
     """Executes a SQL query and exports results to an Excel file."""
     try:
         sql_driver = await get_sql_driver()
-        rows = await sql_driver.execute_query(sql)  # type: ignore
+
+        # Inject LIMIT to protect server from large result sets.
+        # Skip if user already provided a LIMIT clause.
+        import re
+
+        sql_stripped = sql.strip().rstrip(";")
+        if not re.search(r"\bLIMIT\b", sql_stripped, re.IGNORECASE):
+            capped_sql = f"{sql_stripped} LIMIT {max_rows}"
+        else:
+            capped_sql = sql
+
+        rows = await sql_driver.execute_query(capped_sql)  # type: ignore
         if rows is None or len(rows) == 0:
             return format_text_response("Query returned no results. No Excel file was created.")
 
-        truncated = len(rows) > max_rows
-        row_dicts = [r.cells for r in rows[:max_rows]]
+        row_dicts = [r.cells for r in rows]
         columns = list(row_dicts[0].keys())
         file_path = format_to_excel(rows=row_dicts, columns=columns)
 
         result_parts = [
             f"Excel file created: {file_path}",
-            f"Rows exported: {len(row_dicts)}" + (f" (truncated from {len(rows)})" if truncated else ""),
+            f"Rows exported: {len(row_dicts)}",
             f"Columns: {', '.join(columns)}",
         ]
-        if truncated:
-            result_parts.append(
-                f"Warning: Result set exceeded the max_rows limit of {max_rows}. "
-                f"Add a LIMIT clause to your query or increase max_rows to export more rows."
-            )
         return format_text_response("\n".join(result_parts))
     except Exception as e:
         logger.error(f"Error executing query for Excel export: {e}")
