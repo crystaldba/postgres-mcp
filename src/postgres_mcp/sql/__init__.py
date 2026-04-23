@@ -9,6 +9,9 @@ from .extension_utils import check_postgres_version_requirement
 from .extension_utils import get_postgres_version
 from .extension_utils import reset_postgres_version_cache
 from .index import IndexDefinition
+from .rds_iam import RdsIamAsyncConnectionPool
+from .rds_iam import RdsIamConfig
+from .rds_iam import parse_database_uri_for_iam
 from .safe_sql import SafeSqlDriver
 from .sql_driver import DbConnPool
 from .sql_driver import SqlDriver
@@ -18,6 +21,8 @@ __all__ = [
     "ColumnCollector",
     "DbConnPool",
     "IndexDefinition",
+    "RdsIamAsyncConnectionPool",
+    "RdsIamConfig",
     "SafeSqlDriver",
     "SqlBindParams",
     "SqlDriver",
@@ -27,5 +32,6 @@ __all__ = [
     "check_postgres_version_requirement",
     "get_postgres_version",
     "obfuscate_password",
+    "parse_database_uri_for_iam",
     "reset_postgres_version_cache",
 ]

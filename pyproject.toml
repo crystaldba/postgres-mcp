@@ -10,8 +10,9 @@ dependencies = [
     "humanize>=4.15.0",
     "pglast==7.11",
     "attrs>=25.4.0",
-    "psycopg-pool>=3.3.0",
+    "psycopg-pool>=3.3.0,<4",
     "instructor>=1.14.4",
+    "boto3>=1.34.0",
 ]
 license = "mit"
 license-files = ["LICENSE"]

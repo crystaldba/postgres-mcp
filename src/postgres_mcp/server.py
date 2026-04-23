@@ -32,6 +32,7 @@ from .sql import SafeSqlDriver
 from .sql import SqlDriver
 from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
+from .sql import parse_database_uri_for_iam
 from .top_queries import TopQueriesCalc
 
 # Initialize FastMCP with default settings
@@ -51,6 +52,13 @@ class AccessMode(str, Enum):
 
     UNRESTRICTED = "unrestricted"  # Unrestricted access
     RESTRICTED = "restricted"  # Read-only with safety features
+
+
+class AuthType(str, Enum):
+    """Database authentication methods."""
+
+    PASSWORD = "password"  # Static password embedded in DATABASE_URI
+    RDS_IAM = "rds-iam"  # AWS RDS IAM auth with per-connection token refresh
 
 
 # Global variables
@@ -566,6 +574,29 @@ async def main():
         help="Set SQL access mode: unrestricted (unrestricted) or restricted (read-only with protections)",
     )
     parser.add_argument(
+        "--auth-type",
+        type=str,
+        choices=[t.value for t in AuthType],
+        default=AuthType.PASSWORD.value,
+        help=(
+            "Authentication method. 'password' (default) uses the password embedded in "
+            "DATABASE_URI. 'rds-iam' generates a fresh RDS IAM token for every new "
+            "connection — required for AWS RDS with IAM auth enabled."
+        ),
+    )
+    parser.add_argument(
+        "--aws-region",
+        type=str,
+        default=None,
+        help="AWS region for RDS IAM auth (falls back to AWS_REGION / AWS_DEFAULT_REGION).",
+    )
+    parser.add_argument(
+        "--aws-profile",
+        type=str,
+        default=None,
+        help="AWS profile for RDS IAM auth (falls back to AWS_PROFILE).",
+    )
+    parser.add_argument(
         "--transport",
         type=str,
         choices=["stdio", "sse", "streamable-http"],
@@ -633,9 +664,31 @@ async def main():
             "Error: No database URL provided. Please specify via 'DATABASE_URI' environment variable or command-line argument.",
         )
 
+    # Build optional RDS IAM config. When set, the pool regenerates a fresh
+    # auth token on every new physical connection, making 15-min token expiry
+    # invisible to the caller.
+    iam_config = None
+    if args.auth_type == AuthType.RDS_IAM.value:
+        region = args.aws_region or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+        if not region:
+            raise ValueError(
+                "RDS IAM auth requires an AWS region. Pass --aws-region or set AWS_REGION / AWS_DEFAULT_REGION.",
+            )
+        profile = args.aws_profile or os.environ.get("AWS_PROFILE")
+        iam_config = parse_database_uri_for_iam(database_url, region=region, aws_profile=profile)
+        logger.info(
+            "RDS IAM auth enabled for %s@%s:%d/%s (region=%s, profile=%s)",
+            iam_config.user,
+            iam_config.host,
+            iam_config.port,
+            iam_config.dbname,
+            iam_config.region,
+            iam_config.aws_profile or "<default>",
+        )
+
     # Initialize database connection pool
     try:
-        await db_connection.pool_connect(database_url)
+        await db_connection.pool_connect(database_url, iam_config=iam_config)
         logger.info("Successfully connected to database and initialized connection pool")
     except Exception as e:
         logger.warning(

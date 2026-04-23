@@ -14,6 +14,9 @@ from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from typing_extensions import LiteralString
 
+from .rds_iam import RdsIamAsyncConnectionPool
+from .rds_iam import RdsIamConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,21 +65,34 @@ def obfuscate_password(text: str | None) -> str | None:
 class DbConnPool:
     """Database connection manager using psycopg's connection pool."""
 
-    def __init__(self, connection_url: Optional[str] = None):
+    def __init__(
+        self,
+        connection_url: Optional[str] = None,
+        iam_config: Optional[RdsIamConfig] = None,
+    ):
         self.connection_url = connection_url
+        self.iam_config = iam_config
         self.pool: AsyncConnectionPool | None = None
         self._is_valid = False
         self._last_error = None
 
-    async def pool_connect(self, connection_url: Optional[str] = None) -> AsyncConnectionPool:
+    async def pool_connect(
+        self,
+        connection_url: Optional[str] = None,
+        iam_config: Optional[RdsIamConfig] = None,
+    ) -> AsyncConnectionPool:
         """Initialize connection pool with retry logic."""
         # If we already have a valid pool, return it
         if self.pool and self._is_valid:
             return self.pool
 
+        config = iam_config or self.iam_config
+        self.iam_config = config
+
         url = connection_url or self.connection_url
         self.connection_url = url
-        if not url:
+
+        if config is None and not url:
             self._is_valid = False
             self._last_error = "Database connection URL not provided"
             raise ValueError(self._last_error)
@@ -85,25 +101,36 @@ class DbConnPool:
         await self.close()
 
         try:
-            # Configure connection pool with appropriate settings
-            self.pool = AsyncConnectionPool(
-                conninfo=url,
-                min_size=1,
-                max_size=5,
-                open=False,  # Don't connect immediately, let's do it explicitly
-            )
+            # Local var keeps pyright narrowing happy for .open()/.connection()
+            # since the instance attribute stays typed as Optional.
+            pool: AsyncConnectionPool
+            if config is not None:
+                pool = RdsIamAsyncConnectionPool(
+                    iam_config=config,
+                    min_size=1,
+                    max_size=5,
+                    open=False,
+                )
+            else:
+                pool = AsyncConnectionPool(
+                    conninfo=url,  # type: ignore[arg-type]  # guarded above
+                    min_size=1,
+                    max_size=5,
+                    open=False,  # Don't connect immediately, let's do it explicitly
+                )
+            self.pool = pool
 
             # Open the pool explicitly
-            await self.pool.open()
+            await pool.open()
 
             # Test the connection pool by executing a simple query
-            async with self.pool.connection() as conn:
+            async with pool.connection() as conn:
                 async with conn.cursor() as cursor:
                     await cursor.execute("SELECT 1")
 
             self._is_valid = True
             self._last_error = None
-            return self.pool
+            return pool
         except Exception as e:
             self._is_valid = False
             self._last_error = str(e)

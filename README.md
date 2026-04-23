@@ -227,6 +227,43 @@ Postgres MCP Pro supports multiple *access modes* to give you control over the o
 To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode=restricted` in the configuration examples above.
 
 
+##### AWS RDS IAM Authentication
+
+For AWS RDS databases with IAM database authentication enabled, pass `--auth-type=rds-iam`. The server generates a fresh IAM auth token on every new physical connection, so the 15-minute token TTL is invisible to callers — no wrapper scripts, no server restarts when the token expires.
+
+Requirements on the RDS side: IAM database authentication enabled on the cluster, and the DB user created with `GRANT rds_iam TO <username>`. The IAM principal running the MCP server (or the profile you pass) needs `rds-db:connect` on `arn:aws:rds-db:<region>:<account>:dbuser:<resource-id>/<username>`.
+
+The `DATABASE_URI` for IAM mode must *not* contain a password — any password in the URI is discarded:
+
+```json
+{
+  "mcpServers": {
+    "postgres-dev": {
+      "command": "uvx",
+      "args": [
+        "postgres-mcp",
+        "--access-mode=unrestricted",
+        "--auth-type=rds-iam",
+        "--aws-region=us-west-2",
+        "--aws-profile=DeveloperRDS-dev"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://alma_developer@alma-rds-dev.cjosqcacaey8.us-west-2.rds.amazonaws.com:5432/alma?sslmode=require"
+      }
+    }
+  }
+}
+```
+
+| Flag | Env fallback | Notes |
+| --- | --- | --- |
+| `--auth-type` | — | `password` (default) or `rds-iam` |
+| `--aws-region` | `AWS_REGION`, `AWS_DEFAULT_REGION` | Required for `rds-iam` |
+| `--aws-profile` | `AWS_PROFILE` | Optional; omit to use the default credential chain |
+
+`sslmode=require` is applied by default for IAM connections since RDS rejects plaintext IAM auth.
+
+
 #### Other MCP Clients
 
 Many MCP clients have similar configuration files to Claude Desktop, and you can adapt the examples above to work with the client of your choice.
