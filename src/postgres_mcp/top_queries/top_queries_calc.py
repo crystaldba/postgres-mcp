@@ -2,7 +2,6 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 from typing import LiteralString
-from typing import Union
 from typing import cast
 
 from ..sql import SafeSqlDriver
@@ -82,7 +81,7 @@ def _get_pg_stat_statements_columns(pg_version: int) -> PgStatStatementsColumns:
 class TopQueriesCalc:
     """Tool for retrieving the slowest SQL queries."""
 
-    def __init__(self, sql_driver: Union[SqlDriver, SafeSqlDriver]):
+    def __init__(self, sql_driver: SqlDriver | SafeSqlDriver):
         self.sql_driver = sql_driver
 
     async def get_top_queries_by_time(self, limit: int = 10, sort_by: Literal["total", "mean"] = "mean") -> str:
