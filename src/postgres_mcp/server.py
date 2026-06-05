@@ -554,6 +554,30 @@ async def get_top_queries(
         return format_error_response(str(e))
 
 
+async def exit_if_orphaned(poll_interval: float = 2.0) -> None:
+    """Force-exit once this process has been orphaned (reparented to init, PID 1).
+
+    Used only for the stdio transport, where the server is a child of the MCP
+    client. If the client exits without closing stdin (e.g. it was force-killed),
+    the OS reparents us to PID 1 and run_stdio_async() never returns, so the
+    server would linger forever holding connections against the database role.
+
+    We cannot tear this down by cancelling run_stdio_async() — its stdin reader
+    blocks in a thread and does not unwind on cancellation. So once orphaned we
+    release the pool and hard-exit the process. The pool is closed first, so the
+    connections are returned to the server cleanly before we go.
+    """
+    while os.getppid() != 1:
+        await asyncio.sleep(poll_interval)
+    logger.info("Parent process exited; shutting down orphaned server")
+    try:
+        await db_connection.close()
+        logger.info("Closed database connections")
+    except Exception as e:
+        logger.error(f"Error closing database connections: {e}")
+    os._exit(0)
+
+
 async def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="PostgreSQL MCP Server")
@@ -656,17 +680,41 @@ async def main():
         logger.warning("Signal handling not supported on Windows")
         pass
 
-    # Run the server with the selected transport (always async)
-    if args.transport == "stdio":
-        await mcp.run_stdio_async()
-    elif args.transport == "sse":
-        mcp.settings.host = args.sse_host
-        mcp.settings.port = args.sse_port
-        await mcp.run_sse_async()
-    elif args.transport == "streamable-http":
-        mcp.settings.host = args.streamable_http_host
-        mcp.settings.port = args.streamable_http_port
-        await mcp.run_streamable_http_async()
+    # Run the server with the selected transport (always async).
+    #
+    # An MCP client normally signals shutdown by closing stdin,
+    # which makes run_stdio_async() return and the finally below releases the
+    # pool. But if the client is force-killed, stdin EOF may never arrive and the
+    # process is reparented to init (PID 1), lingering forever and pinning its
+    # connections. exit_if_orphaned() runs alongside the transport and hard-exits
+    # in that case (run_stdio_async cannot be cancelled cleanly).
+    orphan_task = None
+    try:
+        if args.transport == "stdio":
+            orphan_task = asyncio.ensure_future(exit_if_orphaned())
+            await mcp.run_stdio_async()
+        elif args.transport == "sse":
+            mcp.settings.host = args.sse_host
+            mcp.settings.port = args.sse_port
+            await mcp.run_sse_async()
+        elif args.transport == "streamable-http":
+            mcp.settings.host = args.streamable_http_host
+            mcp.settings.port = args.streamable_http_port
+            await mcp.run_streamable_http_async()
+    finally:
+        # Clean-exit path (stdin EOF / signal): stop the watchdog and release the pool.
+        # (On the orphan path the watchdog calls os._exit and we never reach here.)
+        if orphan_task is not None:
+            orphan_task.cancel()
+            try:
+                await orphan_task
+            except asyncio.CancelledError:
+                pass
+        try:
+            await db_connection.close()
+            logger.info("Closed database connections")
+        except Exception as e:
+            logger.error(f"Error closing database connections: {e}")
 
 
 async def shutdown(sig=None):
