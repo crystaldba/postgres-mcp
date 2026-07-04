@@ -8,7 +8,7 @@ dependencies = [
     "mcp[cli]>=1.25.0",
     "psycopg[binary]>=3.3.2",
     "humanize>=4.15.0",
-    "pglast==7.11",
+    "pglast>=7.11,<8",
     "attrs>=25.4.0",
     "psycopg-pool>=3.3.0",
     "instructor>=1.14.4",
