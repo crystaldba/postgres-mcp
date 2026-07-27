@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fcrystaldba%2Fpostgres-mcp.svg)](https://mcptoplist.com/server/glama%2Fcrystaldba%2Fpostgres-mcp)
+
 <div align="center">
 
 <img src="assets/postgres-mcp-pro.png" alt="Postgres MCP Pro Logo" width="600"/>
