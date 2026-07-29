@@ -226,6 +226,21 @@ Postgres MCP Pro supports multiple *access modes* to give you control over the o
 
 To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode=restricted` in the configuration examples above.
 
+##### Optional: SQLGuard authorize-before-mutate
+
+Lint / restricted mode is not authorization. For **unrestricted** write paths, set `SQLGUARD_REQUIRE=1` so mutating `execute_sql` fails closed until a verified Ed25519 PASS from [SQLGuard](https://sqlguard.io) is supplied (`certificate` + `signature` tool args).
+
+```json
+"env": {
+  "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname",
+  "SQLGUARD_REQUIRE": "1",
+  "SQLGUARD_BASE": "https://sqlguard.io",
+  "SQLGUARD_AGENT": "0xYourWallet"
+}
+```
+
+Buy path: Instant Cert `POST /v1/cert` ($0.05 Exact USDC on Base) or Session `POST /v1/session` ($0.25 / 10 slots) → `POST /v1/verify` → pass cert+sig into `execute_sql`. See https://sqlguard.io/INTEGRATE.md. Default off — no behavior change unless enabled.
+
 
 #### Other MCP Clients
 
