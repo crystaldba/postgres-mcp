@@ -897,7 +897,7 @@ requires-dist = [
     { name = "attrs", specifier = ">=25.4.0" },
     { name = "humanize", specifier = ">=4.15.0" },
     { name = "instructor", specifier = ">=1.14.4" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.25.0" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.25.0,<2" },
     { name = "pglast", specifier = "==7.11" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.2" },
     { name = "psycopg-pool", specifier = ">=3.3.0" },
