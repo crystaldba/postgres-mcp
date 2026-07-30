@@ -55,7 +55,7 @@ class AccessMode(str, Enum):
 
 # Global variables
 db_connection = DbConnPool()
-current_access_mode = AccessMode.UNRESTRICTED
+current_access_mode = AccessMode.RESTRICTED
 shutdown_in_progress = False
 
 
@@ -562,8 +562,8 @@ async def main():
         "--access-mode",
         type=str,
         choices=[mode.value for mode in AccessMode],
-        default=AccessMode.UNRESTRICTED.value,
-        help="Set SQL access mode: unrestricted (unrestricted) or restricted (read-only with protections)",
+        default=AccessMode.RESTRICTED.value,
+        help="Set SQL access mode: restricted (read-only with protections, default) or unrestricted (full read/write access)",
     )
     parser.add_argument(
         "--transport",
@@ -602,6 +602,17 @@ async def main():
     # Store the access mode in the global variable
     global current_access_mode
     current_access_mode = AccessMode(args.access_mode)
+
+    if current_access_mode == AccessMode.UNRESTRICTED:
+        logger.warning(
+            "⚠️  UNRESTRICTED mode is active: the LLM can execute ANY SQL, "
+            "including destructive statements (DROP/DELETE/ALTER). "
+            "Content read by the agent (pages, tickets, emails) can carry "
+            "prompt-injection payloads that reach execute_sql unfiltered. "
+            "Use UNRESTRICTED only for trusted development databases. "
+            "Omit --access-mode or pass '--access-mode restricted' for "
+            "read-only protection."
+        )
 
     # Add the query tool with a description and annotations appropriate to the access mode
     if current_access_mode == AccessMode.UNRESTRICTED:

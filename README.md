@@ -221,10 +221,10 @@ Replace `postgresql://...` with your [Postgres database connection URI](https://
 ##### Access Mode
 
 Postgres MCP Pro supports multiple *access modes* to give you control over the operations that the AI agent can perform on the database:
-- **Unrestricted Mode**: Allows full read/write access to modify data and schema. It is suitable for development environments.
-- **Restricted Mode**: Limits operations to read-only transactions and imposes constraints on resource utilization (presently only execution time). It is suitable for production environments.
+- **Restricted Mode (default)**: Limits operations to read-only transactions and imposes constraints on resource utilization (presently only execution time). It is suitable for production environments.
+- **Unrestricted Mode**: Allows full read/write access to modify data and schema. It is suitable for development environments. Starting with unrestricted mode active prints a startup warning, because any content the agent reads (web pages, tickets, emails) can carry prompt-injection payloads that reach `execute_sql` unfiltered.
 
-To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode=restricted` in the configuration examples above.
+Restricted mode is the default. To allow write operations, add `--access-mode=unrestricted` to the configuration examples above explicitly.
 
 
 #### Other MCP Clients
