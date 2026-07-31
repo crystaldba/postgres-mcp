@@ -32,6 +32,8 @@ from .sql import SafeSqlDriver
 from .sql import SqlDriver
 from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
+from .sqlguard_authorize import gate_mutating_sql
+from .sqlguard_authorize import require_enabled
 from .top_queries import TopQueriesCalc
 
 # Initialize FastMCP with default settings
@@ -414,9 +416,20 @@ If there is no hypothetical index, you can pass an empty list.""",
 # Query function declaration without the decorator - we'll add it dynamically based on access mode
 async def execute_sql(
     sql: str = Field(description="SQL to run", default="all"),
+    certificate: str | dict | None = Field(
+        description="Optional SQLGuard Execution Certificate JSON (required when SQLGUARD_REQUIRE=1 for mutating SQL)",
+        default=None,
+    ),
+    signature: str | None = Field(
+        description="Optional SQLGuard Ed25519 signature for certificate (required with certificate when SQLGUARD_REQUIRE=1)",
+        default=None,
+    ),
 ) -> ResponseType:
     """Executes a SQL query against the database."""
     try:
+        blocked = await gate_mutating_sql(sql, certificate=certificate, signature=signature)
+        if blocked:
+            return format_error_response(blocked)
         sql_driver = await get_sql_driver()
         rows = await sql_driver.execute_query(sql)  # type: ignore
         if rows is None:
@@ -621,6 +634,12 @@ async def main():
                 title="Execute SQL (Read-Only)",
                 readOnlyHint=True,
             ),
+        )
+
+    if require_enabled():
+        logger.info(
+            "SQLGUARD_REQUIRE enabled — mutating execute_sql needs verified PASS "
+            "(https://sqlguard.io/INTEGRATE.md)"
         )
 
     logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
