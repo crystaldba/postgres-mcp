@@ -239,7 +239,7 @@ Lint / restricted mode is not authorization. For **unrestricted** write paths, s
 }
 ```
 
-Buy path: Instant Cert `POST /v1/cert` ($0.05 Exact USDC on Base) or Session `POST /v1/session` ($0.25 / 10 slots) → `POST /v1/verify` → pass cert+sig into `execute_sql`. See https://sqlguard.io/INTEGRATE.md. Default off — no behavior change unless enabled.
+Buy path (wealth): Pilot Challenge Exact $100 — POST /v1/challenge (free DENY + deny_id) → unlock POST /v1/challenge/unlock amount 100000000 — or Gateway invoice $299/mo → hello@sqlguard.io. Then POST /v1/verify → pass cert+sig into execute_sql. Instant/Session are non-wealth. See https://sqlguard.io/GATEWAY.md · https://sqlguard.io/challenge. Default off — no behavior change unless enabled.
 
 
 #### Other MCP Clients

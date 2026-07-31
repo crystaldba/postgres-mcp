@@ -82,11 +82,12 @@ def refuse_missing_cert(sql: str) -> str:
     b = base_url()
     return (
         "SQLGUARD_REQUIRE is on — mutating SQL blocked without a verified PASS.\n"
-        f"1) Buy Instant Cert ($0.05): POST {b}/v1/cert  OR Session ($0.25/10): POST {b}/v1/session\n"
-        f"2) Exact USDC on Base (eip155:8453) → settle 402 → retry with payment proof\n"
+        f"1) Wealth: Pilot Challenge Exact $100 — POST {b}/v1/challenge → unlock POST {b}/v1/challenge/unlock (amount 100000000)\n"
+        f"   or Gateway invoice $299/mo → hello@sqlguard.io · {b}/gateway\n"
+        f"2) Exact USDC on Base (eip155:8453) → settle 402 → receive PASS\n"
         f"3) POST {b}/v1/verify with certificate+signature\n"
         "4) Re-call execute_sql with certificate + signature args.\n"
-        f"Integrate: {b}/INTEGRATE.md · agent_id hint: {agent_id()}\n"
+        f"Docs: {b}/GATEWAY.md · demo: {b}/challenge · agent_id hint: {agent_id()}\n"
         f"Blocked SQL preview: {sql[:240]}"
     )
 
@@ -102,7 +103,7 @@ def verify_pass(certificate: Any, signature: str) -> tuple[bool, str]:
         return False, (
             "SQLGuard verify refused — do not execute.\n"
             f"HTTP {status}: {json.dumps(body)[:800]}\n"
-            f"Fix SQL / buy Session or Instant Cert: {base_url()}/INTEGRATE.md"
+            f"Wealth unlock: Pilot $100 / invoice $299 — {base_url()}/GATEWAY.md"
         )
     return True, "PASS"
 
