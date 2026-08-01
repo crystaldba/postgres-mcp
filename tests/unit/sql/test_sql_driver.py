@@ -365,3 +365,70 @@ async def test_engine_url_connection():
         # Verify driver state
         assert driver.is_pool is True
         assert driver.conn is not None
+
+
+def _driver_with_failing_cursor(error):
+    """A SqlDriver on a mock DbConnPool whose cursor raises `error` on execute."""
+    cursor = AsyncMock()
+    cursor.execute.side_effect = error
+
+    cursor_cm = MagicMock()
+    cursor_cm.__aenter__.return_value = cursor
+
+    connection = MagicMock()
+    connection.cursor = MagicMock(return_value=cursor_cm)
+
+    conn_cm = MagicMock()
+    conn_cm.__aenter__.return_value = connection
+
+    pool = MagicMock()
+    pool.connection = MagicMock(return_value=conn_cm)
+
+    db_pool = MagicMock(spec=DbConnPool)
+    db_pool.pool_connect.return_value = pool
+    db_pool._is_valid = True
+
+    return SqlDriver(conn=db_pool), db_pool
+
+
+@pytest.mark.asyncio
+async def test_query_error_does_not_invalidate_pool():
+    """Bad SQL must not poison the shared pool (issue #98).
+
+    Marking the pool invalid on query-level errors made the next call tear
+    the pool down and rebuild it, churning pools on every malformed query.
+    """
+    import psycopg
+
+    driver, db_pool = _driver_with_failing_cursor(psycopg.errors.UndefinedTable('relation "missing" does not exist'))
+
+    with pytest.raises(psycopg.errors.UndefinedTable):
+        await driver.execute_query("SELECT * FROM missing")
+
+    assert db_pool._is_valid is True
+
+
+@pytest.mark.asyncio
+async def test_statement_timeout_does_not_invalidate_pool():
+    """A canceled statement leaves the connection healthy; keep the pool."""
+    import psycopg
+
+    driver, db_pool = _driver_with_failing_cursor(psycopg.errors.QueryCanceled("canceling statement due to statement timeout"))
+
+    with pytest.raises(psycopg.errors.QueryCanceled):
+        await driver.execute_query("SELECT pg_sleep(60)")
+
+    assert db_pool._is_valid is True
+
+
+@pytest.mark.asyncio
+async def test_operational_error_invalidates_pool():
+    """A connection-level failure must still mark the pool for rebuild."""
+    import psycopg
+
+    driver, db_pool = _driver_with_failing_cursor(psycopg.OperationalError("server closed the connection unexpectedly"))
+
+    with pytest.raises(psycopg.OperationalError):
+        await driver.execute_query("SELECT 1")
+
+    assert db_pool._is_valid is False

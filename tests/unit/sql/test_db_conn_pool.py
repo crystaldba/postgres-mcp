@@ -212,3 +212,62 @@ async def test_connection_url_property():
     # Change the URL
     db_pool.connection_url = "postgresql://newuser:newpass@otherhost/otherdb"
     assert db_pool.connection_url == "postgresql://newuser:newpass@otherhost/otherdb"
+
+
+def _wired_pool_mock():
+    """A pool mock supporting `async with pool.connection()` -> `async with conn.cursor()`.
+
+    Built with mock's native async-context-manager support: `.cursor` and
+    `.connection` are sync callables returning MagicMocks, whose `__aenter__`
+    (an AsyncMock on MagicMock) yields the next object.
+    """
+    import asyncio
+
+    cursor_cm = MagicMock()
+    cursor_cm.__aenter__.return_value = AsyncMock()
+
+    connection = MagicMock()
+    connection.cursor = MagicMock(return_value=cursor_cm)
+
+    conn_cm = MagicMock()
+    conn_cm.__aenter__.return_value = connection
+
+    pool = MagicMock()
+    pool.connection = MagicMock(return_value=conn_cm)
+
+    # pool.open() must actually yield to the event loop so concurrent
+    # pool_connect calls interleave the way they do against a real database.
+    async def slow_open():
+        await asyncio.sleep(0)
+
+    pool.open = AsyncMock(side_effect=slow_open)
+    pool.close = AsyncMock()
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_concurrent_pool_connect_creates_single_pool():
+    """Concurrent callers reconnecting must share one pool (issue #98).
+
+    Without serialization, every caller that observes an invalid pool builds
+    its own AsyncConnectionPool; all but the last-assigned pool are leaked
+    (never closed, still holding connections and worker tasks), and callers
+    holding a pool a later winner closed fail with "the pool ... is closed".
+    """
+    import asyncio
+
+    created_pools = []
+
+    def make_pool(*args, **kwargs):
+        pool = _wired_pool_mock()
+        created_pools.append(pool)
+        return pool
+
+    with patch("postgres_mcp.sql.sql_driver.AsyncConnectionPool", side_effect=make_pool):
+        db_pool = DbConnPool("postgresql://user:pass@localhost/db")
+        pools = await asyncio.gather(*(db_pool.pool_connect() for _ in range(10)))
+
+    assert len(created_pools) == 1
+    assert all(pool is created_pools[0] for pool in pools)
+    assert db_pool.is_valid
+    created_pools[0].close.assert_not_called()
