@@ -1,6 +1,6 @@
 # First, build the application in the `/app` directory.
 # See `Dockerfile` for details.
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.12-trixie-slim AS builder
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
 # Disable Python downloads, because we want to use the system interpreter
@@ -22,9 +22,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
   uv sync --frozen --no-dev
 
 
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-trixie
 # It is important to use the image that matches the builder, as the path to the
-# Python executable must be the same, e.g., using `python:3.11-slim-bookworm`
+# Python executable must be the same, e.g., using `python:3.11-slim-trixie`
 # will fail.
 
 RUN groupadd -r app && useradd -r -g app app
@@ -48,6 +48,11 @@ RUN apt-get update && apt-get install -y \
   dnsutils \
   net-tools \
   && rm -rf /var/lib/apt/lists/*
+
+# pip is unused at runtime (the venv is prebuilt) but the base image's copy
+# carries known CVEs. PATH resolves `python` to the pip-less venv interpreter,
+# so name the system one.
+RUN /usr/local/bin/python -m pip install --no-cache-dir --upgrade pip
 
 COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
