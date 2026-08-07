@@ -199,28 +199,32 @@ async def test_select_with_commit(safe_driver):
         await safe_driver.execute_query(query)
 
 
+@pytest.mark.parametrize("options", ["FORMAT JSON", "FORMAT JSON, ANALYZE", "ANALYZE, BUFFERS"])
+@pytest.mark.parametrize(
+    "select_query",
+    [
+        "SELECT 1",
+        """SELECT users.name, orders.order_date
+        FROM users
+        JOIN orders ON users.id = orders.user_id
+        WHERE orders.status = 'pending'""",
+    ],
+)
 @pytest.mark.asyncio
-async def test_explain_plan(safe_driver, mock_sql_driver):
-    """Test that EXPLAIN (without ANALYZE) works with bind variables"""
-    query = """
-    EXPLAIN (FORMAT JSON)
-    SELECT id, name
-    FROM users
-    WHERE age > $1 AND status = $2
-    """
+async def test_explain_select(safe_driver, mock_sql_driver, options, select_query):
+    """Test estimated and analyzed plans for read-only queries."""
+    query = f"EXPLAIN ({options}) {select_query}"
+
     await safe_driver.execute_query(query)
+
     mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
 
 
 @pytest.mark.asyncio
-async def test_explain_analyze_blocked(safe_driver):
-    """Test that EXPLAIN ANALYZE is blocked"""
-    query = """
-    EXPLAIN ANALYZE
-    SELECT id, name FROM users
-    """
+async def test_explain_analyze_update_blocked(safe_driver):
+    """Test that ANALYZE does not bypass read-only statement validation."""
     with pytest.raises(ValueError, match="Error validating query"):
-        await safe_driver.execute_query(query)
+        await safe_driver.execute_query("EXPLAIN ANALYZE UPDATE users SET active = false")
 
 
 @pytest.mark.asyncio
