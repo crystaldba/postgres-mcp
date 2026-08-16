@@ -227,6 +227,42 @@ Postgres MCP Pro supports multiple *access modes* to give you control over the o
 To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode=restricted` in the configuration examples above.
 
 
+##### Idle Connection Timeout
+
+Postgres MCP Pro connects to the database **lazily** — no connection is opened when the server starts, only on the first tool call that needs the database. Once a connection has been idle for a while it is reaped, so a server you configure but don't use holds zero Postgres connections. This is helpful when you define many database configs and don't want every server holding an open connection from session start.
+
+The idle timeout defaults to **300 seconds** and is configurable with the `--max-idle` flag (in seconds), or the `DATABASE_MAX_IDLE` environment variable. The flag takes precedence over the environment variable, and invalid values (non-numeric, zero, or negative) fall back to the default.
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "uvx",
+      "args": [
+        "postgres-mcp",
+        "--access-mode=unrestricted",
+        "--max-idle=120"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname"
+      }
+    }
+  }
+}
+```
+
+Equivalently, using the environment variable instead of the flag:
+
+```json
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname",
+        "DATABASE_MAX_IDLE": "120"
+      }
+```
+
+A reaped connection is re-established transparently on the next tool call, restarting the idle timer. Lower values release connections faster (good for many-database setups); higher values keep connections warm to avoid reconnect latency on frequently-used databases.
+
+
 #### Other MCP Clients
 
 Many MCP clients have similar configuration files to Claude Desktop, and you can adapt the examples above to work with the client of your choice.

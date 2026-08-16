@@ -31,7 +31,6 @@ from .sql import DbConnPool
 from .sql import SafeSqlDriver
 from .sql import SqlDriver
 from .sql import check_hypopg_installation_status
-from .sql import obfuscate_password
 from .top_queries import TopQueriesCalc
 
 # Initialize FastMCP with default settings
@@ -596,8 +595,32 @@ async def main():
         default=8000,
         help="Port for streamable HTTP server (default: 8000)",
     )
+    parser.add_argument(
+        "--max-idle",
+        type=int,
+        default=None,
+        help="Seconds an unused database connection stays open before it is reaped "
+        f"(default: {DbConnPool.DEFAULT_MAX_IDLE}). Can also be set via the DATABASE_MAX_IDLE "
+        "environment variable. Useful when defining many database configs so idle servers "
+        "release their connections.",
+    )
 
     args = parser.parse_args()
+
+    # Configure the idle-connection timeout (CLI flag takes precedence over env var).
+    # Invalid values are rejected by DbConnPool.max_idle, which falls back to the default.
+    max_idle_env = os.environ.get("DATABASE_MAX_IDLE")
+    if args.max_idle is not None:
+        db_connection.max_idle = args.max_idle
+    elif max_idle_env is not None:
+        try:
+            db_connection.max_idle = int(max_idle_env)
+        except ValueError:
+            logger.warning(
+                "Ignoring non-numeric DATABASE_MAX_IDLE=%r; using default of %s seconds",
+                max_idle_env,
+                DbConnPool.DEFAULT_MAX_IDLE,
+            )
 
     # Store the access mode in the global variable
     global current_access_mode
@@ -633,17 +656,13 @@ async def main():
             "Error: No database URL provided. Please specify via 'DATABASE_URI' environment variable or command-line argument.",
         )
 
-    # Initialize database connection pool
-    try:
-        await db_connection.pool_connect(database_url)
-        logger.info("Successfully connected to database and initialized connection pool")
-    except Exception as e:
-        logger.warning(
-            f"Could not connect to database: {obfuscate_password(str(e))}",
-        )
-        logger.warning(
-            "The MCP server will start but database operations will fail until a valid connection is established.",
-        )
+    # Store the database URL but do NOT connect yet. The connection pool is
+    # established lazily on the first tool call that needs it (see
+    # SqlDriver.execute_query -> DbConnPool.pool_connect). This lets you define
+    # many database MCP configs without each server holding an open Postgres
+    # connection from session start.
+    db_connection.connection_url = database_url
+    logger.info("Database URL configured; connection will be established on first use (lazy)")
 
     # Set up proper shutdown handling
     try:

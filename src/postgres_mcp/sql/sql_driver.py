@@ -62,11 +62,31 @@ def obfuscate_password(text: str | None) -> str | None:
 class DbConnPool:
     """Database connection manager using psycopg's connection pool."""
 
-    def __init__(self, connection_url: Optional[str] = None):
+    # Default seconds an unused connection stays open before being reaped.
+    DEFAULT_MAX_IDLE = 300
+
+    def __init__(self, connection_url: Optional[str] = None, max_idle: int = DEFAULT_MAX_IDLE):
         self.connection_url = connection_url
+        self.max_idle = max_idle  # validated via the property setter
         self.pool: AsyncConnectionPool | None = None
         self._is_valid = False
         self._last_error = None
+
+    @property
+    def max_idle(self) -> int:
+        """Seconds an unused connection stays open before being reaped."""
+        return self._max_idle
+
+    @max_idle.setter
+    def max_idle(self, value: Optional[int]) -> None:
+        # psycopg_pool does not range-check max_idle, so a non-positive value would
+        # schedule a degenerate (zero/negative-interval) pool-shrink task. Reject it
+        # and fall back to the default instead.
+        if value is None or value <= 0:
+            logger.warning("Ignoring invalid max_idle=%r; using default of %s seconds", value, self.DEFAULT_MAX_IDLE)
+            self._max_idle = self.DEFAULT_MAX_IDLE
+        else:
+            self._max_idle = value
 
     async def pool_connect(self, connection_url: Optional[str] = None) -> AsyncConnectionPool:
         """Initialize connection pool with retry logic."""
@@ -85,11 +105,17 @@ class DbConnPool:
         await self.close()
 
         try:
-            # Configure connection pool with appropriate settings
+            # Configure connection pool with appropriate settings.
+            # min_size=0 so an idle pool holds NO open connections; combined with
+            # lazy pool_connect (called on first tool use) this means a server that
+            # is configured but never used keeps zero Postgres connections.
+            # max_idle reaps connections after a period of inactivity, so a database
+            # that is touched once and then left alone releases its connection.
             self.pool = AsyncConnectionPool(
                 conninfo=url,
-                min_size=1,
+                min_size=0,
                 max_size=5,
+                max_idle=self.max_idle,  # close idle connections after this many seconds
                 open=False,  # Don't connect immediately, let's do it explicitly
             )
 
