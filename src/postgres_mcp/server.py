@@ -56,6 +56,7 @@ class AccessMode(str, Enum):
 # Global variables
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
+current_allowed_function_prefixes: tuple[str, ...] = ()
 shutdown_in_progress = False
 
 
@@ -65,7 +66,11 @@ async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
 
     if current_access_mode == AccessMode.RESTRICTED:
         logger.debug("Using SafeSqlDriver with restrictions (RESTRICTED mode)")
-        return SafeSqlDriver(sql_driver=base_driver, timeout=30)  # 30 second timeout
+        return SafeSqlDriver(
+            sql_driver=base_driver,
+            timeout=30,
+            allowed_function_prefixes=current_allowed_function_prefixes,
+        )
     else:
         logger.debug("Using unrestricted SqlDriver (UNRESTRICTED mode)")
         return base_driver
@@ -596,12 +601,19 @@ async def main():
         default=8000,
         help="Port for streamable HTTP server (default: 8000)",
     )
+    parser.add_argument(
+        "--allow-function-prefix",
+        action="append",
+        default=[],
+        help="Allow functions matching this lowercase prefix in restricted mode (repeatable)",
+    )
 
     args = parser.parse_args()
 
-    # Store the access mode in the global variable
-    global current_access_mode
+    # Store the access mode and allowed function prefixes in global variables
+    global current_access_mode, current_allowed_function_prefixes
     current_access_mode = AccessMode(args.access_mode)
+    current_allowed_function_prefixes = tuple(p.lower() for p in args.allow_function_prefix)
 
     # Add the query tool with a description and annotations appropriate to the access mode
     if current_access_mode == AccessMode.UNRESTRICTED:

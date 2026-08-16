@@ -23,6 +23,11 @@ async def safe_driver(mock_sql_driver):
     return SafeSqlDriver(mock_sql_driver)
 
 
+@pytest_asyncio.fixture
+async def safe_driver_with_st_prefix(mock_sql_driver):
+    return SafeSqlDriver(mock_sql_driver, allowed_function_prefixes=("st_",))
+
+
 @pytest.mark.asyncio
 async def test_select_statement(safe_driver, mock_sql_driver):
     """Test that simple SELECT statements are allowed"""
@@ -757,4 +762,28 @@ async def test_query_with_whitespace(safe_driver, mock_sql_driver):
     ORDER BY  name
     """
     await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
+
+
+@pytest.mark.asyncio
+async def test_function_prefix_allows_postgis(safe_driver_with_st_prefix, mock_sql_driver):
+    """Test that allowed_function_prefixes permits ST_* PostGIS functions"""
+    query = "SELECT ST_Intersects(a.geom, b.geom) FROM areas a, points b"
+    await safe_driver_with_st_prefix.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
+
+
+@pytest.mark.asyncio
+async def test_function_prefix_not_set_blocks_postgis(safe_driver):
+    """Test that without allowed_function_prefixes, ST_* functions are blocked"""
+    query = "SELECT ST_Intersects(a.geom, b.geom) FROM areas a, points b"
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_function_prefix_case_insensitive(safe_driver_with_st_prefix, mock_sql_driver):
+    """Test that prefix matching is case-insensitive (function names are lowercased)"""
+    query = "SELECT ST_DWithin(geom, ST_MakePoint(-73.9, 40.7), 1000) FROM places"
+    await safe_driver_with_st_prefix.execute_query(query)
     mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
