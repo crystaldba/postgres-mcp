@@ -212,6 +212,30 @@ The Postgres MCP Pro Docker image will automatically remap the hostname `localho
 }
 ```
 
+##### If you are using `uvx` with Windows WSL
+
+If you are using Windows WSL, you can use `uvx` with the following configuration to download and run Postgres MCP Pro:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "wsl.exe",
+      "args": [
+        "bash",
+        "-c",
+        "/home/$WSL_USER/.local/bin/uvx --from git+https://github.com/crystaldba/postgres-mcp@main postgres-mcp postgresql://username:password@localhost:5432/dbname --access-mode=unrestricted"
+      ]
+    }
+  }
+}
+```
+
+Notes:
+- This command runs the latest version of Postgres MCP Pro from the `main` branch.
+- Replace `/home/$WSL_USER/.local/bin/uvx` with the path to your `uvx` command. If you do not know where `uvx` is installed, run `which uvx` in WSL.
+- If you do not have `uvx` installed, you may install it using `pip`.
+
 
 ##### Connection URI
 
