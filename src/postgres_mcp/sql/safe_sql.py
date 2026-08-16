@@ -934,12 +934,20 @@ class SafeSqlDriver(SqlDriver):
                 for item in attr:
                     if isinstance(item, Node):
                         self._validate_node(item)
+                    elif isinstance(item, tuple):
+                        for inner in item:
+                            if isinstance(inner, Node):
+                                self._validate_node(inner)
 
             # Handle tuples of nodes
             elif isinstance(attr, tuple):
                 for item in attr:
                     if isinstance(item, Node):
                         self._validate_node(item)
+                    elif isinstance(item, tuple):
+                        for inner in item:
+                            if isinstance(inner, Node):
+                                self._validate_node(inner)
 
             # Handle single nodes
             elif isinstance(attr, Node):
