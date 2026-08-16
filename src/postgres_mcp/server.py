@@ -215,6 +215,22 @@ async def get_object_details(
                 """,
                 [schema_name, object_name],
             )
+
+            # If no columns found, check if table/view actually exists
+            if not col_rows:
+                exists_rows = await SafeSqlDriver.execute_param_query(
+                    sql_driver,
+                    """
+                    SELECT tablename FROM pg_tables WHERE schemaname = {} AND tablename = {}
+                    UNION
+                    SELECT viewname FROM pg_views WHERE schemaname = {} AND viewname = {}
+                    """,
+                    [schema_name, object_name, schema_name, object_name],
+                )
+
+                if not exists_rows:
+                    return format_error_response(f"{object_type.capitalize()} '{schema_name}.{object_name}' does not exist")
+
             columns = (
                 [
                     {
