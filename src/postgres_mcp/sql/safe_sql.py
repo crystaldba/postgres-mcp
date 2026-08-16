@@ -417,6 +417,10 @@ class SafeSqlDriver(SqlDriver):
         # Validity Checking
         "pg_input_is_valid",
         "pg_input_error_info",
+        # Object Description/Comment Functions
+        "obj_description",
+        "col_description",
+        "shobj_description",
         # Object Definition/Information Functions
         "pg_get_serial_sequence",
         "pg_get_viewdef",
