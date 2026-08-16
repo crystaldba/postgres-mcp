@@ -16,6 +16,10 @@ dependencies = [
 license = "mit"
 license-files = ["LICENSE"]
 
+[project.optional-dependencies]
+# Opt-in Graph Compact Format encoding for row-shaped tool results (--response-format=gcf).
+gcf = ["gcf-python==2.7.1"]
+
 [[project.authors]]
 name = "Johann Schleier-Smith"
 email = "jssmith@crystal.cloud"

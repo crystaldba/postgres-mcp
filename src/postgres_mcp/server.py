@@ -19,6 +19,7 @@ from pydantic import validate_call
 
 from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
 
+from . import gcf_format
 from .artifacts import ErrorResult
 from .artifacts import ExplainPlanArtifact
 from .database_health import DatabaseHealthTool
@@ -53,9 +54,17 @@ class AccessMode(str, Enum):
     RESTRICTED = "restricted"  # Read-only with safety features
 
 
+class ResponseFormat(str, Enum):
+    """Encoding for record-shaped tool results."""
+
+    JSON = "json"  # Text/JSON (default)
+    GCF = "gcf"  # Graph Compact Format for uniform row results (fewer tokens, lossless)
+
+
 # Global variables
 db_connection = DbConnPool()
 current_access_mode = AccessMode.UNRESTRICTED
+current_response_format = ResponseFormat.JSON
 shutdown_in_progress = False
 
 
@@ -72,7 +81,17 @@ async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
 
 
 def format_text_response(text: Any) -> ResponseType:
-    """Format a text response."""
+    """Format a text response.
+
+    When ``--response-format=gcf`` is set and the payload is a list of uniform row
+    objects, the rows are emitted as a Graph Compact Format block instead of text. The
+    encoder is conservative (never-grow and lossless), so a non-row payload, or one where
+    GCF would not be smaller, falls through to the existing text rendering unchanged.
+    """
+    if current_response_format == ResponseFormat.GCF and gcf_format.is_row_list(text):
+        wire = gcf_format.encode_rows(text)
+        if wire is not None:
+            return [types.TextContent(type="text", text=wire)]
     return [types.TextContent(type="text", text=str(text))]
 
 
@@ -573,6 +592,15 @@ async def main():
         help="Select MCP transport: stdio (default), sse, or streamable-http",
     )
     parser.add_argument(
+        "--response-format",
+        type=str,
+        choices=[fmt.value for fmt in ResponseFormat],
+        default=os.environ.get("POSTGRES_MCP_RESPONSE_FORMAT", ResponseFormat.JSON.value),
+        help="Encoding for row-shaped tool results: json (default) or gcf "
+        "(Graph Compact Format, fewer tokens for uniform row results, lossless). "
+        "Requires the optional gcf-python dependency.",
+    )
+    parser.add_argument(
         "--sse-host",
         type=str,
         default="localhost",
@@ -602,6 +630,13 @@ async def main():
     # Store the access mode in the global variable
     global current_access_mode
     current_access_mode = AccessMode(args.access_mode)
+
+    # Store the response format in the global variable
+    global current_response_format
+    current_response_format = ResponseFormat(args.response_format)
+    if current_response_format == ResponseFormat.GCF and not gcf_format.available():
+        logger.warning("Response format 'gcf' needs gcf-python; falling back to json. Install: pip install 'postgres-mcp[gcf]'")
+        current_response_format = ResponseFormat.JSON
 
     # Add the query tool with a description and annotations appropriate to the access mode
     if current_access_mode == AccessMode.UNRESTRICTED:
