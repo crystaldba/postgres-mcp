@@ -7,9 +7,7 @@ import signal
 import sys
 from enum import Enum
 from typing import Any
-from typing import List
 from typing import Literal
-from typing import Union
 
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
@@ -41,7 +39,7 @@ mcp = FastMCP("postgres-mcp")
 PG_STAT_STATEMENTS = "pg_stat_statements"
 HYPOPG_EXTENSION = "hypopg"
 
-ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResource]
+ResponseType = list[types.TextContent | types.ImageContent | types.EmbeddedResource]
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +57,7 @@ current_access_mode = AccessMode.UNRESTRICTED
 shutdown_in_progress = False
 
 
-async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
+async def get_sql_driver() -> SqlDriver | SafeSqlDriver:
     """Get the appropriate SQL driver based on the current access mode."""
     base_driver = SqlDriver(conn=db_connection)
 

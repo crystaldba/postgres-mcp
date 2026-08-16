@@ -5,7 +5,6 @@ import logging
 import re
 from typing import Any
 from typing import ClassVar
-from typing import Optional
 
 import pglast
 from pglast.ast import A_ArrayExpr
@@ -982,7 +981,7 @@ class SafeSqlDriver(SqlDriver):
         query: LiteralString,
         params: list[Any] | None = None,
         force_readonly: bool = True,  # do not use value passed in
-    ) -> Optional[list[SqlDriver.RowResult]]:  # noqa: UP007
+    ) -> list[SqlDriver.RowResult] | None:
         """Execute a query after validating it is safe"""
         self._validate(query)
 

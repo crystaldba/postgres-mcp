@@ -3,8 +3,6 @@
 import logging
 import os
 from typing import Any
-from typing import Dict
-from typing import List
 
 import humanize
 
@@ -169,7 +167,7 @@ class TextPresentation:
             logger.error(f"Error analyzing queries: {e}", exc_info=True)
             return {"error": f"Error analyzing queries: {e}"}
 
-    def _build_recommendations_list(self, session: IndexTuningResult) -> List[Dict[str, Any]]:
+    def _build_recommendations_list(self, session: IndexTuningResult) -> list[dict[str, Any]]:
         recommendations = []
         for index_apply_order, rec in enumerate(session.recommendations):
             rec_dict = {
@@ -200,7 +198,7 @@ class TextPresentation:
             recommendations.append(rec_dict)
         return recommendations
 
-    async def _generate_query_impact(self, session: IndexTuningResult) -> List[Dict[str, Any]]:
+    async def _generate_query_impact(self, session: IndexTuningResult) -> list[dict[str, Any]]:
         """
         Generate the query impact section showing before/after explain plans.
 
