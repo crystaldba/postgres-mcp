@@ -85,11 +85,18 @@ class DbConnPool:
         await self.close()
 
         try:
-            # Configure connection pool with appropriate settings
+            # Configure connection pool with appropriate settings.
+            #
+            # min_size=0: an idle server holds ZERO connections. With min_size>=1
+            # every running (or orphaned) server permanently pins a connection
+            # against the database role, so a handful of leftover processes can
+            # exhaust a low per-role connection limit. max_idle reaps connections
+            # that go unused, so the pool drifts back to zero between queries.
             self.pool = AsyncConnectionPool(
                 conninfo=url,
-                min_size=1,
-                max_size=5,
+                min_size=0,
+                max_size=3,
+                max_idle=60,  # seconds; release idle connections back to the server
                 open=False,  # Don't connect immediately, let's do it explicitly
             )
 
