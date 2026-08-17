@@ -8,7 +8,7 @@ is installed; byte counts are always reported.
 
 Run:  python benchmarks/gcf_benchmark.py
 Fixtures under benchmarks/fixtures/ are real query output captured from a Postgres
-instance (a 200-row table SELECT and an information_schema.columns listing).
+instance (a 40-row table SELECT and an information_schema.columns listing).
 """
 
 import json
@@ -17,7 +17,12 @@ import pathlib
 from postgres_mcp import gcf_format
 
 try:
-    import tiktoken
+    import gcf  # type: ignore
+except ImportError:
+    gcf = None  # type: ignore
+
+try:
+    import tiktoken  # type: ignore
 
     _ENC = tiktoken.get_encoding("o200k_base")
 
@@ -42,9 +47,7 @@ def main() -> None:
         if wire is None:
             print(f"{path.stem:<16}{len(rows):>6}{toks(json_text):>10}{'-':>10}{'declined':>10}{'-':>10}")
             continue
-        import gcf
-
-        lossless = gcf.decode_generic(wire) == safe
+        lossless = gcf is not None and gcf.decode_generic(wire) == safe
         jt, gt = toks(json_text), toks(wire)
         pct = f"{(jt - gt) / jt * 100:.1f}%" if jt > 0 else "n/a"
         print(f"{path.stem:<16}{len(rows):>6}{jt:>10}{gt:>10}{pct:>10}{('yes' if lossless else 'NO'):>10}")
