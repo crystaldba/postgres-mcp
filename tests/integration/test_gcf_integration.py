@@ -69,6 +69,10 @@ async def test_execute_sql_emits_gcf_end_to_end(connected_pool, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_execute_sql_stays_json_by_default(connected_pool):
-    # Default response format: the tool returns text, never GCF.
+    # Default response format: the tool returns the normal text rendering, never GCF.
     result = await execute_sql("SELECT * FROM gcf_demo ORDER BY id")
-    assert not result[0].text.startswith("GCF profile=generic")
+    text = result[0].text
+    assert not text.startswith("GCF profile=generic")
+    # Positive check: it is the usual list-of-rows rendering with the queried data.
+    assert text.startswith("[")
+    assert "'name': 'row 1'" in text
