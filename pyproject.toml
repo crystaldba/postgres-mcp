@@ -16,6 +16,13 @@ dependencies = [
 license = "mit"
 license-files = ["LICENSE"]
 
+[project.optional-dependencies]
+# Opt-in Graph Compact Format encoding for row-shaped tool results (--response-format=gcf).
+# Pinned to the 2.7.x line: GCF ships byte-identical, lockstep-versioned reference codecs
+# across its SDKs, so the minor version is held for wire stability while patch releases
+# (bug fixes) are allowed.
+gcf = ["gcf-python>=2.7.1,<2.8.0"]
+
 [[project.authors]]
 name = "Johann Schleier-Smith"
 email = "jssmith@crystal.cloud"

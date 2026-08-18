@@ -351,6 +351,36 @@ Postgres MCP Pro Tools:
 | `analyze_db_health` | Performs comprehensive health checks including: buffer cache hit rates, connection health, constraint validation, index health (duplicate/unused/invalid), sequence limits, and vacuum health. |
 
 
+## Response Format (optional GCF encoding)
+
+Tools that return rows (`execute_sql`, the schema-listing tools) send a list of uniform
+row objects, where each row repeats the same column names. With `--response-format=gcf`
+(or `POSTGRES_MCP_RESPONSE_FORMAT=gcf`), those results are encoded as a
+[Graph Compact Format](https://gcformat.com) generic-profile block instead: the repeated
+column names are factored into a single header, so the result costs fewer tokens when it
+crosses the LLM boundary.
+
+On real query output this is a **41% reduction on a 40-row table** and **51% on a schema
+listing** (o200k tokenizer). GCF's generic-profile comprehension is 100% on frontier
+models and ties or beats JSON on smaller models, so the model reads the compact form as
+accurately as JSON: see [gcformat.com/guide/benchmarks](https://gcformat.com/guide/benchmarks).
+Run the numbers on the bundled fixtures with `python benchmarks/gcf_benchmark.py`.
+
+The encoding is opt-in and deliberately conservative:
+
+- **Off by default.** Nothing changes unless you set the flag; every other result type is
+  unaffected.
+- **Never-grow, lossless.** A result is encoded as GCF only when it is a list of row
+  objects, the wire is strictly smaller than the equivalent JSON, and it decodes back to
+  the same rows. Otherwise the normal text is sent. Enabling GCF can only shrink a row
+  result, never grow or alter one.
+- **Zero required dependencies.** GCF support needs the optional, zero-dependency
+  `gcf-python` package: `pip install "postgres-mcp[gcf]"`. If it is not installed, the
+  server logs a notice and uses JSON.
+
+Your MCP client reads the GCF text directly; no client-side changes are required.
+
+
 ## Related Projects
 
 **Postgres MCP Servers**
