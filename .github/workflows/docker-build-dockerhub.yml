@@ -60,7 +60,7 @@ jobs:
         id: docker_meta
         uses: docker/metadata-action@v5
         with:
-          images: crystaldba/postgres-mcp
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/postgres-mcp
           tags: |
             type=raw,value=${{ needs.prepare.outputs.version }}
             type=raw,value=latest
@@ -84,5 +84,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
-          cache-from: type=registry,ref=crystaldba/postgres-mcp:buildcache
-          cache-to: type=registry,ref=crystaldba/postgres-mcp:buildcache,mode=max
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/postgres-mcp:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/postgres-mcp:buildcache,mode=max
