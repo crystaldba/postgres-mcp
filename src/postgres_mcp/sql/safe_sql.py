@@ -478,6 +478,7 @@ class SafeSqlDriver(SqlDriver):
         "now",
         "statement_timestamp",
         "timeofday",
+        "timezone",
         "transaction_timestamp",
         # Additional Type Conversion
         "cast",
