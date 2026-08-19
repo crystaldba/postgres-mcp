@@ -13,6 +13,7 @@ from typing import Union
 
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 from pydantic import validate_call
@@ -427,6 +428,40 @@ async def execute_sql(
         return format_error_response(str(e))
 
 
+def configure_access_mode(access_mode: AccessMode) -> None:
+    """Set the access mode and register execute_sql with a matching description and annotations.
+
+    Any earlier execute_sql registration is replaced, so this can be called more than once
+    (the server calls it at startup; tests call it to switch modes).
+    """
+    global current_access_mode
+    current_access_mode = access_mode
+
+    try:
+        mcp.remove_tool("execute_sql")
+    except ToolError:
+        pass  # not registered yet (first call at startup)
+
+    if access_mode == AccessMode.UNRESTRICTED:
+        mcp.add_tool(
+            execute_sql,
+            description="Execute any SQL query",
+            annotations=ToolAnnotations(
+                title="Execute SQL",
+                destructiveHint=True,
+            ),
+        )
+    else:
+        mcp.add_tool(
+            execute_sql,
+            description="Execute a read-only SQL query",
+            annotations=ToolAnnotations(
+                title="Execute SQL (Read-Only)",
+                readOnlyHint=True,
+            ),
+        )
+
+
 @mcp.tool(
     description="Analyze frequently executed queries in the database and recommend optimal indexes",
     annotations=ToolAnnotations(
@@ -599,29 +634,7 @@ async def main():
 
     args = parser.parse_args()
 
-    # Store the access mode in the global variable
-    global current_access_mode
-    current_access_mode = AccessMode(args.access_mode)
-
-    # Add the query tool with a description and annotations appropriate to the access mode
-    if current_access_mode == AccessMode.UNRESTRICTED:
-        mcp.add_tool(
-            execute_sql,
-            description="Execute any SQL query",
-            annotations=ToolAnnotations(
-                title="Execute SQL",
-                destructiveHint=True,
-            ),
-        )
-    else:
-        mcp.add_tool(
-            execute_sql,
-            description="Execute a read-only SQL query",
-            annotations=ToolAnnotations(
-                title="Execute SQL (Read-Only)",
-                readOnlyHint=True,
-            ),
-        )
+    configure_access_mode(AccessMode(args.access_mode))
 
     logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
 
