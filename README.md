@@ -351,6 +351,8 @@ Postgres MCP Pro Tools:
 | `analyze_db_health` | Performs comprehensive health checks including: buffer cache hit rates, connection health, constraint validation, index health (duplicate/unused/invalid), sequence limits, and vacuum health. |
 | `execute_sql_xlsx` | Executes a SQL query and exports the results to an Excel (.xlsx) file. Supports a configurable row limit to prevent excessive output. |
 
+`execute_sql_xlsx` writes exports to the `postgres-mcp-results` directory under the MCP server's operating-system temporary directory. The returned path is server-local, so clients need access to the same filesystem (for example, local stdio or a shared Docker volume). Export files are not automatically deleted.
+
 
 ## Related Projects
 

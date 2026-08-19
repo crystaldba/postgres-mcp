@@ -569,15 +569,10 @@ async def execute_sql_xlsx(
     try:
         sql_driver = await get_sql_driver()
 
-        # Inject LIMIT to protect server from large result sets.
-        # Skip if user already provided a LIMIT clause.
-        import re
-
+        # Always apply an outer LIMIT so inner LIMIT clauses, comments, or string
+        # literals cannot bypass the export cap.
         sql_stripped = sql.strip().rstrip(";")
-        if not re.search(r"\bLIMIT\b", sql_stripped, re.IGNORECASE):
-            capped_sql = f"{sql_stripped} LIMIT {max_rows}"
-        else:
-            capped_sql = sql
+        capped_sql = f"SELECT * FROM (\n{sql_stripped}\n) AS _postgres_mcp_export LIMIT {max_rows}"
 
         rows = await sql_driver.execute_query(capped_sql)  # type: ignore
         if rows is None or len(rows) == 0:
@@ -591,6 +586,8 @@ async def execute_sql_xlsx(
             f"Excel file created: {file_path}",
             f"Rows exported: {len(row_dicts)}",
             f"Columns: {', '.join(columns)}",
+            "Note: The file is stored on the MCP server filesystem, is not automatically "
+            "transferred to remote clients, and is not automatically deleted.",
         ]
         return format_text_response("\n".join(result_parts))
     except Exception as e:

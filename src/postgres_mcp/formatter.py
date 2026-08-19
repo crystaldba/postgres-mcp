@@ -3,8 +3,12 @@
 import json
 import os
 import tempfile
+import uuid
 from datetime import datetime
 from typing import Any
+
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 
 def _serialize_cell(value: Any) -> Any:
@@ -14,7 +18,7 @@ def _serialize_cell(value: Any) -> Any:
     return value
 
 
-def format_to_excel(rows: list[dict], columns: list[str], output_dir: str | None = None) -> str:
+def format_to_excel(rows: list[dict[str, Any]], columns: list[str], output_dir: str | None = None) -> str:
     """Format query result rows to an Excel file.
 
     Args:
@@ -25,10 +29,6 @@ def format_to_excel(rows: list[dict], columns: list[str], output_dir: str | None
     Returns:
         Path to the created Excel file.
     """
-    import uuid
-
-    from openpyxl import Workbook
-
     if output_dir is None:
         output_dir = os.path.join(tempfile.gettempdir(), "postgres-mcp-results")
 
@@ -41,6 +41,8 @@ def format_to_excel(rows: list[dict], columns: list[str], output_dir: str | None
 
     wb = Workbook()
     ws = wb.active
+    if ws is None:
+        raise RuntimeError("Failed to create the Excel worksheet")
     ws.title = "Query Results"
 
     # Write header row
@@ -51,9 +53,8 @@ def format_to_excel(rows: list[dict], columns: list[str], output_dir: str | None
         ws.append([_serialize_cell(row.get(col)) for col in columns])
 
     # Auto-adjust column widths
-    for column in ws.columns:
+    for column_index, column in enumerate(ws.columns, start=1):
         max_length = 0
-        column_letter = column[0].column_letter
         for cell in column:
             try:
                 if cell.value is not None:
@@ -61,7 +62,7 @@ def format_to_excel(rows: list[dict], columns: list[str], output_dir: str | None
             except Exception:
                 pass
         adjusted_width = min(max_length + 2, 50)
-        ws.column_dimensions[column_letter].width = adjusted_width
+        ws.column_dimensions[get_column_letter(column_index)].width = adjusted_width
 
     wb.save(filepath)
     return filepath
