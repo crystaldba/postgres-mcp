@@ -521,6 +521,8 @@ async def test_datetime_functions(safe_driver, mock_sql_driver):
         "SELECT now()",
         "SELECT statement_timestamp()",
         "SELECT timeofday()",
+        "SELECT timezone('UTC', timestamp with time zone '2001-02-16 20:38:40-05')",
+        "SELECT timestamp with time zone '2001-02-16 20:38:40-05' AT TIME ZONE 'America/Denver'",
         "SELECT transaction_timestamp()",
     ]
 
