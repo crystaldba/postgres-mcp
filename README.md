@@ -226,6 +226,11 @@ Postgres MCP Pro supports multiple *access modes* to give you control over the o
 
 Restricted mode is the default. To allow write operations, add `--access-mode=unrestricted` to the configuration examples above explicitly.
 
+> **Breaking change:** The default access mode is now RESTRICTED (read-only).
+> Deployments that relied on the implicit UNRESTRICTED default must pass
+> `--access-mode=unrestricted` explicitly after upgrading. Unrestricted startup
+> prints a warning explaining the prompt-injection risk.
+
 
 #### Other MCP Clients
 
