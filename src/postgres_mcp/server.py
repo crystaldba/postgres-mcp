@@ -1,6 +1,7 @@
 # ruff: noqa: B008
 import argparse
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -9,7 +10,10 @@ from enum import Enum
 from typing import Any
 from typing import List
 from typing import Literal
+from typing import LiteralString
+from typing import Optional
 from typing import Union
+from typing import cast
 
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
@@ -27,6 +31,7 @@ from .explain import ExplainPlanTool
 from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from .index.llm_opt import LLMOptimizerTool
 from .index.presentation import TextPresentation
+from .outbound_lock import run_outbound_lock
 from .sql import DbConnPool
 from .sql import SafeSqlDriver
 from .sql import SqlDriver
@@ -552,6 +557,268 @@ async def get_top_queries(
     except Exception as e:
         logger.error(f"Error getting slow queries: {e}")
         return format_error_response(str(e))
+
+
+@mcp.tool(
+    description=(
+        "Fuzzy search across all communication data — messages (body, subject), "
+        "participants (display_name), channels (name), and transcripts (transcript_text). "
+        "Returns matched rows grouped by table, ranked by trigram similarity. "
+        "Use this when you need to find communications that mention specific terms, "
+        "people, or topics across the entire data store in one call. "
+        "Keywords must be at least 3 characters each."
+    ),
+    annotations=ToolAnnotations(
+        title="Universal Search",
+        readOnlyHint=True,
+    ),
+)
+async def universal_search(
+    keywords: List[str] = Field(description="Search terms to fuzzy match, minimum 3 characters each (e.g. ['invoice', 'Dan'])"),
+    mode: Literal["OR", "AND"] = Field(
+        description="Search mode: 'OR' matches any keyword, 'AND' requires all keywords",
+        default="OR",
+    ),
+    limit: int = Field(
+        description="Maximum results per table",
+        default=20,
+    ),
+) -> ResponseType:
+    """Fuzzy search across messages, participants, channels, and transcripts."""
+    # Validate inputs
+    if not keywords:
+        return format_error_response("At least one keyword is required")
+    for kw in keywords:
+        if len(kw) < 3:
+            return format_error_response(f"Keyword '{kw}' is too short. Keywords must be at least 3 characters for effective fuzzy matching.")
+    if limit < 1 or limit > 200:
+        return format_error_response("limit must be between 1 and 200")
+
+    try:
+        sql_driver = await get_sql_driver()
+
+        # Table configurations
+        tables = [
+            {
+                "name": "Messages",
+                "table": "messages",
+                "search_cols": ["body", "subject"],
+                "select": "id, source, channel_id, sender_participant_id, sent_at, "
+                "left(coalesce(subject, ''), 100) AS subject, "
+                "left(coalesce(body, ''), 200) AS body",
+                "formatter": _format_message_row,
+            },
+            {
+                "name": "Participants",
+                "table": "participants",
+                "search_cols": ["display_name"],
+                "select": "id, source, participant_type, participant_key, display_name",
+                "formatter": _format_participant_row,
+            },
+            {
+                "name": "Channels",
+                "table": "channels",
+                "search_cols": ["name"],
+                "select": "id, source, channel_type, source_channel_id, name",
+                "formatter": _format_channel_row,
+            },
+            {
+                "name": "Transcripts",
+                "table": "transcripts",
+                "search_cols": ["transcript_text"],
+                "select": "id, call_id, message_id, left(transcript_text, 200) AS transcript_text, created_at",
+                "formatter": _format_transcript_row,
+            },
+        ]
+
+        sections = []
+        for cfg in tables:
+            rows = await _search_table(
+                sql_driver,
+                table=cfg["table"],
+                search_cols=cfg["search_cols"],
+                select=cfg["select"],
+                keywords=keywords,
+                mode=mode,
+                limit=limit,
+            )
+            sections.append(_format_section(cfg["name"], rows, cfg["formatter"]))
+
+        return format_text_response("\n\n".join(sections))
+    except Exception as e:
+        logger.error(f"Error in universal_search: {e}")
+        return format_error_response(str(e))
+
+
+async def _search_table(
+    sql_driver: Union[SqlDriver, SafeSqlDriver],
+    table: str,
+    search_cols: List[str],
+    select: str,
+    keywords: List[str],
+    mode: str,
+    limit: int,
+) -> List[Any]:
+    """Build and execute a fuzzy search query for one table.
+
+    NOTE: All non-parameter fragments (table, search_cols, select) are
+    interpolated via f-string and must NEVER contain user input or literal
+    `{` / `}` characters. Only `keywords` values go through the parameterized
+    path via `{}` placeholders.
+    """
+    # Build ILIKE WHERE clause. For OR mode: any col ILIKE any keyword.
+    # For AND mode: every keyword must match at least one col.
+    params: List[Any] = []
+
+    per_keyword_clauses = []
+    for kw in keywords:
+        like_pattern = f"%{kw}%"
+        col_clauses = []
+        for col in search_cols:
+            col_clauses.append(f"{col} ILIKE {{}}")
+            params.append(like_pattern)
+        per_keyword_clauses.append("(" + " OR ".join(col_clauses) + ")")
+
+    if mode == "AND":
+        where_clause = " AND ".join(per_keyword_clauses)
+    else:
+        where_clause = " OR ".join(per_keyword_clauses)
+
+    # Build ORDER BY: GREATEST of similarity scores for each (col, keyword) pair
+    sim_terms = []
+    for col in search_cols:
+        for kw in keywords:
+            sim_terms.append(f"similarity(coalesce({col}, ''), {{}})")
+            params.append(kw)
+    order_by = f"GREATEST({', '.join(sim_terms)})"
+
+    # Append limit as parameter
+    params.append(limit)
+
+    query = f"SELECT {select} FROM {table} WHERE {where_clause} ORDER BY {order_by} DESC LIMIT {{}}"
+
+    rows = await SafeSqlDriver.execute_param_query(
+        sql_driver,
+        cast(LiteralString, query),
+        params,
+    )
+    return list(rows) if rows else []
+
+
+def _format_section(title: str, rows: List[Any], formatter) -> str:
+    """Format a result section for one table."""
+    if not rows:
+        return f"=== {title} (0 matches) ===\nNo matches found."
+
+    lines = [f"=== {title} ({len(rows)} matches) ==="]
+    for row in rows:
+        lines.append(formatter(row.cells))
+    return "\n".join(lines)
+
+
+def _fmt_dt(value: Any) -> str:
+    """Format a datetime-like value as ISO 8601, or pass through strings."""
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def _format_message_row(cells: dict[str, Any]) -> str:
+    return (
+        f"[id={cells.get('id')}] source={cells.get('source')} "
+        f"sent_at={_fmt_dt(cells.get('sent_at'))} "
+        f"channel_id={cells.get('channel_id')} "
+        f"sender_participant_id={cells.get('sender_participant_id')}\n"
+        f"  subject: {cells.get('subject') or ''}\n"
+        f"  body: {cells.get('body') or ''}"
+    )
+
+
+def _format_participant_row(cells: dict[str, Any]) -> str:
+    return (
+        f"[id={cells.get('id')}] source={cells.get('source')} "
+        f"type={cells.get('participant_type')} key={cells.get('participant_key')}\n"
+        f"  display_name: {cells.get('display_name') or ''}"
+    )
+
+
+def _format_channel_row(cells: dict[str, Any]) -> str:
+    return (
+        f"[id={cells.get('id')}] source={cells.get('source')} "
+        f"type={cells.get('channel_type')} source_channel_id={cells.get('source_channel_id')}\n"
+        f"  name: {cells.get('name') or ''}"
+    )
+
+
+def _format_transcript_row(cells: dict[str, Any]) -> str:
+    return (
+        f"[id={cells.get('id')}] call_id={cells.get('call_id')} "
+        f"message_id={cells.get('message_id')} "
+        f"created_at={_fmt_dt(cells.get('created_at'))}\n"
+        f"  transcript_text: {cells.get('transcript_text') or ''}"
+    )
+
+
+@mcp.tool(
+    description=(
+        "Outbound intent lock — the single source of truth for 'did this customer-facing "
+        "send already happen?'. Use BEFORE any outbound send to avoid duplicates. Strict JSON "
+        "in/out; message IDs and proxy emails travel as args (never inline SQL). Ops:\n"
+        "- acquire {identity_key, intent_kind, holder, property_scope?}: take the lock. Returns "
+        "{acquired, lock_id, existing}. If acquired=false, `existing` carries the blocking lock "
+        "with is_duplicate_send_evidence — if that is true the send ALREADY happened, do NOT resend.\n"
+        "- complete {lock_id, holder, request_ref}: after a VERIFIED send; request_ref is the send "
+        "handle (email request id / SMTP Message-ID / SMS id).\n"
+        "- release {lock_id, holder}: abort without sending, freeing the scope.\n"
+        "- check {identity_key, property_scope?, intent_kind?, days?}: recent locks + evidence, for "
+        "dedup audits.\n"
+        "is_duplicate_send_evidence = (completed_at set AND request_ref set), independent of "
+        "released_at — a completed lock is evidence of a send; a plain release is not."
+    ),
+    annotations=ToolAnnotations(
+        title="Outbound Lock",
+        readOnlyHint=False,
+        destructiveHint=False,
+        idempotentHint=False,
+    ),
+)
+@validate_call
+async def outbound_lock(
+    op: Literal["acquire", "complete", "release", "check"] = Field(description="acquire | complete | release | check"),
+    identity_key: Optional[str] = Field(
+        default=None, description="Customer identity (phone digits / email / factbook:uuid). Required for acquire and check."
+    ),
+    property_scope: str = Field(default="", description="Unit/property scope, e.g. '317 S Main St #3'. Optional; normalized server-side."),
+    intent_kind: Optional[str] = Field(
+        default=None, description="What is being sent, e.g. 'showing-confirmation', 'correction'. Required for acquire."
+    ),
+    holder: Optional[str] = Field(default=None, description="This run's id (session/run id). Required for acquire/complete/release."),
+    lock_id: Optional[int] = Field(default=None, description="Lock id from acquire. Required for complete/release."),
+    request_ref: Optional[str] = Field(
+        default=None, description="Verified send handle (email request id / Message-ID / SMS id). Required for complete."
+    ),
+    days: int = Field(default=7, description="check: look-back window in days."),
+) -> ResponseType:
+    """First-class outbound lock (wraps the migration-026 SQL functions)."""
+    try:
+        driver = await get_sql_driver()
+        result = await run_outbound_lock(
+            driver,
+            op=op,
+            identity_key=identity_key,
+            property_scope=property_scope,
+            intent_kind=intent_kind,
+            holder=holder,
+            lock_id=lock_id,
+            request_ref=request_ref,
+            days=days,
+        )
+        return format_text_response(json.dumps(result))
+    except Exception as e:
+        logger.error(f"Error in outbound_lock: {e}")
+        return format_text_response(json.dumps({"op": op, "error": str(e)}))
 
 
 async def main():

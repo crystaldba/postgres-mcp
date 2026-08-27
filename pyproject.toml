@@ -26,6 +26,9 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 postgres-mcp = "postgres_mcp:main"
+comm-outbound-gateway = "postgres_mcp.outbound_gateway.server:main"
+comm-outbound-worker = "postgres_mcp.outbound_gateway.server:worker_main"
+comm-outbound-admin = "postgres_mcp.outbound_gateway.admin:main"
 
 # [tool.pyright]
 # venvPath = "."
