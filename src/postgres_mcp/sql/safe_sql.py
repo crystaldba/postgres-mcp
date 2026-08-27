@@ -875,8 +875,13 @@ class SafeSqlDriver(SqlDriver):
         self.sql_driver = sql_driver
         self.timeout = timeout
 
-    def _validate_node(self, node: Node) -> None:
-        """Recursively validate a node and all its children"""
+    def _validate_node(self, node: Node, unknown_funcs: set[str]) -> None:
+        """Recursively validate a node and all its children.
+
+        Function calls outside ALLOWED_FUNCTIONS are collected into
+        unknown_funcs rather than rejected here; execute_query() then allows
+        them only if pg_proc proves every overload non-volatile.
+        """
         # Check if node type is allowed
         if not isinstance(node, tuple(self.ALLOWED_NODE_TYPES)):
             raise ValueError(f"Node type {type(node)} is not allowed")
@@ -900,17 +905,17 @@ class SafeSqlDriver(SqlDriver):
             match = self.PG_CATALOG_PATTERN.match(func_name)
             unqualified_name = match.group(1) if match else func_name
             if unqualified_name not in self.ALLOWED_FUNCTIONS:
-                raise ValueError(f"Function {func_name} is not allowed")
+                unknown_funcs.add(func_name)
 
         # Reject SELECT statements with locking clauses
         if isinstance(node, SelectStmt) and getattr(node, "lockingClause", None):
             raise ValueError("Locking clause on select is prohibited")
 
-        # Reject EXPLAIN ANALYZE statements
+        # EXPLAIN ANALYZE executes the inner statement, so only allow it over a SELECT
         if isinstance(node, ExplainStmt):
             for option in node.options or []:
-                if isinstance(option, DefElem) and option.defname == "analyze":
-                    raise ValueError("EXPLAIN ANALYZE is not supported")
+                if isinstance(option, DefElem) and option.defname == "analyze" and not isinstance(node.query, SelectStmt):
+                    raise ValueError("EXPLAIN ANALYZE is only supported for SELECT statements")
 
         # Reject CREATE EXTENSION statements
         if isinstance(node, CreateExtensionStmt):
@@ -933,20 +938,25 @@ class SafeSqlDriver(SqlDriver):
             if isinstance(attr, list):
                 for item in attr:
                     if isinstance(item, Node):
-                        self._validate_node(item)
+                        self._validate_node(item, unknown_funcs)
 
             # Handle tuples of nodes
             elif isinstance(attr, tuple):
                 for item in attr:
                     if isinstance(item, Node):
-                        self._validate_node(item)
+                        self._validate_node(item, unknown_funcs)
 
             # Handle single nodes
             elif isinstance(attr, Node):
-                self._validate_node(attr)
+                self._validate_node(attr, unknown_funcs)
 
-    def _validate(self, query: str) -> None:
-        """Validate query is safe to execute"""
+    def _validate(self, query: str) -> set[str]:
+        """Validate query is safe to execute.
+
+        Returns the function names that are not on ALLOWED_FUNCTIONS; the
+        caller must clear them against the catalog before executing.
+        """
+        unknown_funcs: set[str] = set()
         try:
             # Parse the SQL using pglast
             parsed = pglast.parse_sql(query)
@@ -970,12 +980,31 @@ class SafeSqlDriver(SqlDriver):
                             raise ValueError(
                                 "Only SELECT, ANALYZE, VACUUM, EXPLAIN, SHOW and other read-only statements are allowed. Received: " + str(stmt)
                             )
-                    self._validate_node(stmt)
+                    self._validate_node(stmt, unknown_funcs)
             except Exception as e:
                 raise ValueError(f"Error validating query: {query}") from e
 
         except pglast.parser.ParseError as e:
             raise ValueError("Failed to parse SQL statement") from e
+
+        return unknown_funcs
+
+    async def _reject_unproven_functions(self, func_names: set[str]) -> None:
+        """Allow a function outside ALLOWED_FUNCTIONS only when pg_proc proves
+        every overload of its name non-volatile (IMMUTABLE/STABLE cannot write
+        or carry side effects). Volatile names and names absent from pg_proc
+        are rejected — fail closed."""
+        probe_names = sorted({name.rsplit(".", 1)[-1] for name in func_names})
+        name_list = SQL(", ").join(Literal(n) for n in probe_names)
+        probe = SafeSqlDriver.param_sql_to_query(
+            "SELECT proname, bool_and(provolatile <> 'v') AS all_stable FROM pg_proc WHERE proname IN ({}) GROUP BY proname",
+            [name_list],
+        )
+        rows = await self.sql_driver.execute_query(probe, force_readonly=True)  # type: ignore
+        proven = {row.cells["proname"] for row in (rows or []) if row.cells["all_stable"]}
+        rejected = sorted(name for name in func_names if name.rsplit(".", 1)[-1] not in proven)
+        if rejected:
+            raise ValueError(f"Function {', '.join(rejected)} is not allowed")
 
     async def execute_query(
         self,
@@ -984,7 +1013,9 @@ class SafeSqlDriver(SqlDriver):
         force_readonly: bool = True,  # do not use value passed in
     ) -> Optional[list[SqlDriver.RowResult]]:  # noqa: UP007
         """Execute a query after validating it is safe"""
-        self._validate(query)
+        unknown_funcs = self._validate(query)
+        if unknown_funcs:
+            await self._reject_unproven_functions(unknown_funcs)
 
         # NOTE: Always force readonly=True in SafeSqlDriver regardless of what was passed
         if self.timeout:
