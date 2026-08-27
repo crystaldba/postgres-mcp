@@ -163,18 +163,15 @@ class DatabaseTuningAdvisor(IndexTuningBase):
         self.dta_trace(f"Filtered to {len(filtered_candidates)} after removing existing indexes.")
         self.dta_trace(f"Filtered to {len(condition_filtered1)} after removing unused columns.")
         self.dta_trace(f"Filtered to {len(condition_filtered)} after removing long text columns.")
-        # Batch create all hypothetical indexes and store their size estimates
+        # Batch create hypothetical indexes and read sizes in one checkout so
+        # pool reset cannot drop HypoPG state between statements (issue #203).
         if len(condition_filtered) > 0:
             query = "SELECT hypopg_create_index({});" * len(condition_filtered)
-            await SafeSqlDriver.execute_param_query(
+            query += "SELECT index_name, hypopg_relation_size(indexrelid) as index_size FROM hypopg_list_indexes;"
+            result = await SafeSqlDriver.execute_param_query(
                 self.sql_driver,
                 query,
                 [idx.definition for idx in condition_filtered],
-            )
-
-            # Get estimated sizes without resetting indexes yet
-            result = await self.sql_driver.execute_query(
-                "SELECT index_name, hypopg_relation_size(indexrelid) as index_size FROM hypopg_list_indexes;"
             )
             if result is not None:
                 index_map = {r.cells["index_name"]: r.cells["index_size"] for r in result}
