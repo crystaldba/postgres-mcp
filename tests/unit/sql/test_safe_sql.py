@@ -213,11 +213,22 @@ async def test_explain_plan(safe_driver, mock_sql_driver):
 
 
 @pytest.mark.asyncio
-async def test_explain_analyze_blocked(safe_driver):
-    """Test that EXPLAIN ANALYZE is blocked"""
+async def test_explain_analyze_select_allowed(safe_driver, mock_sql_driver):
+    """EXPLAIN ANALYZE over a SELECT executes read-only work and is allowed"""
     query = """
     EXPLAIN ANALYZE
     SELECT id, name FROM users
+    """
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
+
+
+@pytest.mark.asyncio
+async def test_explain_analyze_non_select_blocked(safe_driver):
+    """EXPLAIN ANALYZE over anything but a SELECT is still rejected"""
+    query = """
+    EXPLAIN ANALYZE
+    UPDATE users SET status = 'active'
     """
     with pytest.raises(ValueError, match="Error validating query"):
         await safe_driver.execute_query(query)
@@ -358,8 +369,8 @@ async def test_allowed_functions(safe_driver):
 
 
 @pytest.mark.asyncio
-async def test_disallowed_functions(safe_driver):
-    """Test that disallowed functions are blocked"""
+async def test_disallowed_functions(safe_driver, mock_sql_driver):
+    """Volatile/unknown functions are blocked; only the pg_proc probe runs"""
     queries = [
         "SELECT pg_sleep(1);",
         "SELECT pg_read_file('/etc/passwd');",
@@ -367,8 +378,81 @@ async def test_disallowed_functions(safe_driver):
     ]
 
     for query in queries:
-        with pytest.raises(ValueError, match="Error validating query"):
+        mock_sql_driver.execute_query.reset_mock()
+        with pytest.raises(ValueError, match="is not allowed"):
             await safe_driver.execute_query(query)
+        assert mock_sql_driver.execute_query.await_count == 1
+        probe_sql = mock_sql_driver.execute_query.await_args.args[0]
+        assert "pg_proc" in probe_sql
+
+
+@pytest.mark.asyncio
+async def test_custom_function_proven_nonvolatile_allowed(safe_driver, mock_sql_driver):
+    """A function off the static allowlist runs once pg_proc proves every overload non-volatile"""
+    mock_sql_driver.execute_query.side_effect = [
+        [SqlDriver.RowResult(cells={"proname": "shape_area", "all_stable": True})],
+        [],
+    ]
+    query = "SELECT shape_area(shape) FROM leases"
+    await safe_driver.execute_query(query)
+    assert mock_sql_driver.execute_query.await_count == 2
+    probe_sql = mock_sql_driver.execute_query.await_args_list[0].args[0]
+    assert "pg_proc" in probe_sql and "'shape_area'" in probe_sql
+    assert mock_sql_driver.execute_query.await_args_list[1] == call("/* crystaldba */ " + query, params=None, force_readonly=True)
+
+
+@pytest.mark.asyncio
+async def test_custom_function_volatile_overload_blocked(safe_driver, mock_sql_driver):
+    """A name with any volatile overload is rejected even though it exists"""
+    mock_sql_driver.execute_query.side_effect = [
+        [SqlDriver.RowResult(cells={"proname": "allocate_subnet_vni", "all_stable": False})],
+    ]
+    with pytest.raises(ValueError, match="allocate_subnet_vni is not allowed"):
+        await safe_driver.execute_query("SELECT allocate_subnet_vni(7)")
+    assert mock_sql_driver.execute_query.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_schema_qualified_custom_function(safe_driver, mock_sql_driver):
+    """Qualified names probe by their unqualified name but report the qualified one"""
+    mock_sql_driver.execute_query.side_effect = [[]]
+    with pytest.raises(ValueError, match=r"public\.no_such_func is not allowed"):
+        await safe_driver.execute_query("SELECT public.no_such_func(1)")
+    probe_sql = mock_sql_driver.execute_query.await_args_list[0].args[0]
+    assert "'no_such_func'" in probe_sql and "'public.no_such_func'" not in probe_sql
+
+
+@pytest.mark.asyncio
+async def test_mixed_known_and_unknown_functions_probe_only_unknown(safe_driver, mock_sql_driver):
+    """Allowlisted functions never reach the probe; only unknown names do"""
+    mock_sql_driver.execute_query.side_effect = [
+        [SqlDriver.RowResult(cells={"proname": "shape_area", "all_stable": True})],
+        [],
+    ]
+    await safe_driver.execute_query("SELECT count(*), shape_area(shape) FROM leases")
+    probe_sql = mock_sql_driver.execute_query.await_args_list[0].args[0]
+    assert "'shape_area'" in probe_sql and "'count'" not in probe_sql
+
+
+@pytest.mark.asyncio
+async def test_probe_returning_none_fails_closed(safe_driver, mock_sql_driver):
+    """A probe that yields no rows at all still rejects every unknown name"""
+    mock_sql_driver.execute_query.side_effect = [None]
+    with pytest.raises(ValueError, match="shape_area is not allowed"):
+        await safe_driver.execute_query("SELECT shape_area(shape) FROM leases")
+
+
+@pytest.mark.asyncio
+async def test_partial_proof_rejects_only_unproven(safe_driver, mock_sql_driver):
+    """With one proven and one volatile unknown, the rejection names only the volatile one"""
+    mock_sql_driver.execute_query.side_effect = [
+        [
+            SqlDriver.RowResult(cells={"proname": "shape_area", "all_stable": True}),
+            SqlDriver.RowResult(cells={"proname": "allocate_subnet_vni", "all_stable": False}),
+        ],
+    ]
+    with pytest.raises(ValueError, match=r"^Function allocate_subnet_vni is not allowed$"):
+        await safe_driver.execute_query("SELECT shape_area(shape), allocate_subnet_vni(7) FROM leases")
 
 
 @pytest.mark.asyncio
