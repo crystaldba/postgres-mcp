@@ -596,6 +596,11 @@ async def main():
         default=8000,
         help="Port for streamable HTTP server (default: 8000)",
     )
+    parser.add_argument(
+        "--stateless-http",
+        action="store_true",
+        help="Serve streamable HTTP statelessly: retain no per-session server state, so sessions clients never DELETE cannot leak memory",
+    )
 
     args = parser.parse_args()
 
@@ -666,6 +671,7 @@ async def main():
     elif args.transport == "streamable-http":
         mcp.settings.host = args.streamable_http_host
         mcp.settings.port = args.streamable_http_port
+        mcp.settings.stateless_http = args.stateless_http
         await mcp.run_streamable_http_async()
 
 
