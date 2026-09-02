@@ -683,11 +683,12 @@ async def main():
         origins = os.environ.get("MCP_ALLOWED_ORIGINS", args.allowed_origins)
 
         if protection_off or hosts or origins:
-            mcp.settings.transport_security = TransportSecuritySettings(
-                enable_dns_rebinding_protection=not protection_off,
-                **{"allowed_hosts": [h.strip() for h in hosts.split(",") if h.strip()]} if hosts else {},
-                **{"allowed_origins": [o.strip() for o in origins.split(",") if o.strip()]} if origins else {},
-            )
+            settings_kwargs: dict[str, Any] = {"enable_dns_rebinding_protection": not protection_off}
+            if hosts:
+                settings_kwargs["allowed_hosts"] = [host.strip() for host in hosts.split(",") if host.strip()]
+            if origins:
+                settings_kwargs["allowed_origins"] = [origin.strip() for origin in origins.split(",") if origin.strip()]
+            mcp.settings.transport_security = TransportSecuritySettings(**settings_kwargs)
 
     # Run the server with the selected transport (always async)
     if args.transport == "stdio":

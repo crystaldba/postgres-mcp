@@ -222,3 +222,40 @@ class TestTransportSecurityIntegration:
             assert mcp.settings.transport_security is not None
             assert "localhost:*" in mcp.settings.transport_security.allowed_hosts
             assert "my-gateway:8080" in mcp.settings.transport_security.allowed_hosts
+
+
+class TestStdioTransportSecurity:
+    @pytest.fixture(autouse=True)
+    def _preserve_mcp_state(self, monkeypatch: pytest.MonkeyPatch):
+        from postgres_mcp.server import mcp
+
+        original_argv = sys.argv
+        original_security = mcp.settings.transport_security
+        for key in _MCP_ENV_KEYS:
+            monkeypatch.delenv(key, raising=False)
+        yield
+        sys.argv = original_argv
+        mcp.settings.transport_security = original_security
+
+    @pytest.mark.asyncio
+    async def test_stdio_does_not_change_transport_security(self):
+        from postgres_mcp.server import main
+        from postgres_mcp.server import mcp
+
+        original_security = mcp.settings.transport_security
+        sys.argv = [
+            "postgres_mcp",
+            "postgresql://user:password@localhost/db",
+            "--transport=stdio",
+            "--disable-dns-rebinding-protection",
+            "--allowed-hosts",
+            "example.com:*",
+        ]
+
+        with (
+            patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
+            patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()),
+        ):
+            await main()
+
+        assert mcp.settings.transport_security is original_security

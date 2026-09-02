@@ -237,7 +237,7 @@ You can customize this behavior using CLI flags or environment variables (env va
 
 | CLI Flag | Environment Variable | Description | Default |
 |---|---|---|---|
-| `--disable-dns-rebinding-protection` | `MCP_ENABLE_DNS_REBINDING_PROTECTION` | Enable/disable DNS rebinding protection | Enabled |
+| `--disable-dns-rebinding-protection` | `MCP_ENABLE_DNS_REBINDING_PROTECTION` | Set the environment variable to `false`, `0`, or `no` to disable DNS rebinding protection | Enabled |
 | `--allowed-hosts` | `MCP_ALLOWED_HOSTS` | Comma-separated allowed host patterns | `localhost:*,127.0.0.1:*,0.0.0.0:*,postgres-mcp-server:*,host.docker.internal:*` |
 | `--allowed-origins` | `MCP_ALLOWED_ORIGINS` | Comma-separated allowed origins | Empty (allows any origin) |
 
