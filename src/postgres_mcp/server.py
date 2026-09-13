@@ -59,6 +59,19 @@ current_access_mode = AccessMode.UNRESTRICTED
 shutdown_in_progress = False
 
 
+def get_database_url(database_url_arg: str | None) -> str | None:
+    """Resolve the database URL from env, file-mounted secret, or CLI."""
+    if "DATABASE_URI" in os.environ:
+        return os.environ["DATABASE_URI"]
+
+    database_uri_file_path = os.environ.get("DATABASE_URI_FILE")
+    if database_uri_file_path:
+        with open(database_uri_file_path, encoding="utf-8") as database_uri_file:
+            return database_uri_file.read().strip()
+
+    return database_url_arg
+
+
 async def get_sql_driver() -> Union[SqlDriver, SafeSqlDriver]:
     """Get the appropriate SQL driver based on the current access mode."""
     base_driver = SqlDriver(conn=db_connection)
@@ -625,12 +638,13 @@ async def main():
 
     logger.info(f"Starting PostgreSQL MCP Server in {current_access_mode.upper()} mode")
 
-    # Get database URL from environment variable or command line
-    database_url = os.environ.get("DATABASE_URI", args.database_url)
+    # Get database URL from environment variable, file-mounted secret, or command line
+    database_url = get_database_url(args.database_url)
 
     if not database_url:
         raise ValueError(
-            "Error: No database URL provided. Please specify via 'DATABASE_URI' environment variable or command-line argument.",
+            "Error: No database URL provided. Please specify via 'DATABASE_URI' environment variable, "
+            "'DATABASE_URI_FILE' file path, or command-line argument.",
         )
 
     # Initialize database connection pool

@@ -1,3 +1,4 @@
+import os
 import sys
 from unittest.mock import AsyncMock
 from unittest.mock import patch
@@ -125,5 +126,60 @@ async def test_default_transport_is_stdio():
             mock_stdio.assert_called_once()
             mock_sse.assert_not_called()
             mock_http.assert_not_called()
+    finally:
+        sys.argv = original_argv
+
+
+@pytest.mark.asyncio
+async def test_database_uri_file_is_used_when_database_uri_is_not_set(tmp_path):
+    """Test that DATABASE_URI_FILE is read by the application."""
+    from postgres_mcp.server import main
+
+    database_uri_file = tmp_path / "database-uri"
+    database_uri_file.write_text("postgresql://file_user:password@localhost/file_db\n", encoding="utf-8")
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ["postgres_mcp"]
+
+        with (
+            patch.dict(os.environ, {"DATABASE_URI_FILE": str(database_uri_file)}, clear=True),
+            patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()) as mock_pool_connect,
+            patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()),
+        ):
+            await main()
+
+            mock_pool_connect.assert_called_once_with("postgresql://file_user:password@localhost/file_db")
+    finally:
+        sys.argv = original_argv
+
+
+@pytest.mark.asyncio
+async def test_database_uri_takes_precedence_over_database_uri_file(tmp_path):
+    """Test that DATABASE_URI keeps its existing precedence."""
+    from postgres_mcp.server import main
+
+    database_uri_file = tmp_path / "database-uri"
+    database_uri_file.write_text("postgresql://file_user:password@localhost/file_db\n", encoding="utf-8")
+
+    original_argv = sys.argv
+    try:
+        sys.argv = ["postgres_mcp"]
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "DATABASE_URI": "postgresql://env_user:password@localhost/env_db",
+                    "DATABASE_URI_FILE": str(database_uri_file),
+                },
+                clear=True,
+            ),
+            patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()) as mock_pool_connect,
+            patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()),
+        ):
+            await main()
+
+            mock_pool_connect.assert_called_once_with("postgresql://env_user:password@localhost/env_db")
     finally:
         sys.argv = original_argv
