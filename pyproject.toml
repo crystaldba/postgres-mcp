@@ -16,6 +16,11 @@ dependencies = [
 license = "mit"
 license-files = ["LICENSE"]
 
+[project.optional-dependencies]
+iam = [
+    "boto3>=1.34.0",
+]
+
 [[project.authors]]
 name = "Johann Schleier-Smith"
 email = "jssmith@crystal.cloud"

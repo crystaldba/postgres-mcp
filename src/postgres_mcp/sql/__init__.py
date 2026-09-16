@@ -8,6 +8,8 @@ from .extension_utils import check_hypopg_installation_status
 from .extension_utils import check_postgres_version_requirement
 from .extension_utils import get_postgres_version
 from .extension_utils import reset_postgres_version_cache
+from .iam_auth import apply_iam_password
+from .iam_auth import iam_auth_enabled
 from .index import IndexDefinition
 from .safe_sql import SafeSqlDriver
 from .sql_driver import DbConnPool
@@ -22,10 +24,12 @@ __all__ = [
     "SqlBindParams",
     "SqlDriver",
     "TableAliasVisitor",
+    "apply_iam_password",
     "check_extension",
     "check_hypopg_installation_status",
     "check_postgres_version_requirement",
     "get_postgres_version",
+    "iam_auth_enabled",
     "obfuscate_password",
     "reset_postgres_version_cache",
 ]

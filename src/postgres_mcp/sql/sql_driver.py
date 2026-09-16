@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 from typing import Dict
@@ -13,6 +14,10 @@ from urllib.parse import urlunparse
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from typing_extensions import LiteralString
+
+from .iam_auth import apply_iam_password
+from .iam_auth import iam_auth_enabled
+from .iam_auth import token_ttl_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -67,12 +72,26 @@ class DbConnPool:
         self.pool: AsyncConnectionPool | None = None
         self._is_valid = False
         self._last_error = None
+        self._opened_at: float | None = None
+
+    def _is_expired(self) -> bool:
+        """Whether the pool's IAM auth token is close enough to expiry to rebuild.
+
+        Only IAM pools expire; a static password never goes stale. Checking here
+        rather than on a timer means the token is verified fresh at every
+        acquisition, which is the only moment it matters.
+        """
+        if not iam_auth_enabled() or self._opened_at is None:
+            return False
+        return (time.monotonic() - self._opened_at) >= token_ttl_seconds()
 
     async def pool_connect(self, connection_url: Optional[str] = None) -> AsyncConnectionPool:
         """Initialize connection pool with retry logic."""
-        # If we already have a valid pool, return it
+        # If we already have a valid, unexpired pool, return it
         if self.pool and self._is_valid:
-            return self.pool
+            if not self._is_expired():
+                return self.pool
+            logger.info("RDS IAM auth token is nearing expiry; rebuilding the connection pool with a fresh token")
 
         url = connection_url or self.connection_url
         self.connection_url = url
@@ -85,9 +104,13 @@ class DbConnPool:
         await self.close()
 
         try:
+            # Mint the token per pool, never persisting it on self: connection_url
+            # stays the caller's credential-free URL so each rebuild re-derives one.
+            conninfo = await apply_iam_password(url) if iam_auth_enabled() else url
+
             # Configure connection pool with appropriate settings
             self.pool = AsyncConnectionPool(
-                conninfo=url,
+                conninfo=conninfo,
                 min_size=1,
                 max_size=5,
                 open=False,  # Don't connect immediately, let's do it explicitly
@@ -103,6 +126,7 @@ class DbConnPool:
 
             self._is_valid = True
             self._last_error = None
+            self._opened_at = time.monotonic()
             return self.pool
         except Exception as e:
             self._is_valid = False
@@ -124,6 +148,7 @@ class DbConnPool:
             finally:
                 self.pool = None
                 self._is_valid = False
+                self._opened_at = None
 
     @property
     def is_valid(self) -> bool:

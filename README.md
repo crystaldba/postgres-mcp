@@ -554,6 +554,28 @@ There must be a better approach than either of these.
 Both have security weaknesses—few MCP clients store the MCP server configuration securely (an exception is Goose), and credentials provided via MCP tools are passed through the LLM and stored in the chat history.
 Both also have usability issues in some scenarios.
 
+#### AWS RDS IAM authentication
+
+Set `PG_IAM_AUTH=true` to authenticate with a short-lived token minted from your AWS
+credentials via `rds:generate-db-auth-token`, instead of a password in `DATABASE_URI`.
+The URI then carries no secret at all—only the host, port, IAM-mapped role, and database:
+
+```
+DATABASE_URI=postgresql://tmp_readonly@mydb.abc123.us-east-1.rds.amazonaws.com:5432/mydb?sslmode=require
+```
+
+Requires the `iam` extra (`uv sync --extra iam`), IAM authentication enabled on the
+instance, and an `rds-db:connect` grant for that role. Tokens last 15 minutes, so the
+pool is rebuilt with a fresh one after 14; already-open connections are unaffected,
+since RDS only checks the token at connect time.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `PG_IAM_AUTH` | `false` | Enable IAM token auth. |
+| `PG_IAM_REGION` | derived from the RDS hostname | Region to sign the token for. |
+| `PG_IAM_PROFILE` | ambient AWS credentials | Named AWS profile to mint the token with. |
+| `PG_IAM_TOKEN_TTL_SECONDS` | `840` | Pool lifetime before a token refresh. |
+
 
 ### Schema Information
 
