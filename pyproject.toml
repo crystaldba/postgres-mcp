@@ -12,6 +12,7 @@ dependencies = [
     "attrs>=25.4.0",
     "psycopg-pool>=3.3.0",
     "instructor>=1.14.4",
+    "openpyxl>=3.1.2",
 ]
 license = "mit"
 license-files = ["LICENSE"]
