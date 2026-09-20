@@ -345,7 +345,7 @@ Postgres MCP Pro Tools:
 | `get_object_details` | Provides information about a specific database object, for example, a table's columns, constraints, and indexes. |
 | `execute_sql` | Executes SQL statements on the database, with read-only limitations when connected in restricted mode. |
 | `explain_query` | Gets the execution plan for a SQL query describing how PostgreSQL will process it and exposing the query planner's cost model. Can be invoked with hypothetical indexes to simulate the behavior after adding indexes. |
-| `get_top_queries` | Reports the slowest SQL queries based on total execution time using `pg_stat_statements` data. |
+| `get_top_queries` | Reports the most resource-intensive SQL queries (default), or the slowest queries by total or mean execution time, using `pg_stat_statements` data. |
 | `analyze_workload_indexes` | Analyzes the database workload to identify resource-intensive queries, then recommends optimal indexes for them. |
 | `analyze_query_indexes` | Analyzes a list of specific SQL queries (up to 10) and recommends optimal indexes for them. |
 | `analyze_db_health` | Performs comprehensive health checks including: buffer cache hit rates, connection health, constraint validation, index health (duplicate/unused/invalid), sequence limits, and vacuum health. |
