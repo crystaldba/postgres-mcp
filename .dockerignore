@@ -1,0 +1,27 @@
+# The Dockerfile does `ADD . /app`, so anything sitting in the build tree is
+# baked into the deployed image. The image built 2026-08-11 carried 22 stale
+# .pyc files from a developer worktree's __pycache__ that the main checkout
+# never had. They were harmless -- the matching sources were identical -- but
+# bytecode from whichever tree a human happened to build in has no business
+# in a release artifact, and it makes two images built from the same commit
+# compare as different.
+__pycache__/
+*.py[cod]
+
+# Never needed at runtime; keeps build context small and image provenance
+# tied to the commit rather than to local checkout state.
+.git/
+.gitignore
+.worktrees/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+*.egg-info/
+
+# NOTE: .venv is deliberately NOT ignored here. The host checkout has one, so
+# it is currently copied in and then reconciled by `uv sync --frozen --no-dev`.
+# Excluding it is the upstream uv convention and would be faster and cleaner,
+# but it changes what the builder actually resolves, so it wants its own
+# verified change rather than riding along with a bytecode fix.

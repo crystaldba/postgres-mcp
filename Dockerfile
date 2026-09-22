@@ -61,5 +61,5 @@ EXPOSE 8000
 # Users can pass a database URI or individual connection arguments:
 #   docker run -it --rm postgres-mcp postgres://user:pass@host:port/dbname
 #   docker run -it --rm postgres-mcp -h myhost -p 5432 -U myuser -d mydb
-ENTRYPOINT ["/app/docker-entrypoint.sh", "postgres-mcp"]
-CMD []
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["postgres-mcp"]
