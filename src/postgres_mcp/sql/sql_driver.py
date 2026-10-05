@@ -1,5 +1,6 @@
 """SQL driver adapter for PostgreSQL connections."""
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -10,11 +11,24 @@ from typing import Optional
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
+import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
+from psycopg_pool import PoolClosed
+from psycopg_pool import PoolTimeout
 from typing_extensions import LiteralString
 
 logger = logging.getLogger(__name__)
+
+
+def is_connection_error(error: BaseException) -> bool:
+    """Whether ``error`` means the pool's connections are unusable.
+
+    A failed statement - bad SQL, a constraint violation, a cancelled query -
+    leaves the pool healthy, so only these justify rebuilding it."""
+    if isinstance(error, psycopg.errors.QueryCanceled):  # an OperationalError, but the connection is fine
+        return False
+    return isinstance(error, (psycopg.OperationalError, psycopg.InterfaceError, PoolTimeout, PoolClosed, OSError))
 
 
 def obfuscate_password(text: str | None) -> str | None:
@@ -60,58 +74,70 @@ def obfuscate_password(text: str | None) -> str | None:
 
 
 class DbConnPool:
-    """Database connection manager using psycopg's connection pool."""
+    """Database connection manager using psycopg's connection pool.
+
+    One instance is shared by every session of the server, so rebuilding the
+    pool is serialized: callers that find it invalid at the same time used to
+    each close the pool another had just opened ("Connection attempt failed:
+    the pool 'pool-N' is closed")."""
 
     def __init__(self, connection_url: Optional[str] = None):
         self.connection_url = connection_url
         self.pool: AsyncConnectionPool | None = None
         self._is_valid = False
         self._last_error = None
+        self._rebuild_lock = asyncio.Lock()
 
     async def pool_connect(self, connection_url: Optional[str] = None) -> AsyncConnectionPool:
-        """Initialize connection pool with retry logic."""
+        """Return the pool, (re)building it when there is no valid one."""
         # If we already have a valid pool, return it
         if self.pool and self._is_valid:
             return self.pool
 
-        url = connection_url or self.connection_url
-        self.connection_url = url
-        if not url:
-            self._is_valid = False
-            self._last_error = "Database connection URL not provided"
-            raise ValueError(self._last_error)
+        async with self._rebuild_lock:
+            # Another caller may have rebuilt the pool while this one waited.
+            if self.pool and self._is_valid:
+                return self.pool
 
-        # Close any existing pool before creating a new one
-        await self.close()
+            url = connection_url or self.connection_url
+            self.connection_url = url
+            if not url:
+                self._is_valid = False
+                self._last_error = "Database connection URL not provided"
+                raise ValueError(self._last_error)
 
-        try:
-            # Configure connection pool with appropriate settings
-            self.pool = AsyncConnectionPool(
-                conninfo=url,
-                min_size=1,
-                max_size=5,
-                open=False,  # Don't connect immediately, let's do it explicitly
-            )
-
-            # Open the pool explicitly
-            await self.pool.open()
-
-            # Test the connection pool by executing a simple query
-            async with self.pool.connection() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("SELECT 1")
-
-            self._is_valid = True
-            self._last_error = None
-            return self.pool
-        except Exception as e:
-            self._is_valid = False
-            self._last_error = str(e)
-
-            # Clean up failed pool
+            # Close any existing pool before creating a new one
             await self.close()
 
-            raise ValueError(f"Connection attempt failed: {obfuscate_password(str(e))}") from e
+            try:
+                # Configure connection pool with appropriate settings
+                pool: AsyncConnectionPool = AsyncConnectionPool(
+                    conninfo=url,
+                    min_size=1,
+                    max_size=5,
+                    open=False,  # Don't connect immediately, let's do it explicitly
+                )
+                self.pool = pool
+
+                # Open the pool explicitly
+                await pool.open()
+
+                # Test the connection pool by executing a simple query
+                async with pool.connection() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute("SELECT 1")
+
+                self._is_valid = True
+                self._last_error = None
+                return pool
+            except Exception as e:
+                self._is_valid = False
+                self._last_error = str(e)
+
+                # Clean up failed pool
+                await self.close()
+
+                raise ValueError(f"Connection attempt failed: {obfuscate_password(str(e))}") from e
 
     async def close(self) -> None:
         """Close the connection pool."""
@@ -206,16 +232,28 @@ class SqlDriver:
             if self.is_pool:
                 # For pools, get a connection from the pool
                 pool = await self.conn.pool_connect()
-                async with pool.connection() as connection:
-                    return await self._execute_with_connection(connection, query, params, force_readonly=force_readonly)
+                try:
+                    async with pool.connection() as connection:
+                        return await self._execute_with_connection(connection, query, params, force_readonly=force_readonly)
+                except PoolClosed:
+                    # Another caller replaced the pool between handing it out
+                    # and now; the statement never ran, so run it on the
+                    # current pool.
+                    pool = await self.conn.pool_connect()
+                    async with pool.connection() as connection:
+                        return await self._execute_with_connection(connection, query, params, force_readonly=force_readonly)
             else:
                 # Direct connection approach
                 return await self._execute_with_connection(self.conn, query, params, force_readonly=force_readonly)
         except Exception as e:
-            # Mark pool as invalid if there was a connection issue
+            # Mark the pool invalid only for a connection failure: a failed
+            # statement (bad SQL, a constraint) leaves it healthy, and since
+            # the pool is shared by every session, rebuilding it closes other
+            # callers' connections mid-query.
             if self.conn and self.is_pool:
-                self.conn._is_valid = False  # type: ignore
-                self.conn._last_error = str(e)  # type: ignore
+                if is_connection_error(e):
+                    self.conn._is_valid = False  # type: ignore
+                    self.conn._last_error = str(e)  # type: ignore
             elif self.conn and not self.is_pool:
                 self.conn = None
 
