@@ -4,9 +4,6 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any
-from typing import Dict
-from typing import List
-from typing import Optional
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
@@ -62,13 +59,13 @@ def obfuscate_password(text: str | None) -> str | None:
 class DbConnPool:
     """Database connection manager using psycopg's connection pool."""
 
-    def __init__(self, connection_url: Optional[str] = None):
+    def __init__(self, connection_url: str | None = None):
         self.connection_url = connection_url
         self.pool: AsyncConnectionPool | None = None
         self._is_valid = False
         self._last_error = None
 
-    async def pool_connect(self, connection_url: Optional[str] = None) -> AsyncConnectionPool:
+    async def pool_connect(self, connection_url: str | None = None) -> AsyncConnectionPool:
         """Initialize connection pool with retry logic."""
         # If we already have a valid pool, return it
         if self.pool and self._is_valid:
@@ -131,7 +128,7 @@ class DbConnPool:
         return self._is_valid
 
     @property
-    def last_error(self) -> Optional[str]:
+    def last_error(self) -> str | None:
         """Get the last error message."""
         return self._last_error
 
@@ -143,7 +140,7 @@ class SqlDriver:
     class RowResult:
         """Simple class to match the Griptape RowResult interface."""
 
-        cells: Dict[str, Any]
+        cells: dict[str, Any]
 
     def __init__(
         self,
@@ -184,7 +181,7 @@ class SqlDriver:
         query: LiteralString,
         params: list[Any] | None = None,
         force_readonly: bool = False,
-    ) -> Optional[List[RowResult]]:
+    ) -> list[RowResult] | None:
         """
         Execute a query and return results.
 
@@ -221,7 +218,7 @@ class SqlDriver:
 
             raise e
 
-    async def _execute_with_connection(self, connection, query, params, force_readonly) -> Optional[List[RowResult]]:
+    async def _execute_with_connection(self, connection, query, params, force_readonly) -> list[RowResult] | None:
         """Execute query with the given connection."""
         transaction_started = False
         try:

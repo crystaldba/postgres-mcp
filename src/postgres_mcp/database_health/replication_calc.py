@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 from ..sql import SqlDriver
 
@@ -14,7 +13,7 @@ class ReplicationSlot:
 @dataclass
 class ReplicationMetrics:
     is_replica: bool
-    replication_lag_seconds: Optional[float]
+    replication_lag_seconds: float | None
     is_replicating: bool
     replication_slots: list[ReplicationSlot]
 
@@ -22,7 +21,7 @@ class ReplicationMetrics:
 class ReplicationCalc:
     def __init__(self, sql_driver: SqlDriver):
         self.sql_driver = sql_driver
-        self._server_version: Optional[int] = None
+        self._server_version: int | None = None
         self._feature_support: dict[str, bool] = {}
 
     async def replication_health_check(self) -> str:
@@ -85,7 +84,7 @@ class ReplicationCalc:
         result_list = [dict(x.cells) for x in result] if result is not None else []
         return bool(result_list[0]["pg_is_in_recovery"]) if result_list else False
 
-    async def _get_replication_lag(self) -> Optional[float]:
+    async def _get_replication_lag(self) -> float | None:
         """Get replication lag in seconds."""
         if not self._feature_supported("replication_lag"):
             return None

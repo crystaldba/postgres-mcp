@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import List
 
 import mcp.types as types
 
@@ -14,7 +13,7 @@ from .replication_calc import ReplicationCalc
 from .sequence_health_calc import SequenceHealthCalc
 from .vacuum_health_calc import VacuumHealthCalc
 
-ResponseType = List[types.TextContent | types.ImageContent | types.EmbeddedResource]
+ResponseType = list[types.TextContent | types.ImageContent | types.EmbeddedResource]
 
 logger = logging.getLogger(__name__)
 

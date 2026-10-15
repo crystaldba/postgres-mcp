@@ -65,11 +65,7 @@ lint.select = [
     "RUF"  # ruff-specific rules
 ]
 
-# TODO: Remove these ignores when fixing #129 (code modernization)
 lint.ignore = [
-    "UP006",  # Use `list` instead of `List` for type annotations
-    "UP035",  # Import from `collections.abc` instead of `typing`
-    "UP045",  # Use `X | None` instead of `Optional[X]`
     "RUF059", # Unused unpacked variable
     "RUF100", # Unused noqa directive
 ]
