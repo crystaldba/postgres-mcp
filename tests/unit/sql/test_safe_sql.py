@@ -334,6 +334,110 @@ async def test_drop_extension_blocked(safe_driver):
 
 
 @pytest.mark.asyncio
+async def test_truncate_blocked(safe_driver):
+    """Test that TRUNCATE statements are blocked"""
+    query = """
+    TRUNCATE users;
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_writable_cte_blocked(safe_driver):
+    """Test that CTEs containing DELETE are blocked"""
+    query = """
+    WITH deleted AS (
+        DELETE FROM users WHERE status = 'inactive' RETURNING *
+    )
+    SELECT * FROM deleted;
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_explain_analyze_delete_blocked(safe_driver):
+    """Test that EXPLAIN ANALYZE DELETE is blocked"""
+    query = """
+    EXPLAIN ANALYZE
+    DELETE FROM users WHERE status = 'inactive'
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_copy_from_program_blocked(safe_driver):
+    """Test that COPY FROM PROGRAM statements are blocked"""
+    query = """
+    COPY users FROM PROGRAM 'cat /etc/passwd';
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_do_block_blocked(safe_driver):
+    """Test that DO blocks are blocked"""
+    query = """
+    DO $$ BEGIN DELETE FROM users; END $$;
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_call_procedure_blocked(safe_driver):
+    """Test that CALL statements are blocked"""
+    query = """
+    CALL cleanup_users();
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_set_role_blocked(safe_driver):
+    """Test that SET ROLE statements are blocked"""
+    query = """
+    SET ROLE postgres;
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_grant_blocked(safe_driver):
+    """Test that GRANT statements are blocked"""
+    query = """
+    GRANT ALL ON users TO public;
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_vacuum_blocked(safe_driver):
+    """Test that VACUUM statements are blocked"""
+    query = """
+    VACUUM users;
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_lock_table_blocked(safe_driver):
+    """Test that LOCK TABLE statements are blocked"""
+    query = """
+    LOCK TABLE users IN ACCESS EXCLUSIVE MODE;
+    """
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
 async def test_complex_index_metadata_select(safe_driver, mock_sql_driver):
     """Test that complex SELECT queries for index metadata are allowed"""
     query = """SELECT indexrelid::regclass AS index_name, array_agg(attname) AS columns,
@@ -364,6 +468,7 @@ async def test_disallowed_functions(safe_driver):
         "SELECT pg_sleep(1);",
         "SELECT pg_read_file('/etc/passwd');",
         "SELECT lo_import('/etc/passwd');",
+        "SELECT set_config('search_path', 'public', false);",
     ]
 
     for query in queries:
