@@ -13,6 +13,7 @@ from typing import Union
 
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 from pydantic import validate_call
@@ -424,7 +425,9 @@ async def execute_sql(
         return format_text_response(list([r.cells for r in rows]))
     except Exception as e:
         logger.error(f"Error executing query: {e}")
-        return format_error_response(str(e))
+        # Raise so the MCP result carries isError=True and clients can tell a
+        # failed or refused query from a successful one without parsing text.
+        raise ToolError(str(e)) from e
 
 
 @mcp.tool(
