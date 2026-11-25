@@ -46,6 +46,11 @@ def _query_text(query: object) -> str:
     return repr(query)
 
 
+def _text(value: object) -> str:
+    """Normalize driver values: some server/driver combinations return bytes for text results."""
+    return value.decode() if isinstance(value, bytes) else str(value)
+
+
 def _mock_connection(*, hypopg_schema: str | None = "public") -> tuple[MagicMock, list[object]]:
     conn = MagicMock()
     conn.autocommit = False
@@ -213,8 +218,8 @@ async def test_session_guc_does_not_leak_across_checkouts():
             """,
         )
         assert before["pid"] == changed["pid"] == after["pid"]
-        assert changed["enable_hashjoin"] == "off"
-        assert after["enable_hashjoin"] == before["enable_hashjoin"]
+        assert _text(changed["enable_hashjoin"]) == "off"
+        assert _text(after["enable_hashjoin"]) == _text(before["enable_hashjoin"])
     finally:
         await pool.close()
 
@@ -242,20 +247,23 @@ async def test_hypopg_state_does_not_leak_across_checkouts():
     pool.pool = raw_pool
     pool._is_valid = True  # type: ignore[attr-defined]
     driver = SqlDriver(conn=pool)
+    hypopg_installed = False
     try:
         installed = await first_row(
             driver,
             "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'hypopg') AS installed",
         )
-        if not installed["installed"]:
+        if _text(installed["installed"]).lower() not in ("true", "t", "1"):
             pytest.skip("HypoPG is not installed")
+        hypopg_installed = True
 
         await driver.execute_query("SELECT hypopg_reset(); SELECT hypopg_create_index('CREATE INDEX ON pg_class (relname)')")
         after = await first_row(driver, "SELECT count(*) AS count FROM hypopg_list_indexes()")
         assert int(after["count"]) == 0
     finally:
         try:
-            await driver.execute_query("SELECT hypopg_reset()")
+            if hypopg_installed:
+                await driver.execute_query("SELECT hypopg_reset()")
         finally:
             await pool.close()
 
