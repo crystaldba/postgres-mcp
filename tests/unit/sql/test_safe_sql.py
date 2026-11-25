@@ -758,3 +758,25 @@ async def test_query_with_whitespace(safe_driver, mock_sql_driver):
     """
     await safe_driver.execute_query(query)
     mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
+
+
+@pytest.mark.asyncio
+async def test_from_clause_dangerous_function_blocked(safe_driver):
+    """Test that dangerous functions in FROM clause are blocked (CVE: RangeFunction bypass)"""
+    queries = [
+        "SELECT * FROM pg_read_file('/etc/passwd') AS t",
+        "SELECT * FROM pg_ls_dir('/etc') AS t",
+        "SELECT * FROM pg_read_binary_file('/etc/passwd') AS t",
+        "SELECT * FROM pg_stat_file('/etc/passwd') AS t",
+    ]
+    for query in queries:
+        with pytest.raises(ValueError, match="Error validating query"):
+            await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+async def test_from_clause_allowed_function_permitted(safe_driver, mock_sql_driver):
+    """Test that allowed functions in FROM clause still work after RangeFunction fix"""
+    query = "SELECT * FROM unnest(ARRAY[1,2,3]) AS t"
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
