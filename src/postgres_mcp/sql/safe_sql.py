@@ -151,6 +151,8 @@ class SafeSqlDriver(SqlDriver):
         "factorial",
         "floor",
         "gcd",
+        "generate_series",
+        "generate_subscripts",
         "lcm",
         "ln",
         "log",
@@ -929,29 +931,21 @@ class SafeSqlDriver(SqlDriver):
                 # Skip attributes that don't exist (this is normal in pglast)
                 continue
 
-            # Handle lists of nodes
-            if isinstance(attr, list):
-                for item in attr:
-                    if isinstance(item, Node):
-                        self._validate_node(item)
-                    elif isinstance(item, tuple):
-                        for inner in item:
-                            if isinstance(inner, Node):
-                                self._validate_node(inner)
+            self._validate_children(attr)
 
-            # Handle tuples of nodes
-            elif isinstance(attr, tuple):
-                for item in attr:
-                    if isinstance(item, Node):
-                        self._validate_node(item)
-                    elif isinstance(item, tuple):
-                        for inner in item:
-                            if isinstance(inner, Node):
-                                self._validate_node(inner)
+    def _validate_children(self, value: object) -> None:
+        """Validate a node attribute, descending through lists and tuples at any depth.
 
-            # Handle single nodes
-            elif isinstance(attr, Node):
-                self._validate_node(attr)
+        pglast represents some C ``List*`` of ``List*`` values as nested tuples
+        (e.g. ``RangeFunction.functions`` and ``SelectStmt.valuesLists``), so
+        recursing one level is not enough: a node hidden at any depth must
+        still go through the allowlist checks.
+        """
+        if isinstance(value, Node):
+            self._validate_node(value)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                self._validate_children(item)
 
     def _validate(self, query: str) -> None:
         """Validate query is safe to execute"""
