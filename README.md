@@ -36,7 +36,7 @@ Features include:
 - **🧠 Schema Intelligence** - context-aware SQL generation based on detailed understanding of the database schema.
 - **🛡️ Safe SQL Execution** - configurable access control, including support for read-only mode and safe SQL parsing, making it usable for both development and production.
 
-Postgres MCP Pro supports both the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio) and [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) transports, for flexibility in different environments.
+Postgres MCP Pro supports both the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio) and [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) transports, as well as the streamable HTTP transport (`--transport=streamable-http`), for flexibility in different environments.
 
 For additional background on why we built Postgres MCP Pro, see [our launch blog post](https://www.crystaldba.ai/blog/post/announcing-postgres-mcp-server-pro).
 
@@ -244,10 +244,13 @@ To use the SSE transport, you need to start the server with the `--transport=sse
 For example, with Docker run:
 
 ```bash
-docker run -p 8000:8000 \
+docker run -p 127.0.0.1:8000:8000 \
   -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
   crystaldba/postgres-mcp --access-mode=unrestricted --transport=sse
 ```
+
+Publishing the port as `127.0.0.1:8000:8000` makes it reachable only from the machine running Docker.
+A plain `-p 8000:8000` publishes the port on all host interfaces; see the security considerations below before doing that.
 
 Then update your MCP client configuration to call the the MCP server.
 For example, in Cursor's `mcp.json` or Cline's `cline_mcp_settings.json` you can put:
@@ -275,6 +278,16 @@ For Windsurf, the format in `mcp_config.json` is slightly different:
     }
 }
 ```
+
+### Security considerations for the network transports
+
+The `sse` and `streamable-http` transports have **no authentication**.
+Anyone who can reach the port can use the server with the database privileges of the configured credentials.
+In `--access-mode=unrestricted`, that means anyone who can reach the port can run arbitrary SQL against your database.
+
+- **Keep the port on localhost.** Do not publish it beyond localhost (for example, use `-p 127.0.0.1:8000:8000` with Docker rather than `-p 8000:8000`), and do not run it on an untrusted network, unless it sits behind an authenticating reverse proxy, a VPN, or an equivalent control.
+- **Use restricted access mode and a least-privilege role.** Prefer `--access-mode=restricted` and connect with a database role that has only the privileges you need.
+- **DNS rebinding protection.** For the default loopback setup, the MCP Python SDK's DNS rebinding protection is on, and the server only accepts requests whose `Host` header is `localhost`, `127.0.0.1` or `[::1]` (with any port). Other `Host` values receive HTTP 421. This guards against malicious web pages reaching a local server through the browser; it is not a substitute for authentication.
 
 ## Postgres Extension Installation (Optional)
 
