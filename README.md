@@ -36,7 +36,8 @@ Features include:
 - **🧠 Schema Intelligence** - context-aware SQL generation based on detailed understanding of the database schema.
 - **🛡️ Safe SQL Execution** - configurable access control, including support for read-only mode and safe SQL parsing, making it usable for both development and production.
 
-Postgres MCP Pro supports both the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio) and [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) transports, for flexibility in different environments.
+Postgres MCP Pro supports the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio), [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) and [Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports#streamable-http) transports, for flexibility in different environments.
+The SSE and Streamable HTTP transports have no authentication; see [SSE and Streamable HTTP Transports](#sse-and-streamable-http-transports) before exposing them on a network.
 
 For additional background on why we built Postgres MCP Pro, see [our launch blog post](https://www.crystaldba.ai/blog/post/announcing-postgres-mcp-server-pro).
 
@@ -236,20 +237,35 @@ Many MCP clients have similar configuration files to Claude Desktop, and you can
 - If you are using Goose run `goose configure`, then select `Add Extension`.
 - If you are using Qodo Gen, open the Chat panel, click `Connect more tools`, click `+ Add new MCP`, then add the new configuration.
 
-## SSE Transport
+## SSE and Streamable HTTP Transports
 
-Postgres MCP Pro supports the [SSE transport](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse), which allows multiple MCP clients to share one server, possibly a remote server.
-To use the SSE transport, you need to start the server with the `--transport=sse` option.
+Besides stdio, Postgres MCP Pro can serve MCP over HTTP, which allows multiple MCP clients to share one server, possibly a remote server:
+
+| Transport | Option | Endpoint | Bind address and port options |
+|---|---|---|---|
+| [SSE](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) | `--transport=sse` | `/sse` | `--sse-host`, `--sse-port` |
+| [Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports#streamable-http) | `--transport=streamable-http` | `/mcp` | `--streamable-http-host`, `--streamable-http-port` |
+
+Both listen on `localhost:8000` by default.
+
+> [!WARNING]
+> These transports have **no authentication**. Anyone who can connect to the port can call every tool.
+> In the default unrestricted access mode that includes running arbitrary SQL, including writes and DDL.
+> Read [Security](#security) before making the port reachable from other machines.
 
 For example, with Docker run:
 
 ```bash
-docker run -p 8000:8000 \
+docker run -p 127.0.0.1:8000:8000 \
   -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
   crystaldba/postgres-mcp --access-mode=unrestricted --transport=sse
 ```
 
-Then update your MCP client configuration to call the the MCP server.
+The image's entrypoint adds `--sse-host=0.0.0.0` for the SSE transport, so the server listens on all interfaces inside the container and can be reached through the published port.
+`-p 127.0.0.1:8000:8000` tells Docker to publish the port on the host's loopback interface only; a plain `-p 8000:8000` publishes it on every interface of the host.
+The entrypoint does not do this for Streamable HTTP: in Docker, pass `--streamable-http-host=0.0.0.0` yourself.
+
+Then update your MCP client configuration to call the MCP server.
 For example, in Cursor's `mcp.json` or Cline's `cline_mcp_settings.json` you can put:
 
 ```json
@@ -275,6 +291,23 @@ For Windsurf, the format in `mcp_config.json` is slightly different:
     }
 }
 ```
+
+For Streamable HTTP, point your client at `http://localhost:8000/mcp` using its Streamable HTTP (sometimes called "HTTP") server type.
+
+### Security
+
+The SSE and Streamable HTTP transports do not authenticate clients.
+Any process that can open a TCP connection to the port can use the server with the database role from your connection URI: in unrestricted mode it can run arbitrary SQL, and in restricted mode it can still read any data that role can read.
+
+- **Keep the port on loopback.** Outside Docker, keep the default `localhost` bind address.
+  With Docker, publish with `-p 127.0.0.1:8000:8000`.
+  This limits only the host-side publish: the server still listens on `0.0.0.0` inside the container, so other containers on the same Docker network can connect to it directly.
+- **For access from other machines**, put the server behind a reverse proxy that authenticates clients, or reach it over a VPN or SSH tunnel. Do not publish it directly on a public or shared network.
+- **Use restricted mode** (`--access-mode=restricted`) unless the agent needs to write, so that a client can only run read-only SQL.
+- **Use a least-privilege database role** in the connection URI, so the server can only reach the data it needs.
+
+When the SSE or Streamable HTTP transport listens on an address other than loopback (`localhost`, `127.0.0.0/8` or `::1`), the server logs a startup warning that the port has no authentication.
+Inside Docker this warning appears even when the port is published on `127.0.0.1` only, because the server listens on `0.0.0.0` in the container and cannot see how Docker publishes the port.
 
 ## Postgres Extension Installation (Optional)
 

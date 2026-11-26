@@ -27,6 +27,7 @@ from .explain import ExplainPlanTool
 from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from .index.llm_opt import LLMOptimizerTool
 from .index.presentation import TextPresentation
+from .network_exposure import exposure_warning
 from .sql import DbConnPool
 from .sql import SafeSqlDriver
 from .sql import SqlDriver
@@ -662,11 +663,25 @@ async def main():
     elif args.transport == "sse":
         mcp.settings.host = args.sse_host
         mcp.settings.port = args.sse_port
+        warn_if_exposed(args.transport)
         await mcp.run_sse_async()
     elif args.transport == "streamable-http":
         mcp.settings.host = args.streamable_http_host
         mcp.settings.port = args.streamable_http_port
+        warn_if_exposed(args.transport)
         await mcp.run_streamable_http_async()
+
+
+def warn_if_exposed(transport: str) -> None:
+    """Log a warning if the network transport is about to listen on a non-loopback address."""
+    warning = exposure_warning(
+        transport,
+        mcp.settings.host,
+        mcp.settings.port,
+        restricted=current_access_mode == AccessMode.RESTRICTED,
+    )
+    if warning:
+        logger.warning(warning)
 
 
 async def shutdown(sig=None):
