@@ -262,3 +262,67 @@ async def test_main_mutually_exclusive_exits_2(restore_security):
     with pytest.raises(SystemExit) as exc:
         await run_main("--transport=sse", "--allowed-hosts=x.example.com", "--disable-dns-rebinding-protection")
     assert exc.value.code == 2
+
+
+# --- warning when an unauthenticated transport is network-exposed ---
+
+
+@pytest.mark.parametrize(
+    "host,expected",
+    [
+        ("127.0.0.1", True),
+        ("127.0.0.2", True),
+        ("localhost", True),
+        ("LOCALHOST", True),
+        ("::1", True),
+        ("[::1]", True),
+        ("0.0.0.0", False),
+        ("::", False),
+        ("192.168.1.5", False),
+        ("10.0.0.5", False),
+        ("myhost.example.com", False),
+        ("", False),
+    ],
+)
+def test_is_loopback_host(host, expected):
+    from postgres_mcp.transport_security import is_loopback_host
+
+    assert is_loopback_host(host) is expected
+
+
+@pytest.mark.parametrize("flag", ["--sse-host", "--streamable-http-host"])
+@pytest.mark.asyncio
+async def test_main_warns_when_bound_beyond_loopback(restore_security, caplog, flag):
+    transport = "sse" if flag == "--sse-host" else "streamable-http"
+    with caplog.at_level(logging.WARNING):
+        await run_main(f"--transport={transport}", f"{flag}=0.0.0.0", "--access-mode=unrestricted")
+    messages = [r.message for r in caplog.records if "has no authentication" in r.message]
+    assert len(messages) == 1
+    assert "0.0.0.0" in messages[0]
+    assert "arbitrary SQL" in messages[0]
+    assert "127.0.0.1:8000:8000" in messages[0]
+
+
+@pytest.mark.asyncio
+async def test_main_warning_describes_restricted_mode(restore_security, caplog):
+    with caplog.at_level(logging.WARNING):
+        await run_main("--transport=sse", "--sse-host=0.0.0.0", "--access-mode=restricted")
+    messages = [r.message for r in caplog.records if "has no authentication" in r.message]
+    assert len(messages) == 1
+    assert "read-only SQL" in messages[0]
+    assert "arbitrary SQL" not in messages[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transport", ["sse", "streamable-http"])
+async def test_main_no_warning_on_loopback_default(restore_security, caplog, transport):
+    with caplog.at_level(logging.WARNING):
+        await run_main(f"--transport={transport}")
+    assert not any("has no authentication" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_main_no_warning_for_stdio(restore_security, caplog):
+    with caplog.at_level(logging.WARNING):
+        await run_main("--transport=stdio")
+    assert not any("has no authentication" in r.message for r in caplog.records)

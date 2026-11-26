@@ -34,6 +34,7 @@ from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
 from .top_queries import TopQueriesCalc
 from .transport_security import build_transport_security
+from .transport_security import warn_if_network_exposed
 
 # Initialize FastMCP with default settings
 mcp = FastMCP("postgres-mcp")
@@ -696,10 +697,12 @@ async def main():
     elif args.transport == "sse":
         mcp.settings.host = args.sse_host
         mcp.settings.port = args.sse_port
+        warn_if_network_exposed("sse", args.sse_host, args.sse_port, args.access_mode)
         await mcp.run_sse_async()
     elif args.transport == "streamable-http":
         mcp.settings.host = args.streamable_http_host
         mcp.settings.port = args.streamable_http_port
+        warn_if_network_exposed("streamable-http", args.streamable_http_host, args.streamable_http_port, args.access_mode)
         await mcp.run_streamable_http_async()
 
 
