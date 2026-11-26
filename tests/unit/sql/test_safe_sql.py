@@ -780,3 +780,75 @@ async def test_from_clause_allowed_function_permitted(safe_driver, mock_sql_driv
     query = "SELECT * FROM unnest(ARRAY[1,2,3]) AS t"
     await safe_driver.execute_query(query)
     mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
+
+
+def _validation_cause(exc_info) -> str:
+    """The underlying reason a query was rejected (the wrapper message is generic)."""
+    return str(exc_info.value.__cause__ or exc_info.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        # VALUES lists are tuples of tuples in the AST
+        "VALUES (pg_read_file('/etc/passwd'))",
+        "SELECT * FROM (VALUES (pg_read_file('/etc/passwd'))) AS v(a)",
+        "SELECT 1 WHERE 'x' IN (VALUES (pg_ls_dir('/')))",
+        # FROM-clause function shapes
+        "SELECT * FROM LATERAL pg_read_file('/etc/passwd') AS t",
+        "SELECT * FROM unnest(ARRAY[1]) AS u, LATERAL pg_ls_dir('/') AS t",
+        "SELECT * FROM ROWS FROM (unnest(ARRAY[1]), pg_read_file('/etc/passwd')) AS t",
+        "SELECT * FROM pg_read_file('/etc/passwd') WITH ORDINALITY AS t",
+        "SELECT * FROM (SELECT * FROM pg_ls_dir('/') AS t) AS s",
+        "WITH c AS (SELECT * FROM pg_read_file('/etc/passwd') AS t) SELECT * FROM c",
+    ],
+)
+async def test_nested_dangerous_function_is_named_and_blocked(safe_driver, query):
+    """A disallowed function is rejected wherever the AST nests it, and the error names it"""
+    with pytest.raises(ValueError, match="Error validating query") as exc_info:
+        await safe_driver.execute_query(query)
+    assert "is not allowed" in _validation_cause(exc_info)
+    assert "pg_read_file" in _validation_cause(exc_info) or "pg_ls_dir" in _validation_cause(exc_info)
+
+
+@pytest.mark.asyncio
+async def test_rows_from_column_definition_list_is_validated(safe_driver):
+    """Column definition lists inside ROWS FROM sit three levels deep and must be validated too.
+
+    ColumnDef is not an allowed node type, so this is rejected just like the
+    ordinary `AS t(a int)` alias form.
+    """
+    ordinary = "SELECT * FROM json_to_record('{\"a\":1}') AS t(a int)"
+    nested = "SELECT * FROM ROWS FROM (json_to_record('{\"a\":1}') AS (a int)) AS t"
+    for query in (ordinary, nested):
+        with pytest.raises(ValueError, match="Error validating query") as exc_info:
+            await safe_driver.execute_query(query)
+        assert "ColumnDef" in _validation_cause(exc_info)
+
+
+@pytest.mark.asyncio
+async def test_rows_from_column_definition_list_blocks_hidden_function(safe_driver):
+    """A function hidden in a ROWS FROM column definition list is no longer skipped"""
+    query = "SELECT * FROM ROWS FROM (json_to_record('{\"a\":1}') AS (a numeric(pg_sleep(0)::int))) AS t"
+    with pytest.raises(ValueError, match="Error validating query"):
+        await safe_driver.execute_query(query)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT * FROM generate_series(1, 10)",
+        "SELECT * FROM generate_subscripts(ARRAY[1, 2, 3], 1)",
+        "SELECT * FROM unnest(ARRAY[1, 2, 3]) WITH ORDINALITY AS t(v, n)",
+        "SELECT * FROM unnest(ARRAY[1, 2, 3]) AS u, LATERAL unnest(ARRAY[4, 5]) AS t",
+        "VALUES (1, 'a'), (2, 'b')",
+        "SELECT * FROM (VALUES (1), (2)) AS v(a)",
+        "SELECT 1 WHERE 1 IN (VALUES (1), (2))",
+    ],
+)
+async def test_nested_allowed_constructs_still_permitted(safe_driver, mock_sql_driver, query):
+    """Legitimate set-returning functions and VALUES lists keep working"""
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
