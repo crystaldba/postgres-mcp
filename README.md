@@ -217,6 +217,17 @@ The Postgres MCP Pro Docker image will automatically remap the hostname `localho
 
 Replace `postgresql://...` with your [Postgres database connection URI](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS).
 
+You can also provide the URI through a mounted file by setting `DATABASE_URI_FILE`.
+If both `DATABASE_URI` and `DATABASE_URI_FILE` are set, `DATABASE_URI` takes precedence.
+
+For example, with Docker:
+
+```bash
+docker run -i --rm \
+  -v /path/to/database-uri:/run/secrets/database-uri:ro \
+  -e DATABASE_URI_FILE=/run/secrets/database-uri \
+  crystaldba/postgres-mcp --access-mode=unrestricted
+```
 
 ##### Access Mode
 
