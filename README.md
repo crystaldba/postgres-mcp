@@ -227,6 +227,48 @@ Postgres MCP Pro supports multiple *access modes* to give you control over the o
 To use restricted mode, replace `--access-mode=unrestricted` with `--access-mode=restricted` in the configuration examples above.
 
 
+##### Transport Security Configuration
+
+Postgres MCP Pro includes DNS rebinding protection to secure the server against certain types of attacks.
+By default, the server allows connections from common local and Docker hostnames.
+Transport security applies only to network transports (`sse` and `streamable-http`), not `stdio`.
+
+You can customize this behavior using CLI flags or environment variables (env vars take precedence over CLI flags):
+
+| CLI Flag | Environment Variable | Description | Default |
+|---|---|---|---|
+| `--disable-dns-rebinding-protection` | `MCP_ENABLE_DNS_REBINDING_PROTECTION` | Set the environment variable to `false`, `0`, or `no` to disable DNS rebinding protection | Enabled |
+| `--allowed-hosts` | `MCP_ALLOWED_HOSTS` | Comma-separated allowed host patterns | `localhost:*,127.0.0.1:*,0.0.0.0:*,postgres-mcp-server:*,host.docker.internal:*` |
+| `--allowed-origins` | `MCP_ALLOWED_ORIGINS` | Comma-separated allowed origins | Empty (allows any origin) |
+
+For example, to restrict allowed hosts in your configuration:
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "DATABASE_URI",
+        "-e",
+        "MCP_ALLOWED_HOSTS",
+        "crystaldba/postgres-mcp",
+        "--access-mode=unrestricted"
+      ],
+      "env": {
+        "DATABASE_URI": "postgresql://username:password@localhost:5432/dbname",
+        "MCP_ALLOWED_HOSTS": "localhost:*,myapp.example.com:*"
+      }
+    }
+  }
+}
+```
+
+
 #### Other MCP Clients
 
 Many MCP clients have similar configuration files to Claude Desktop, and you can adapt the examples above to work with the client of your choice.

@@ -13,6 +13,7 @@ from typing import Union
 
 import mcp.types as types
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import Field
 from pydantic import validate_call
@@ -596,6 +597,24 @@ async def main():
         default=8000,
         help="Port for streamable HTTP server (default: 8000)",
     )
+    parser.add_argument(
+        "--disable-dns-rebinding-protection",
+        action="store_true",
+        default=False,
+        help="Disable DNS rebinding protection (not recommended for production)",
+    )
+    parser.add_argument(
+        "--allowed-hosts",
+        type=str,
+        default=None,
+        help="Comma-separated allowed Host header values for DNS rebinding protection (e.g. 'localhost:*,127.0.0.1:*')",
+    )
+    parser.add_argument(
+        "--allowed-origins",
+        type=str,
+        default=None,
+        help="Comma-separated allowed Origin header values for DNS rebinding protection (e.g. 'http://localhost:*')",
+    )
 
     args = parser.parse_args()
 
@@ -655,6 +674,21 @@ async def main():
         # Windows doesn't support signals properly
         logger.warning("Signal handling not supported on Windows")
         pass
+
+    # Apply transport security settings (SSE and streamable-http only)
+    if args.transport in ("sse", "streamable-http"):
+        dns_env = os.environ.get("MCP_ENABLE_DNS_REBINDING_PROTECTION")
+        protection_off = dns_env.lower() in ("false", "0", "no") if dns_env else args.disable_dns_rebinding_protection
+        hosts = os.environ.get("MCP_ALLOWED_HOSTS", args.allowed_hosts)
+        origins = os.environ.get("MCP_ALLOWED_ORIGINS", args.allowed_origins)
+
+        if protection_off or hosts or origins:
+            settings_kwargs: dict[str, Any] = {"enable_dns_rebinding_protection": not protection_off}
+            if hosts:
+                settings_kwargs["allowed_hosts"] = [host.strip() for host in hosts.split(",") if host.strip()]
+            if origins:
+                settings_kwargs["allowed_origins"] = [origin.strip() for origin in origins.split(",") if origin.strip()]
+            mcp.settings.transport_security = TransportSecuritySettings(**settings_kwargs)
 
     # Run the server with the selected transport (always async)
     if args.transport == "stdio":
