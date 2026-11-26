@@ -33,6 +33,7 @@ from .sql import SqlDriver
 from .sql import check_hypopg_installation_status
 from .sql import obfuscate_password
 from .top_queries import TopQueriesCalc
+from .transport_security import build_transport_security
 
 # Initialize FastMCP with default settings
 mcp = FastMCP("postgres-mcp")
@@ -596,8 +597,41 @@ async def main():
         default=8000,
         help="Port for streamable HTTP server (default: 8000)",
     )
+    parser.add_argument(
+        "--allowed-hosts",
+        type=str,
+        default=None,
+        help=(
+            "sse/streamable-http only: comma-separated Host header values to accept in addition to the "
+            "localhost defaults (127.0.0.1, localhost, [::1]), e.g. host.docker.internal,myapp.example.com. "
+            "A name without a port matches with or without a port."
+        ),
+    )
+    parser.add_argument(
+        "--disable-dns-rebinding-protection",
+        action="store_true",
+        help=(
+            "sse/streamable-http only: accept any Host/Origin header. The HTTP transports have no authentication; "
+            "use only behind a trusted authenticating proxy. Cannot be combined with --allowed-hosts."
+        ),
+    )
 
     args = parser.parse_args()
+
+    if args.allowed_hosts is not None or args.disable_dns_rebinding_protection:
+        if args.transport == "stdio":
+            logger.warning("--allowed-hosts and --disable-dns-rebinding-protection only apply to the sse and streamable-http transports; ignoring")
+        else:
+            try:
+                security = build_transport_security(
+                    mcp.settings.transport_security,
+                    args.allowed_hosts,
+                    args.disable_dns_rebinding_protection,
+                )
+            except ValueError as e:
+                parser.error(str(e))
+            if security is not None:
+                mcp.settings.transport_security = security
 
     # Store the access mode in the global variable
     global current_access_mode
