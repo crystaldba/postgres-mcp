@@ -287,10 +287,36 @@ In `--access-mode=unrestricted`, that means anyone who can reach the port can ru
 
 - **Keep the port on localhost.** Do not publish it beyond localhost (for example, use `-p 127.0.0.1:8000:8000` with Docker rather than `-p 8000:8000`), and do not run it on an untrusted network, unless it sits behind an authenticating reverse proxy, a VPN, or an equivalent control.
 - **Use restricted access mode and a least-privilege role.** Prefer `--access-mode=restricted` and connect with a database role that has only the privileges you need.
-- **DNS rebinding protection.** For the default loopback setup, the MCP Python SDK's DNS rebinding protection is on, and the server only accepts requests whose `Host` header is `localhost`, `127.0.0.1` or `[::1]` (with any port). Other `Host` values receive HTTP 421. This guards against malicious web pages reaching a local server through the browser; it is not a substitute for authentication.
+- **DNS rebinding protection.** For the default loopback setup, the MCP Python SDK's DNS rebinding protection is on, and the server only accepts requests whose `Host` header is `localhost`, `127.0.0.1` or `[::1]` (with any port). Other `Host` values receive HTTP 421 (see [Accepting other Host headers](#accepting-other-host-headers) below to allow more). This guards against malicious web pages reaching a local server through the browser; it is not a substitute for authentication.
 
 When either network transport is started on a non-loopback address (for example `--sse-host=0.0.0.0`, which the Docker image uses for SSE), the server logs a warning that the port has no authentication.
 This is only a reminder: inside a container the server cannot see how the port is published, so check your `docker run -p` or Compose `ports` setting.
+
+#### Accepting other Host headers
+
+As described above, the server answers HTTP 421 to any `Host` header other than the localhost defaults.
+If clients reach the server under another name (for example from another container, or through a reverse proxy), allow that name explicitly.
+Two command-line options (there are no environment variable equivalents) apply to the `sse` and `streamable-http` transports and are ignored, with a warning, for `stdio`:
+
+- `--allowed-hosts=HOST[,HOST...]` adds Host header values to the accepted list. They are **added** to the localhost defaults (`127.0.0.1`, `localhost`, `[::1]`), which stay accepted.
+  - A name without a port (`myapp.example.com`) matches with or without a port in the client's Host header; `name:8000` matches only that port and `name:*` matches any port.
+  - Each entry must be a host name or IP address, optionally followed by a port; IPv6 addresses go in brackets (`[fe80::1]:8000`). Entries are lowercased. Schemes (`http://`), paths and other wildcards such as `*` or `*.example.com` are rejected and the server exits with an error.
+  - Allowed Origin values are not changed (still only `http://localhost:*`, `http://127.0.0.1:*` and `http://[::1]:*`), so a browser-based client served from another host that sends an `Origin` header is still rejected with HTTP 403. Requests without an `Origin` header, as sent by typical non-browser MCP clients, are unaffected.
+- `--disable-dns-rebinding-protection` turns the Host/Origin checks off entirely, and the server logs a warning at startup. This is an explicit opt-out intended only for use behind a trusted authenticating proxy. It cannot be combined with `--allowed-hosts`.
+
+Allowing a host name only changes which `Host` headers are accepted. The `sse` and `streamable-http` transports have no authentication, and this does not change that or which interfaces the server listens on.
+
+For example, with Docker (note the loopback-only port publishing):
+
+```bash
+docker run -p 127.0.0.1:8000:8000 \
+  -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
+  crystaldba/postgres-mcp --access-mode=restricted --transport=sse \
+  --allowed-hosts=host.docker.internal,postgres-mcp-server
+```
+
+Here requests whose Host header is `host.docker.internal` or `postgres-mcp-server` (with or without a port) are accepted in addition to the localhost defaults.
+Whether a given client can actually reach the published port under that name depends on your Docker networking; if you publish the port beyond loopback, apply the precautions above.
 
 ## Postgres Extension Installation (Optional)
 
