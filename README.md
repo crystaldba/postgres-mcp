@@ -308,6 +308,54 @@ Any process that can open a TCP connection to the port can use the server with t
 
 When the SSE or Streamable HTTP transport listens on an address other than loopback (`localhost`, `127.0.0.0/8` or `::1`), the server logs a startup warning that the port has no authentication.
 Inside Docker this warning appears even when the port is published on `127.0.0.1` only, because the server listens on `0.0.0.0` in the container and cannot see how Docker publishes the port.
+It also appears when `--allowed-hosts` is given, since allowing Host headers does not limit who can connect.
+
+### Allowed Host headers (HTTP 421)
+
+The server checks the `Host` header of every SSE and Streamable HTTP request, whatever address it is bound to, including `0.0.0.0` in Docker.
+A request whose `Host` header is not on the allowed list gets HTTP 421 with the body `Invalid Host header`, which some MCP clients and gateways report only as a generic connection failure such as "server not reachable".
+(The MCP SDK calls this DNS rebinding protection; it stops a web page in your browser from reaching a local server.)
+
+By default the list holds `localhost`, `127.0.0.1` and `[::1]`, each with a port: `Host: localhost:8000` is accepted, but `Host: localhost` without a port is not.
+A client that connects to `http://localhost:8000/sse` therefore works, while one that uses any other name gets 421: for example a Docker Compose service name, `host.docker.internal`, or a public domain that a reverse proxy forwards as the `Host` header.
+
+To accept other names, add them with `--allowed-hosts`, as a comma-separated list (the option may be repeated):
+
+| Entry | Accepts |
+|---|---|
+| `NAME` | `NAME` with or without a port, e.g. `mcp.example.com` and `mcp.example.com:443` |
+| `NAME:PORT` | `NAME` with exactly that port only |
+| `NAME:*` | `NAME` with any port, but not without one |
+
+- `NAME` is a host name, an IPv4 address, or an IPv6 address in brackets such as `[fe80::1]`. Addresses are matched as written, so write an IPv6 address the way clients send it (normally the compressed form, `[fe80::1]` rather than `[fe80:0:0:0:0:0:0:1]`).
+- Entries are added to the localhost defaults; they never replace them.
+- Entries are lowercased. The comparison with the `Host` header is case-sensitive; clients normally send it in lowercase.
+- The server exits with a usage error (status 2) naming the entry if an entry is empty, contains a wildcard other than the `:*` port (`*`, `*.example.com`), is a URL or path (`http://mcp.example.com`, `mcp.example.com/mcp`), is an IPv6 address without brackets, has a port outside 1-65535, or is not a valid name (for example it contains spaces, `..`, or a leading or trailing dot).
+- At startup the server logs the full list, e.g. `Accepting Host headers: 127.0.0.1:*, localhost:*, [::1]:*, mcp.example.com, mcp.example.com:*`.
+- `--allowed-hosts` only applies to the SSE and Streamable HTTP transports; with stdio it is ignored with a warning.
+- There is no environment variable for this setting and no option to turn the check off.
+- Allowed `Origin` headers do not change: a request that carries an `Origin` header must come from `http://localhost:<port>`, `http://127.0.0.1:<port>` or `http://[::1]:<port>`, or it gets HTTP 403. Non-browser MCP clients normally send no `Origin` header.
+
+For example, in Docker Compose, where another container connects to the server as `http://postgres-mcp-server:8000/sse`:
+
+```yaml
+services:
+  postgres-mcp-server:
+    image: crystaldba/postgres-mcp
+    environment:
+      DATABASE_URI: postgresql://username:password@db:5432/dbname
+    command: ["--access-mode=restricted", "--transport=sse", "--allowed-hosts=postgres-mcp-server"]
+```
+
+The image's entrypoint adds `--sse-host=0.0.0.0`, so the server listens on the container's network interface.
+No `ports:` entry is needed for this: containers on the same Compose network connect to the container's port directly, and every one of them can use the server without authentication.
+
+Behind a reverse proxy that serves `https://mcp.example.com` and forwards the public name as the `Host` header, start the server with `--allowed-hosts=mcp.example.com`, which accepts both `Host: mcp.example.com` and `Host: mcp.example.com:443`.
+If you cannot list the names clients use, configure the proxy to send a `Host` header the server already accepts instead, e.g. `proxy_set_header Host localhost:8000;` in nginx.
+
+Allowing a name only changes which `Host` headers the server accepts.
+It does not authenticate clients and does not change who can connect: any client can send any `Host` header, including an allowed one.
+See [Security](#security).
 
 ## Postgres Extension Installation (Optional)
 
