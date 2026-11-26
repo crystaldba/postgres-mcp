@@ -27,6 +27,7 @@ from .explain import ExplainPlanTool
 from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from .index.llm_opt import LLMOptimizerTool
 from .index.presentation import TextPresentation
+from .network_exposure import warn_if_network_exposed
 from .sql import DbConnPool
 from .sql import SafeSqlDriver
 from .sql import SqlDriver
@@ -662,10 +663,12 @@ async def main():
     elif args.transport == "sse":
         mcp.settings.host = args.sse_host
         mcp.settings.port = args.sse_port
+        warn_if_network_exposed("sse", args.sse_host, args.sse_port, args.access_mode)
         await mcp.run_sse_async()
     elif args.transport == "streamable-http":
         mcp.settings.host = args.streamable_http_host
         mcp.settings.port = args.streamable_http_port
+        warn_if_network_exposed("streamable-http", args.streamable_http_host, args.streamable_http_port, args.access_mode)
         await mcp.run_streamable_http_async()
 
 

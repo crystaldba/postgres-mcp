@@ -289,6 +289,9 @@ In `--access-mode=unrestricted`, that means anyone who can reach the port can ru
 - **Use restricted access mode and a least-privilege role.** Prefer `--access-mode=restricted` and connect with a database role that has only the privileges you need.
 - **DNS rebinding protection.** For the default loopback setup, the MCP Python SDK's DNS rebinding protection is on, and the server only accepts requests whose `Host` header is `localhost`, `127.0.0.1` or `[::1]` (with any port). Other `Host` values receive HTTP 421. This guards against malicious web pages reaching a local server through the browser; it is not a substitute for authentication.
 
+When either network transport is started on a non-loopback address (for example `--sse-host=0.0.0.0`, which the Docker image uses for SSE), the server logs a warning that the port has no authentication.
+This is only a reminder: inside a container the server cannot see how the port is published, so check your `docker run -p` or Compose `ports` setting.
+
 ## Postgres Extension Installation (Optional)
 
 To enable index tuning and comprehensive performance analysis you need to load the `pg_stat_statements` and `hypopg` extensions on your database.
