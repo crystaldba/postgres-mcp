@@ -44,27 +44,13 @@ def parse_allowed_hosts(value: str) -> list[str]:
 
 def build_transport_security(
     current: TransportSecuritySettings | None,
-    allowed_hosts: str | None,
-    disable_protection: bool,
-) -> TransportSecuritySettings | None:
-    """Compute the transport security settings for the requested CLI options.
+    allowed_hosts: str,
+) -> TransportSecuritySettings:
+    """Compute the transport security settings for ``--allowed-hosts``.
 
-    Returns ``current`` unchanged when no option is given. Allowed hosts are added
-    to the existing (localhost) defaults, never substituted for them.
+    Allowed hosts are added to the existing (localhost) defaults, never substituted
+    for them, and the allowed origins are left unchanged. Protection stays enabled.
     """
-    if disable_protection and allowed_hosts is not None:
-        raise ValueError("--allowed-hosts and --disable-dns-rebinding-protection are mutually exclusive")
-
-    if disable_protection:
-        logger.warning(
-            "DNS rebinding protection is DISABLED: the server accepts requests with any Host or Origin header. "
-            "The HTTP transports have no authentication; only do this behind a trusted authenticating proxy."
-        )
-        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
-
-    if allowed_hosts is None:
-        return current
-
     extra = parse_allowed_hosts(allowed_hosts)
     if current is not None and current.enable_dns_rebinding_protection:
         base_hosts = list(current.allowed_hosts)

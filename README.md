@@ -296,13 +296,15 @@ This is only a reminder: inside a container the server cannot see how the port i
 
 As described above, the server answers HTTP 421 to any `Host` header other than the localhost defaults.
 If clients reach the server under another name (for example from another container, or through a reverse proxy), allow that name explicitly.
-Two command-line options (there are no environment variable equivalents) apply to the `sse` and `streamable-http` transports and are ignored, with a warning, for `stdio`:
+Use `--allowed-hosts=HOST[,HOST...]` for that. It applies to the `sse` and `streamable-http` transports and is ignored, with a warning, for `stdio`; there is no environment variable equivalent.
+The values are **added** to the localhost defaults (`127.0.0.1`, `localhost`, `[::1]`), which stay accepted.
 
-- `--allowed-hosts=HOST[,HOST...]` adds Host header values to the accepted list. They are **added** to the localhost defaults (`127.0.0.1`, `localhost`, `[::1]`), which stay accepted.
-  - A name without a port (`myapp.example.com`) matches with or without a port in the client's Host header; `name:8000` matches only that port and `name:*` matches any port.
-  - Each entry must be a host name or IP address, optionally followed by a port; IPv6 addresses go in brackets (`[fe80::1]:8000`). Entries are lowercased. Schemes (`http://`), paths and other wildcards such as `*` or `*.example.com` are rejected and the server exits with an error.
-  - Allowed Origin values are not changed (still only `http://localhost:*`, `http://127.0.0.1:*` and `http://[::1]:*`), so a browser-based client served from another host that sends an `Origin` header is still rejected with HTTP 403. Requests without an `Origin` header, as sent by typical non-browser MCP clients, are unaffected.
-- `--disable-dns-rebinding-protection` turns the Host/Origin checks off entirely, and the server logs a warning at startup. This is an explicit opt-out intended only for use behind a trusted authenticating proxy. It cannot be combined with `--allowed-hosts`.
+- A name without a port (`myapp.example.com`) matches with or without a port in the client's Host header; `name:8000` matches only that port and `name:*` matches any port.
+- Each entry must be a host name or IP address, optionally followed by a port; IPv6 addresses go in brackets (`[fe80::1]:8000`). Entries are lowercased. Schemes (`http://`), paths and other wildcards such as `*` or `*.example.com` are rejected and the server exits with an error.
+- Allowed Origin values are not changed (still only `http://localhost:*`, `http://127.0.0.1:*` and `http://[::1]:*`), so a browser-based client served from another host that sends an `Origin` header is still rejected with HTTP 403. Requests without an `Origin` header, as sent by typical non-browser MCP clients, are unaffected.
+
+There is no option to turn the Host check off.
+If clients reach the server under names you cannot list in advance, have the reverse proxy in front of it forward a `Host` header that is accepted (for example `localhost:8000`).
 
 Allowing a host name only changes which `Host` headers are accepted. The `sse` and `streamable-http` transports have no authentication, and this does not change that or which interfaces the server listens on.
 

@@ -60,14 +60,8 @@ def test_parse_allowed_hosts_error_names_entry():
 # --- build_transport_security ---
 
 
-def test_build_unchanged_when_nothing_given():
-    current = default_settings()
-    assert build_transport_security(current, None, False) is current
-    assert build_transport_security(None, None, False) is None
-
-
 def test_build_adds_to_defaults_and_keeps_origins():
-    result = build_transport_security(default_settings(), "myapp.example.com", False)
+    result = build_transport_security(default_settings(), "myapp.example.com")
     assert result is not None
     assert result.enable_dns_rebinding_protection is True
     assert result.allowed_hosts == [*DEFAULT_ALLOWED_HOSTS, "myapp.example.com", "myapp.example.com:*"]
@@ -76,29 +70,16 @@ def test_build_adds_to_defaults_and_keeps_origins():
 
 def test_build_falls_back_to_defaults_when_current_missing_or_disabled():
     for current in (None, TransportSecuritySettings(enable_dns_rebinding_protection=False)):
-        result = build_transport_security(current, "x.example.com", False)
+        result = build_transport_security(current, "x.example.com")
         assert result is not None
         assert result.enable_dns_rebinding_protection is True
         assert result.allowed_hosts[:3] == DEFAULT_ALLOWED_HOSTS
         assert result.allowed_origins == DEFAULT_ALLOWED_ORIGINS
 
 
-def test_build_disable_logs_warning(caplog):
-    with caplog.at_level(logging.WARNING, logger="postgres_mcp.transport_security"):
-        result = build_transport_security(default_settings(), None, True)
-    assert result is not None
-    assert result.enable_dns_rebinding_protection is False
-    assert any("DISABLED" in r.message and r.levelno == logging.WARNING for r in caplog.records)
-
-
-def test_build_disable_and_hosts_is_error():
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        build_transport_security(default_settings(), "x.example.com", True)
-
-
 def test_build_invalid_hosts_is_error():
     with pytest.raises(ValueError):
-        build_transport_security(default_settings(), "*", False)
+        build_transport_security(default_settings(), "*")
 
 
 # --- enforcement through the SDK middleware ---
@@ -142,7 +123,7 @@ async def test_default_settings_enforcement(post):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("post", [False, True])
 async def test_allowed_hosts_enforcement(post):
-    s = build_transport_security(default_settings(), "host.docker.internal,myapp.example.com", False)
+    s = build_transport_security(default_settings(), "host.docker.internal,myapp.example.com")
     assert s is not None
     for ok in (
         "host.docker.internal",
@@ -163,15 +144,6 @@ async def test_allowed_hosts_enforcement(post):
     assert await status(s, "myapp.example.com:8000", origin="http://myapp.example.com", post=post) == 403
     assert await status(s, "myapp.example.com:8000", origin="http://localhost:3000", post=post) is None
     assert await status(s, "myapp.example.com:8000", origin=None, post=post) is None
-
-
-@pytest.mark.asyncio
-async def test_disabled_enforcement_accepts_everything():
-    s = build_transport_security(default_settings(), None, True)
-    assert s is not None
-    assert await status(s, "evil.example.com:8000", origin="http://evil.example.com") is None
-    assert await status(s, "0.0.0.0:8000", post=True) is None
-    assert await status(s, None) is None
 
 
 # --- main() wiring ---
@@ -216,15 +188,11 @@ async def test_main_allowed_hosts(restore_security, transport):
     for h in DEFAULT_ALLOWED_HOSTS:
         assert h in ts.allowed_hosts
     assert ts.allowed_origins == DEFAULT_ALLOWED_ORIGINS
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("transport", ["sse", "streamable-http"])
-async def test_main_disable_protection(restore_security, transport):
-    mcp = restore_security
-    await run_main(f"--transport={transport}", "--disable-dns-rebinding-protection")
-    assert mcp.settings.transport_security is not None
-    assert mcp.settings.transport_security.enable_dns_rebinding_protection is False
+    # and the installed settings are enforced as documented
+    assert await status(ts, "myapp.example.com") is None
+    assert await status(ts, "myapp.example.com:8000") is None
+    assert await status(ts, "localhost:8000") is None
+    assert await status(ts, "evil.example.com:8000") == 421
 
 
 @pytest.mark.asyncio
@@ -241,9 +209,8 @@ async def test_main_stdio_ignores_flags(restore_security, caplog):
     before = mcp.settings.transport_security
     with caplog.at_level(logging.WARNING):
         await run_main("--transport=stdio", "--allowed-hosts=myapp.example.com")
-        await run_main("--transport=stdio", "--disable-dns-rebinding-protection")
     assert mcp.settings.transport_security == before
-    assert any("only apply" in r.message for r in caplog.records)
+    assert any("--allowed-hosts only applies" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -255,13 +222,6 @@ async def test_main_invalid_entry_exits_2(restore_security, bad):
         await run_main("--transport=sse", bad)
     assert exc.value.code == 2
     assert mcp.settings.transport_security == before
-
-
-@pytest.mark.asyncio
-async def test_main_mutually_exclusive_exits_2(restore_security):
-    with pytest.raises(SystemExit) as exc:
-        await run_main("--transport=sse", "--allowed-hosts=x.example.com", "--disable-dns-rebinding-protection")
-    assert exc.value.code == 2
 
 
 @pytest.mark.asyncio
