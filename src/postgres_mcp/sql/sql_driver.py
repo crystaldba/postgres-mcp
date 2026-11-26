@@ -25,6 +25,14 @@ WHERE e.extname = 'hypopg'
 """
 
 
+# psycopg automatically prepares a statement on a connection once it has been executed
+# ``prepare_threshold`` times (default 5). ``DISCARD ALL`` in reset_pooled_connection
+# deallocates the server-side prepared statements, but psycopg's client-side cache is not
+# told, so the next execution fails with InvalidSqlStatementName. Pooled connections are
+# reset after every use, so automatic preparation is disabled for them.
+POOLED_CONNECTION_KWARGS: dict[str, Any] = {"prepare_threshold": None}
+
+
 async def reset_pooled_connection(conn: Any) -> None:
     """Reset session state before a pooled connection is reused.
 
@@ -120,6 +128,7 @@ class DbConnPool:
                 max_size=5,
                 open=False,  # Don't connect immediately, let's do it explicitly
                 reset=reset_pooled_connection,
+                kwargs=dict(POOLED_CONNECTION_KWARGS),
             )
 
             # Open the pool explicitly

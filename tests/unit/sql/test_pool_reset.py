@@ -94,6 +94,28 @@ async def test_pool_connect_wires_reset_callback():
 
 
 @pytest.mark.asyncio
+async def test_pool_connect_disables_automatic_preparation():
+    """DISCARD ALL drops server-side prepared statements but not psycopg's client-side cache,
+    so pooled connections must not auto-prepare (otherwise the 6th/7th reuse of a statement fails)."""
+    captured: dict[str, Any] = {}
+    mock_pool = MagicMock()
+    mock_pool.open = AsyncMock()
+    mock_pool.close = AsyncMock()
+    mock_pool.connection = MagicMock(return_value=_ConnectionCM())
+
+    def factory(*args: Any, **kwargs: Any) -> MagicMock:
+        captured["kwargs"] = kwargs
+        return mock_pool
+
+    with patch("postgres_mcp.sql.sql_driver.AsyncConnectionPool", side_effect=factory):
+        db_pool = DbConnPool("postgresql://user:pass@localhost/db")
+        await db_pool.pool_connect()
+
+    assert captured["kwargs"]["kwargs"] == {"prepare_threshold": None}
+    await db_pool.close()
+
+
+@pytest.mark.asyncio
 async def test_reset_runs_discard_all_outside_transaction():
     conn, calls = _mock_connection(hypopg_schema=None)
 
@@ -166,7 +188,7 @@ async def test_failed_reset_discards_pooled_connection():
     try:
         await pool._reset_connection(fake)  # type: ignore[attr-defined]
         assert closed == [fake]
-        assert fake._pool is None
+        assert fake._pool is None  # type: ignore[reportPrivateUsage]
     finally:
         await pool.close()
 
@@ -182,6 +204,7 @@ async def test_session_guc_does_not_leak_across_checkouts():
         return rows[0].cells
 
     pool = DbConnPool(DATABASE_URI)
+    assert DATABASE_URI is not None
     raw_pool = AsyncConnectionPool(
         conninfo=DATABASE_URI,
         min_size=1,
@@ -191,7 +214,7 @@ async def test_session_guc_does_not_leak_across_checkouts():
     )
     await raw_pool.open()
     await raw_pool.wait()
-    pool.pool = raw_pool
+    pool.pool = raw_pool  # type: ignore[assignment]
     pool._is_valid = True  # type: ignore[attr-defined]
     driver = SqlDriver(conn=pool)
     try:
@@ -235,6 +258,7 @@ async def test_hypopg_state_does_not_leak_across_checkouts():
         return rows[0].cells
 
     pool = DbConnPool(DATABASE_URI)
+    assert DATABASE_URI is not None
     raw_pool = AsyncConnectionPool(
         conninfo=DATABASE_URI,
         min_size=1,
@@ -244,7 +268,7 @@ async def test_hypopg_state_does_not_leak_across_checkouts():
     )
     await raw_pool.open()
     await raw_pool.wait()
-    pool.pool = raw_pool
+    pool.pool = raw_pool  # type: ignore[assignment]
     pool._is_valid = True  # type: ignore[attr-defined]
     driver = SqlDriver(conn=pool)
     hypopg_installed = False
@@ -276,6 +300,7 @@ async def test_failed_reset_replaces_backend_when_database_available():
     async def boom(conn: Any) -> None:
         raise RuntimeError("intentional reset failure")
 
+    assert DATABASE_URI is not None
     raw_pool = AsyncConnectionPool(
         conninfo=DATABASE_URI,
         min_size=1,
@@ -294,3 +319,29 @@ async def test_failed_reset_replaces_backend_when_database_available():
         assert pid_row[0] != new_pid_row[0]
     finally:
         await raw_pool.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not DATABASE_URI, reason="DATABASE_URI is not set")
+async def test_repeated_parameterized_query_survives_reset_past_preparation_threshold():
+    """Regression: with the pool reset enabled, re-running one parameterized statement more than
+    psycopg's prepare threshold (5) on the same connection used to fail with InvalidSqlStatementName.
+
+    Goes through the real DbConnPool so the production pool configuration is what is tested. The pool
+    hands out its connections round-robin, so enough iterations are run for at least one backend to
+    be reused past the threshold.
+    """
+    pool = DbConnPool(DATABASE_URI)
+    await pool.pool_connect()
+    driver = SqlDriver(conn=pool)
+    uses: dict[object, int] = {}
+    try:
+        for i in range(1, 41):
+            rows = await driver.execute_query("SELECT pg_backend_pid() AS pid, %s::int AS n", params=[i])  # type: ignore[arg-type]
+            assert rows
+            assert rows[0].cells["n"] == i
+            pid = rows[0].cells["pid"]
+            uses[pid] = uses.get(pid, 0) + 1
+        assert max(uses.values()) > 5, f"no connection was reused past the preparation threshold: {uses}"
+    finally:
+        await pool.close()
