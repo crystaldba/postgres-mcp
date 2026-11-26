@@ -14,7 +14,7 @@ startCommand:
         description: URI for accessing the database, e.g., postgres://user:password@host:port/database.
       accessMode:
         type: string
-        description: The access mode for the MCP, e.g., "restricted" or "unrestricted".
+        description: The access mode for the MCP, e.g., "restricted", "unrestricted", or "readonly".
   commandFunction:
     # A function that produces the CLI command to start the MCP on stdio.
     |-
