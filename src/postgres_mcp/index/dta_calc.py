@@ -151,10 +151,12 @@ class DatabaseTuningAdvisor(IndexTuningBase):
                     candidates.append(IndexRecommendation(table=table, columns=tuple(combo)))
 
         # filter out duplicates with existing indexes
-        filtered_candidates = [c for c in candidates if not self._index_exists(c, existing_defs)]
+        filtered_candidates = [
+            c for c in self._filter_candidates_by_query_conditions(workload, candidates) if not self._index_exists(c, existing_defs)
+        ]
 
         # filter out candidates with columns not used in query conditions
-        condition_filtered1 = self._filter_candidates_by_query_conditions(workload, filtered_candidates)
+        condition_filtered1 = filtered_candidates
 
         # filter out long text columns
         condition_filtered = await self._filter_long_text_columns(condition_filtered1)
