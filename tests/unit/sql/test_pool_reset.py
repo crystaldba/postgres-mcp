@@ -55,6 +55,7 @@ def _mock_connection(*, hypopg_schema: str | None = "public") -> tuple[MagicMock
     conn = MagicMock()
     conn.autocommit = False
     conn.set_autocommit = AsyncMock()
+    conn.info.parameter_status = MagicMock(return_value="on")
     calls: list[object] = []
 
     async def execute(query: object, *args: Any, **kwargs: Any) -> AsyncMock:
