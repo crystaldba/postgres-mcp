@@ -125,7 +125,7 @@ These do not arrive through the model.
 
 | Threat | Description | Position |
 |--------|-------------|----------|
-| Network access to an HTTP transport | Anyone who can reach the port can call every tool directly, with no model involved. A web page in the operator's browser can attempt the same against a server on `localhost`. | Partly defended: HTTP transports bind to loopback by default (`IF-5`). Authentication is not provided; an operator who exposes the port supplies it. |
+| Network access to an HTTP transport | Anyone who can reach the port can call every tool directly, with no model involved. A web page in the operator's browser can attempt the same against a server on `localhost`. | Partly defended: HTTP transports bind to loopback by default, check the `Host` header of each request, and warn at startup when bound elsewhere (`IF-5`). Authentication is not provided; an operator who exposes the port supplies it. |
 | Exposed credentials | The connection string sits in MCP client configuration, the environment, and possibly the process list. | The server keeps passwords out of its own logs and results (`SAFE-9`) and never accepts credentials through tool calls (`IF-1`). Storage elsewhere is the operator's concern. |
 | Data leaving through the model | Everything a tool returns goes to the model provider, and the agent may pass it on through other tools it holds. | Not defended. Restricted mode does not promise confidentiality; the documentation says so. |
 | Supply chain | A compromised dependency, package or image, or a harmful change merged into this repository. | The project's responsibility. See below. |
@@ -190,13 +190,14 @@ postgres-mcp [DATABASE_URL] [--access-mode MODE] [--transport TRANSPORT] [host/p
 | `--transport` | `stdio`, `sse`, `streamable-http` | `stdio` | |
 | `--sse-host`, `--sse-port` | | `localhost`, `8000` | |
 | `--streamable-http-host`, `--streamable-http-port` | | `localhost`, `8000` | |
+| `--allowed-hosts` | Comma-separated host names; repeatable | — | HTTP transports only. Extra `Host` header values to accept. |
 | `OPENAI_API_KEY` environment variable | | — | Only for the experimental `llm` tuning method. |
 
 - `IF-1` The server connects to exactly one database, fixed at startup. Connection details are never accepted through tool calls.
 - `IF-2` Startup fails if no connection URI is given. If the database is unreachable at startup, the server still starts, logs a warning, and retries on later tool calls. Tool calls made while disconnected return a clear error.
 - `IF-3` The server exits cleanly on `SIGINT` and `SIGTERM`, and on stdio when the client closes the stream. It closes its database connections on exit.
 - `IF-4` On stdio, nothing but MCP protocol messages is written to standard output. Logs go to standard error.
-- `IF-5` HTTP transports bind to loopback by default. They have no authentication; binding elsewhere is an explicit operator choice, and the documentation warns about it.
+- `IF-5` HTTP transports bind to loopback by default and check the `Host` header of every request; `--allowed-hosts` adds accepted names. They have no authentication. Binding elsewhere is an explicit operator choice: the server logs a warning at startup and the documentation says what the operator must add.
 
 ### Distribution
 
@@ -379,7 +380,6 @@ Rows marked † come from a code review and have not been confirmed by a test.
 | `SAFE-6` | The time limit is enforced by the client; whether the statement is always canceled in the database needs verifying. The limit is not configurable. | #99 |
 | `SAFE-3` | The statement allowlist has entries with no recorded reason. `VACUUM` is accepted but cannot run inside a transaction. `ANALYZE` is accepted and does work on production tables. `PREPARE` and the cursor statements are accepted but serve no purpose. `CREATE EXTENSION` is accepted for a long list of extensions and relies on the read-only transaction to stop it. | |
 | `IF-3` | The stdio server does not exit when the client closes the stream; Docker containers accumulate. | #194, #175 |
-| `IF-5` | The README does not warn that HTTP transports are unauthenticated; Host header checks reject some valid deployments. | #251, #252, #255, #145 |
 | `DIST-1` | The latest release (0.3.0) predates Streamable HTTP and several security fixes. | #162, #141, #174 |
 | `DIST-2` | The Docker entrypoint sets a public bind address for SSE but not for Streamable HTTP. | #142 |
 | `DIST-3` | Release 0.3.0 fails to install with current upstream dependencies; `main` fails on Python 3.14. | #237, #204 |
@@ -395,11 +395,11 @@ Rows marked † come from a code review and have not been confirmed by a test.
 | `SUP-1` | GitHub reports a large backlog of dependency alerts on the default branch, some critical. None has been triaged. | |
 | `SUP-2` | CI installs without requiring the lock file to be current. † | |
 | `SUP-3` | The release recipe in the `justfile` builds the Python package locally. The Docker workflow can be started by hand from any branch with any version string, and always moves the `latest` tag. | |
-| `IF-5` | The Docker entrypoint binds SSE to all interfaces without being asked, and the README example publishes the port on every host interface. | #251 |
+| `IF-5` | Inside the Docker image the entrypoint binds SSE to all interfaces without being asked. The README now tells operators to publish the port on loopback only. | |
 | `ARCH-1` | `server.py` contains the schema discovery queries and logic. | |
 | `QA-3`, `QA-6` | Database tests are skipped, not failed, when Docker or an image is unavailable, so the suite can pass without running them. The read-only transaction is tested only against mocks. † | |
 | `SAFE-12` | There is no private channel for reporting vulnerabilities. | #220, #242, #221 |
-| Documentation | The README does not document Streamable HTTP, names a tool (`analyze_query_workload`) that does not exist, says the project is maintained by Crystal DBA, and has an empty roadmap. It says restricted mode suits databases "exposed to untrusted users" and protects sensitive data, which this spec does not promise. Its supported Postgres versions are out of date. | #192, #156 |
+| Documentation | The README names a tool (`analyze_query_workload`) that does not exist, says the project is maintained by Crystal DBA, and has an empty roadmap. It says restricted mode suits databases "exposed to untrusted users" and protects sensitive data, which contradicts the trust assumptions in section 4: the server assumes one trusted operator. Its supported Postgres versions are out of date. | #192, #156 |
 | Tooling | The `justfile` `test` and `dev` recipes point at paths that no longer exist. Ruff targets Python 3.9 although 3.12 is required. | #129 |
 
 ## 12. Open questions
