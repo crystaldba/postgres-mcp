@@ -37,7 +37,7 @@ ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 LABEL org.opencontainers.image.description="Postgres MCP Agent - Multi-architecture container (${TARGETPLATFORM})"
 LABEL org.opencontainers.image.source="https://github.com/crystaldba/postgres-mcp"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.vendor="Crystal DBA"
 LABEL org.opencontainers.image.url="https://www.crystaldba.ai"
 
