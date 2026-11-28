@@ -325,6 +325,8 @@ src/postgres_mcp/
   top_queries/         pg_stat_statements analysis
   database_health/     One calculator per health check
   artifacts.py         Plan and error result types and their text rendering
+  allowed_hosts.py     Host header checking for the HTTP transports
+  network_exposure.py  Startup warning when an HTTP transport is bound beyond loopback
 ```
 
 - `ARCH-1` `server.py` holds tool definitions and wiring only. Logic lives in the area modules, which are testable without an MCP session.
