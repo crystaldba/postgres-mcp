@@ -3,6 +3,7 @@ import os
 import time
 from pathlib import Path
 from typing import Generator
+from typing import NoReturn
 from typing import Tuple
 
 import docker
@@ -12,13 +13,29 @@ from docker import errors as docker_errors
 logger = logging.getLogger(__name__)
 
 
+def strict_environment() -> bool:
+    """True when environment problems must fail the run instead of skipping tests.
+
+    Set PG_TEST_STRICT=1 in CI so a missing Docker daemon, a failed image build, or a
+    missing extension cannot turn the database-backed tests into silent skips.
+    """
+    return os.environ.get("PG_TEST_STRICT", "").strip().lower() in ("1", "true", "yes")
+
+
+def skip_or_fail(reason: str) -> NoReturn:
+    """Skip the test locally, but fail it when PG_TEST_STRICT is set."""
+    if strict_environment():
+        pytest.fail(f"Test environment problem (PG_TEST_STRICT is set): {reason}", pytrace=False)
+    pytest.skip(reason)
+
+
 def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, None]:
     """Create a PostgreSQL container of specified version and return its connection string."""
     try:
         client = docker.from_env()
         client.ping()
     except (docker_errors.DockerException, ConnectionError):
-        pytest.skip("Docker is not available")
+        skip_or_fail("Docker is not available")
 
     # Extract PostgreSQL version number
     pg_version = version.split(":")[1] if ":" in version else version
@@ -43,7 +60,7 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
             dockerfile_path = current_dir / "Dockerfile.postgres-hypopg"
             if not dockerfile_path.exists():
                 logger.error(f"Dockerfile not found at {dockerfile_path}")
-                pytest.skip(f"Required Dockerfile not found: {dockerfile_path}")
+                skip_or_fail(f"Required Dockerfile not found: {dockerfile_path}")
 
             # Build the image
             client.images.build(
@@ -56,7 +73,7 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
             logger.info(f"Successfully built image {custom_image_name}")
         except Exception as e:
             logger.error(f"Failed to build Docker image: {e}")
-            pytest.skip(f"Failed to build Docker image: {e}")
+            skip_or_fail(f"Failed to build Docker image: {e}")
 
     postgres_password = "test_password"
     postgres_db = "test_db"
@@ -95,7 +112,7 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
         if container.status != "running":
             logs = container.logs().decode("utf-8")
             logger.error(f"Container {container_name} failed to start. Logs:\n{logs}")
-            pytest.skip(f"PostgreSQL container failed to start: {logs[:500]}...")
+            skip_or_fail(f"PostgreSQL container failed to start: {logs[:500]}...")
 
         # Get assigned port
         port = container.ports["5432/tcp"][0]["HostPort"]
@@ -129,7 +146,7 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
         if not is_ready:
             logs = container.logs().decode("utf-8")
             logger.error(f"Timeout waiting for PostgreSQL. Container logs:\n{logs[-2000:]}")
-            pytest.skip(f"Timeout waiting for PostgreSQL to start: {last_error}")
+            skip_or_fail(f"Timeout waiting for PostgreSQL to start: {last_error}")
 
         connection_string = f"postgresql://postgres:{postgres_password}@localhost:{port}/{postgres_db}"
         logger.info(f"PostgreSQL connection string: {connection_string}")

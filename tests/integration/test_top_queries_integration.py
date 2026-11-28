@@ -2,6 +2,7 @@ import logging
 
 import pytest
 import pytest_asyncio
+from utils import skip_or_fail
 
 from postgres_mcp.sql import SqlDriver
 from postgres_mcp.top_queries import PG_STAT_STATEMENTS
@@ -41,9 +42,9 @@ async def setup_test_data(sql_driver):
                 logger.info("pg_stat_statements extension created or already exists")
             except Exception as e:
                 logger.warning(f"Unable to create pg_stat_statements extension: {e}")
-                pytest.skip("pg_stat_statements extension not available or cannot be created")
+                skip_or_fail("pg_stat_statements extension not available or cannot be created")
         else:
-            pytest.skip("pg_stat_statements extension not available")
+            skip_or_fail("pg_stat_statements extension not available")
 
         # Create test tables
         await sql_driver.execute_query("""

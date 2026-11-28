@@ -1,8 +1,9 @@
 name: Postgres MCP CI
 
 # Fast tier (PRs and pushes to main): Postgres 15 and 19 only.
-# Full tier (all versions): version tags, manual run, and a daily schedule
-# that skips itself when main has no commits in the last 24 hours.
+# Full tier (all versions): version tags, manual run, and a daily schedule that
+# skips itself when this exact commit already passed a full run (scheduled,
+# manual, or tag). A failed full run is retried on the next daily run.
 on:
   push:
     branches:
@@ -22,17 +23,18 @@ on:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     outputs:
       run: ${{ steps.plan.outputs.run }}
       versions: ${{ steps.plan.outputs.versions }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Decide which Postgres versions to test
         id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
         run: |
           full='["12","15","16","17","18","19"]'
           fast='["15","19"]'
@@ -40,8 +42,14 @@ jobs:
           case "${{ github.event_name }}" in
             schedule)
               versions="$full"
-              if [ -z "$(git log --since='24 hours ago' --oneline origin/main)" ]; then
-                echo "No commits on main in the last 24 hours; skipping the daily full run."
+              # Count earlier successful full runs (schedule, manual, or tag) of this exact commit.
+              # If the lookup fails, fall through and run: failing open is safer than skipping.
+              covered=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build.yml --status success --limit 100 \
+                --json event,headBranch,headSha \
+                --jq '[.[] | select(.event=="schedule" or .event=="workflow_dispatch" or (.event=="push" and (.headBranch|startswith("v")))) | select(.headSha==env.SHA)] | length' \
+                || echo 0)
+              if [ "${covered:-0}" -gt 0 ]; then
+                echo "Commit $SHA already passed a full run; skipping the daily full run."
                 run=false
               fi
               ;;
@@ -118,4 +126,6 @@ jobs:
       - name: Run Tests
         env:
           PG_TEST_VERSIONS: ${{ matrix.pg }}
+          # Fail instead of skip when Docker, an image build, or an extension is unavailable.
+          PG_TEST_STRICT: "1"
         run: uv run pytest -v --log-cli-level=INFO

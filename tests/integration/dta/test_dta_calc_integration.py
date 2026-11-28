@@ -5,6 +5,7 @@ from functools import wraps
 
 import pytest
 import pytest_asyncio
+from utils import skip_or_fail
 
 from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
 from postgres_mcp.index.index_opt_base import IndexTuningResult
@@ -57,14 +58,14 @@ async def db_connection(test_postgres_connection_string):
         await driver.execute_query("CREATE EXTENSION IF NOT EXISTS pg_stat_statements", force_readonly=False)
     except Exception as e:
         logger.warning(f"Could not create pg_stat_statements extension: {e}")
-        pytest.skip("pg_stat_statements extension is not available")
+        skip_or_fail("pg_stat_statements extension is not available")
 
     # Try to create hypopg extension, but skip the test if not available
     try:
         await driver.execute_query("CREATE EXTENSION IF NOT EXISTS hypopg", force_readonly=False)
     except Exception as e:
         logger.warning(f"Could not create hypopg extension: {e}")
-        pytest.skip("hypopg extension is not available - required for DTA tests")
+        skip_or_fail("hypopg extension is not available - required for DTA tests")
 
     yield driver
 
