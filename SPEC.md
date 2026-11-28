@@ -77,20 +77,48 @@ Until then:
 
 ### Threat model
 
-The threat is **agent error**: the model issues a harmful statement that nobody intended.
+The server gives a language model the ability to act on a database. Two threats arrive through the model, and they are the ones this product exists to contain.
+
+**Agent error.** The model issues a harmful statement that nobody intended.
 Language models hallucinate and make mistakes. A model may invent a table name, misread which database it is connected to, misjudge what a statement will do, or lose track of an instruction given earlier in the conversation.
 No attacker is needed, and no amount of care by the operator removes the possibility.
+This is the agentic counterpart of operator error, and it is treated the way safety engineering treats human error: as something that will happen, to be contained by the design of the system and not by expecting the actor to be careful.
 
-This is the agentic counterpart of operator error, and it is treated here the way safety engineering treats human error: as something that will happen, to be contained by the design of the system and not by expecting the actor to be careful.
+**Prompt injection.** Text the model reads redirects it toward someone else's goal.
+The text can come from anywhere the model reads: a web page, a document, another tool. It can also come from the database itself. Row values, object names, column comments and recorded query text are all returned to the model by this server's tools, and any of them may have been written by a third party, for example through an application's sign-up form.
 
-Prompt injection, where text the model reads misdirects it, is a second route to the same outcome and is contained by the same guarantees. It is not the primary concern.
+The two differ in ways that matter for design:
+
+| | Agent error | Prompt injection |
+|---|---|---|
+| Needs an attacker | No | Yes, one able to place text where the model will read it |
+| How often | Routinely, for every user | Rarely, but aimed |
+| Shape of the harmful SQL | Plausible and ordinary; a wrong `WHERE` clause, the wrong table | Whatever works; will look for obscure functions and gaps in the checks |
+| Persistence | Stops at the first refusal and usually corrects course | Retries with variations |
+| Typical harm | Loss of integrity: data changed or deleted by mistake | Any, including deliberately reading data out |
+| Response to a clear error message | Helps the model recover | No help to the attacker: the checks are open source |
+
+Agent error sets how often the protections are exercised. Prompt injection sets how strong they must be.
 
 It follows that:
 
-- Every string that reaches the server through a tool call may be wrong, however sensible the conversation looks. A mistaken model can produce any SQL at all, so protections must not rely on the SQL being well-meaning or typical.
-- Mistakes are made in good faith, so feedback matters as much as blocking. When the server refuses something, it says why and what is allowed, so the agent can correct course (`PRIN-4`).
-- The operator is trusted. They choose the database, the credentials and the access mode.
-- The following are not defended against by the server itself, and the documentation must say so: a hostile operator; an attacker on the network reaching an HTTP transport; stolen database credentials; a database role with more privilege than the operator intended.
+- Every string that reaches the server through a tool call may be wrong or hostile, however sensible the conversation looks. Protections must not rely on the SQL being well-meaning or typical.
+- Refusals explain themselves. When the server rejects something, it says why and what is allowed, so that a mistaken agent can correct course (`PRIN-4`).
+- Tool results are data. The server never presents database content in a way that reads as instructions from the server or the operator.
+
+### Other threats
+
+These do not arrive through the model. The position on each is stated so that contributors know what the server is and is not responsible for. Positions marked *proposed* await the maintainer's confirmation.
+
+| Threat | Description | Position |
+|--------|-------------|----------|
+| Network access to an HTTP transport | Anyone who can reach the port can call every tool directly, with no model involved. A web page in the operator's browser can attempt the same against a server on `localhost`. | Partly defended: loopback by default, Host header checks (`IF-5`). Authentication is not provided; the operator supplies it. |
+| A user who is not the operator | On a shared server, the person talking to the agent did not choose the access mode or credentials, and may ask for more than the operator intended. | Contained by the access mode and the database role. The server has no notion of individual users. *Proposed.* |
+| Exposed credentials | The connection string sits in MCP client configuration, the environment, and possibly the process list. | The server keeps passwords out of its own logs and results (`SAFE-9`) and never accepts credentials through tool calls (`IF-1`). Storage elsewhere is the operator's concern. |
+| Data leaving through the model | Everything a tool returns goes to the model provider, and the agent may pass it on through other tools it holds. | Not defended. Restricted mode does not promise confidentiality; the documentation says so. |
+| Harm from the server itself | An analysis tool puts heavy load on a production database, or gives confident advice that is wrong and is then acted on. | Defended by design: bounded execution (`SAFE-6`, `IDX-4`), no changes by analysis tools (`PRIN-3`), evidence with every recommendation (`PRIN-2`). *Proposed.* |
+| Supply chain | A compromised dependency, package or image, or a harmful change merged into this repository. | Defended by process: few dependencies (`ARCH-4`), review of safety-critical changes (`QA-4`), reproducible releases (`DIST-1`). *Proposed.* |
+| A hostile operator | The person running the server intends harm. | Out of scope. The operator is trusted: they choose the database, the credentials and the access mode. |
 
 ### Access modes
 
