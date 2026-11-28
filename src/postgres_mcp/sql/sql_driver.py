@@ -32,18 +32,76 @@ WHERE e.extname = 'hypopg'
 # reset after every use, so automatic preparation is disabled for them.
 POOLED_CONNECTION_KWARGS: dict[str, Any] = {"prepare_threshold": None}
 
+# Restricted mode validates SQL with pglast, which always lexes string literals with
+# standard_conforming_strings = on, and then sends the original text to the server. If the
+# server session has the setting off (it can be set per database, per role, in postgresql.conf
+# or in the connection's startup options), the server treats backslash as an escape character
+# inside ordinary '...' literals and can tokenize the text differently from the validator, so
+# the statements that run may not be the statements that were validated. Every pooled
+# connection therefore has the setting forced on, and restricted-mode execution refuses a
+# connection that does not report it on.
+STANDARD_CONFORMING_STRINGS = "standard_conforming_strings"
+_SET_STANDARD_CONFORMING_STRINGS = "SET standard_conforming_strings = on"
+
+
+def reports_standard_conforming_strings(conn: Any) -> bool:
+    """Return True if the server has reported standard_conforming_strings = on for this connection.
+
+    The server sends the value in a ParameterStatus message at startup and whenever it changes
+    (including through SET, RESET and DISCARD ALL), and libpq caches it, so this costs no round
+    trip. A missing value (None) counts as off.
+    """
+    return conn.info.parameter_status(STANDARD_CONFORMING_STRINGS) == "on"
+
+
+async def _force_standard_conforming_strings(conn: Any) -> None:
+    """Set standard_conforming_strings = on for the session and check that the server reports it.
+
+    Must be called with autocommit enabled so the setting is not tied to a transaction that could
+    be rolled back.
+    """
+    await conn.execute(_SET_STANDARD_CONFORMING_STRINGS)
+    if not reports_standard_conforming_strings(conn):
+        value = conn.info.parameter_status(STANDARD_CONFORMING_STRINGS)
+        raise RuntimeError(f"standard_conforming_strings is {value!r} after SET; the connection cannot be used")
+
+
+async def configure_pooled_connection(conn: Any) -> None:
+    """Prepare a newly opened pooled connection.
+
+    A ``SET`` is used rather than adding ``-c standard_conforming_strings=on`` to the libpq
+    ``options`` parameter: an explicit ``options`` value replaces any ``options`` the operator
+    supplied through a service file or ``PGOPTIONS`` (libpq only consults those when the parameter
+    is absent), and some connection poolers reject or drop startup options. ``DISCARD ALL``
+    resets a SET value, so reset_pooled_connection applies it again on every reuse.
+
+    On failure the connection is closed and the error propagates so psycopg_pool discards it.
+    """
+    try:
+        previous_autocommit = conn.autocommit
+        await conn.set_autocommit(True)
+        try:
+            await _force_standard_conforming_strings(conn)
+        finally:
+            await conn.set_autocommit(previous_autocommit)
+    except BaseException:
+        await conn.close()
+        raise
+
 
 async def reset_pooled_connection(conn: Any) -> None:
     """Reset session state before a pooled connection is reused.
 
     ``DISCARD ALL`` cannot run inside a transaction, and psycopg defaults to
-    autocommit=False, so this callback temporarily enables autocommit. Cleanup
-    errors propagate so psycopg_pool discards the connection.
+    autocommit=False, so this callback temporarily enables autocommit. ``DISCARD ALL``
+    returns standard_conforming_strings to the session default, which may be off, so it is
+    set on again afterwards. Cleanup errors propagate so psycopg_pool discards the connection.
     """
     previous_autocommit = conn.autocommit
     await conn.set_autocommit(True)
     try:
         await conn.execute("DISCARD ALL")
+        await _force_standard_conforming_strings(conn)
         result = await conn.execute(_HYPOPG_SCHEMA_QUERY)
         row = await result.fetchone()
         if row:
@@ -127,6 +185,7 @@ class DbConnPool:
                 min_size=1,
                 max_size=5,
                 open=False,  # Don't connect immediately, let's do it explicitly
+                configure=configure_pooled_connection,
                 reset=reset_pooled_connection,
                 kwargs=dict(POOLED_CONNECTION_KWARGS),
             )
@@ -262,6 +321,15 @@ class SqlDriver:
     async def _execute_with_connection(self, connection, query, params, force_readonly) -> Optional[List[RowResult]]:
         """Execute query with the given connection."""
         transaction_started = False
+        if force_readonly and not reports_standard_conforming_strings(connection):
+            # force_readonly is how SafeSqlDriver (restricted mode) executes validated SQL. Its
+            # validation is only meaningful if the server tokenizes the text the same way pglast
+            # does, which requires standard_conforming_strings = on. Fail closed otherwise.
+            value = connection.info.parameter_status(STANDARD_CONFORMING_STRINGS)
+            raise ValueError(
+                f"Refusing to run a read-only query: the connection reports standard_conforming_strings={value!r}, "
+                "but restricted mode requires it to be 'on'."
+            )
         try:
             async with connection.cursor(row_factory=dict_row) as cursor:
                 # Start read-only transaction
