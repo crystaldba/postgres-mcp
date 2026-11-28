@@ -78,6 +78,7 @@ Until then:
 ### Threat model
 
 The threat is **the model doing something dumb**: it issues a harmful statement because it slipped up, misunderstood, or was misdirected by prompt injection in data it read.
+In security terms this is the **confused deputy** problem: the agent holds the operator's database authority and can be led to misuse it. OWASP's list of LLM application risks calls the result **excessive agency**, and names **prompt injection** as its main trigger.
 
 It follows that:
 
@@ -212,7 +213,7 @@ The default method (`dta`) adapts the Anytime Algorithm of Microsoft's Database 
 - `IDX-3` The result lists each recommended index as a runnable `CREATE INDEX` statement with its estimated size and estimated improvement, and shows the per-query plans before and after.
 - `IDX-4` The tool returns within a bounded time, whatever the query shape. Reaching the time budget returns the best configuration found so far, not an error.
 - `IDX-5` Given the same database state and inputs, the `dta` method returns the same recommendation.
-- `IDX-6` The `llm` method is experimental. It is opt-in per call, requires `OPENAI_API_KEY`, and sends schema and query text to a third-party service; the documentation says so. Its future is **OPEN** (section 12).
+- `IDX-6` The `llm` method is experimental. It is opt-in per call, requires `OPENAI_API_KEY`, and sends schema and query text to OpenAI; the tool description and the documentation say so. It carries no stability promise and may change or be removed.
 
 ### Health checks
 
@@ -237,14 +238,14 @@ Checks are adapted from PgHero.
 
 | Dependency | Supported | Notes |
 |------------|-----------|-------|
-| PostgreSQL | **OPEN** | The README says 15–17 are tested and 13–17 planned. The tests run against 12, 15 and 16. |
+| PostgreSQL | 15 and later, through the current release | Version 12 is also kept in the tests as a representative older version, on a best-effort basis: it predates several catalog and `pg_stat_statements` changes and is still widely deployed. Versions 13 and 14 are expected to work but are not tested. |
 | Python | 3.12 and later | CI tests 3.12 only today. |
 | MCP Python SDK | 1.x (`>=1.25,<2.0`) | Migration to 2.x is tracked in #208. |
 | `pg_stat_statements` | Optional | Needed for workload tools. |
 | `hypopg` | Optional | Needed for index tuning and hypothetical plans. |
 | Operating systems | Linux, macOS, Windows | Windows uses the selector event loop. |
 
-- `COMPAT-1` Every supported Postgres major version is exercised in CI.
+- `COMPAT-1` Every supported Postgres major version, including the newest released one, is exercised in CI. A new major version is added to the tests when it is released.
 - `COMPAT-2` Managed Postgres services (RDS, Cloud SQL, Azure, Supabase, and similar) are first-class targets. Features do not assume superuser access.
 
 ## 8. Architecture
@@ -321,10 +322,10 @@ Places where the code or documentation does not yet meet this spec.
 | `TOP-2` | `get_top_queries` does not filter by database. | #210 |
 | `IDX-4` | Candidate generation can take hours on queries with long select lists. | #239 |
 | `IDX-5` | Multi-column candidate column order is chosen at random. | |
-| `IDX-6` | The `llm` method raises with more than one query; the model name is hard-coded. | #212 |
+| `IDX-6` | The `llm` method raises with more than one query. It uses the OpenAI client with the model fixed to `gpt-4o`, with no setting for model or endpoint. The tool description does not mark it experimental. | #212 |
 | `HLTH-2` | The bloat check reports no bloated indexes when none met the 100 MB minimum size. | #211 |
 | `HLTH-4` | Quoted object names are mishandled in health checks. | #109 |
-| `COMPAT-1` | CI runs one Python version; tested Postgres versions do not match the documented ones. | #204, #205 |
+| `COMPAT-1` | The tests run Postgres 12, 15 and 16. Versions 17, 18 and 19 are not tested. CI runs one Python version. | #204, #205 |
 | `SAFE-12` | There is no private channel for reporting vulnerabilities. | #220, #242, #221 |
 | Documentation | The README does not document Streamable HTTP, names a tool (`analyze_query_workload`) that does not exist, says the project is maintained by Crystal DBA, and has an empty roadmap. | #192, #156 |
 | Tooling | The `justfile` `test` and `dev` recipes point at paths that no longer exist. Ruff targets Python 3.9 although 3.12 is required. | #129 |
@@ -334,10 +335,8 @@ Places where the code or documentation does not yet meet this spec.
 Decisions for the maintainer. Agents do not settle these.
 
 1. **Default access mode.** The default is `unrestricted`. Given the threat model, should the default be `restricted`, with `unrestricted` an explicit opt-in? (#164, #193)
-2. **Supported Postgres versions.** Which major versions are supported, and are they all in CI?
-3. **The `llm` tuning method.** Keep as experimental, make provider-neutral, or remove? It sits uneasily with `PRIN-1` and sends schema to a third party.
-4. **Confidentiality and resource limits in restricted mode.** Row caps (#243), PII redaction (#167), more granular modes (#138, #124, #148).
-5. **Extensions and companion projects.** What is core, what is an extension, and is there an extension mechanism? Needs evidence of how the project is used.
-6. **Multiple databases.** `IF-1` fixes one database per server. Is that permanent? (#114)
-7. **Naming.** Is "Postgres MCP Pro" still the product name, and do the `crystaldba` identifiers (Docker image name, the `/* crystaldba */` query comment, `crystaldba_idx_` index names) stay?
-8. **Release cadence and process.** Who cuts releases, how often, and what is the checklist?
+2. **Confidentiality and resource limits in restricted mode.** Row caps (#243), PII redaction (#167), more granular modes (#138, #124, #148).
+3. **Extensions and companion projects.** What is core, what is an extension, and is there an extension mechanism? Needs evidence of how the project is used.
+4. **Multiple databases.** `IF-1` fixes one database per server. Is that permanent? (#114)
+5. **Naming.** Is "Postgres MCP Pro" still the product name, and do the `crystaldba` identifiers (Docker image name, the `/* crystaldba */` query comment, `crystaldba_idx_` index names) stay?
+6. **Release cadence and process.** Who cuts releases, how often, and what is the checklist?
