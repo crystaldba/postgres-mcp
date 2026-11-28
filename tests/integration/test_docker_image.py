@@ -118,6 +118,7 @@ def normalized_logs(container: Any) -> str:
 def remove_container(container: Any) -> None:
     try:
         container.remove(force=True, v=True)
+        logger.info(f"Removed container {container.name}")
     except docker_errors.NotFound:
         pass
     except docker_errors.DockerException as e:
@@ -233,6 +234,7 @@ def image(docker_client: Any, tmp_path_factory: pytest.TempPathFactory) -> Itera
     yield tag
     try:
         docker_client.images.remove(tag, force=True)
+        logger.info(f"Removed image {tag}")
     except docker_errors.DockerException as e:
         logger.warning(f"Could not remove image {tag}: {e}")
 
@@ -244,6 +246,7 @@ def network(docker_client: Any) -> Iterator[str]:
     yield name
     try:
         net.remove()
+        logger.info(f"Removed network {name}")
     except docker_errors.DockerException as e:
         logger.warning(f"Could not remove network {name}: {e}")
 
