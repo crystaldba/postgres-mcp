@@ -404,8 +404,8 @@ Testing is critical to ensuring that Postgres MCP Pro is reliable and accurate.
 We are building out a suite of AI-generated adversarial workloads designed to challenge Postgres MCP Pro and ensure it performs under a broad variety of scenarios.
 
 *What Postgres versions are supported?*
-Our testing presently focuses on Postgres 15, 16, and 17.
-We plan to support Postgres versions 13 through 17.
+Postgres 15 and later are supported and tested.
+Postgres 12 is also tested, on a best-effort basis.
 
 *Who created this project?*
 This project is created and maintained by [Crystal DBA](https://www.crystaldba.ai).
