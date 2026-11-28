@@ -184,7 +184,7 @@ postgres-mcp [DATABASE_URL] [--access-mode MODE] [--transport TRANSPORT] [host/p
 |-------|--------|---------|-------|
 | `DATABASE_URL` argument | Postgres connection URI | — | |
 | `DATABASE_URI` environment variable | Postgres connection URI | — | Takes precedence over the argument. Preferred, because it keeps the password out of the process list. |
-| `--access-mode` | `unrestricted`, `restricted` | `unrestricted` (**OPEN**, see section 12) | |
+| `--access-mode` | `unrestricted`, `restricted` | `unrestricted` | The default stays `unrestricted`: changing it would break existing installations. The documentation recommends `restricted` for any database that matters. |
 | `--transport` | `stdio`, `sse`, `streamable-http` | `stdio` | |
 | `--sse-host`, `--sse-port` | | `localhost`, `8000` | |
 | `--streamable-http-host`, `--streamable-http-port` | | `localhost`, `8000` | |
@@ -388,10 +388,9 @@ Places where the code or documentation does not yet meet this spec.
 
 Decisions for the maintainer. Agents do not settle these.
 
-1. **Default access mode.** The default is `unrestricted`. Given the threat model, should the default be `restricted`, with `unrestricted` an explicit opt-in? (#164, #193)
-2. **Confidentiality and resource limits in restricted mode.** Row caps (#243), PII redaction (#167), more granular modes (#138, #124, #148).
-3. **Extensions and companion projects.** What is core, what is an extension, and is there an extension mechanism? Needs evidence of how the project is used.
-4. **Shared servers.** The server assumes a single operator. Supporting several users with different entitlements (authentication, per-user access modes or roles) is a candidate roadmap feature.
-5. **Multiple databases.** `IF-1` fixes one database per server. Is that permanent? (#114)
-6. **Naming.** Is "Postgres MCP Pro" still the product name, and do the `crystaldba` identifiers (Docker image name, the `/* crystaldba */` query comment, `crystaldba_idx_` index names) stay?
-7. **Release cadence and process.** Who cuts releases, how often, and what is the checklist?
+1. **Confidentiality and resource limits in restricted mode.** Row caps (#243), PII redaction (#167), more granular modes (#138, #124, #148).
+2. **Extensions and companion projects.** What is core, what is an extension, and is there an extension mechanism? Needs evidence of how the project is used.
+3. **Shared servers.** The server assumes a single operator. Supporting several users with different entitlements (authentication, per-user access modes or roles) is a candidate roadmap feature.
+4. **Multiple databases.** `IF-1` fixes one database per server. Is that permanent? (#114)
+5. **Naming.** Is "Postgres MCP Pro" still the product name, and do the `crystaldba` identifiers (Docker image name, the `/* crystaldba */` query comment, `crystaldba_idx_` index names) stay?
+6. **Release cadence and process.** Who cuts releases, how often, and what is the checklist?
