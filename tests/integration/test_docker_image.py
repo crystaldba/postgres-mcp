@@ -21,14 +21,12 @@ available.
 """
 
 import http.client
-import io
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess
-import tarfile
 import time
 import uuid
 from collections.abc import Callable
@@ -179,8 +177,8 @@ def http_request(
         conn.close()
 
 
-def build_context_tar() -> bytes:
-    """The repository's tracked and untracked, non-ignored files as a tar, like a clean checkout.
+def copy_build_context(target: Path) -> None:
+    """Copy the repository's tracked and untracked, non-ignored files to target, like a clean checkout.
 
     This keeps a local .venv (which CI creates in the checkout) and caches out of
     the build context; the repository has no .dockerignore.
@@ -191,13 +189,11 @@ def build_context_tar() -> bytes:
         check=True,
         capture_output=True,
     ).stdout.split(b"\0")
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w") as tar:
-        for name in sorted({f.decode() for f in files if f}):
-            path = REPO_ROOT / name
-            if path.is_file():
-                tar.add(path, arcname=name, recursive=False)
-    return buffer.getvalue()
+    for name in sorted({f.decode() for f in files if f}):
+        source = REPO_ROOT / name
+        if source.is_file():
+            (target / name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target / name)
 
 
 @pytest.fixture(scope="module")
@@ -216,15 +212,16 @@ def docker_client() -> Iterator[Any]:
 
 
 @pytest.fixture(scope="module")
-def image(docker_client: Any) -> Iterator[str]:
+def image(docker_client: Any, tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     """Build the image from the repository's Dockerfile once for this module."""
     tag = f"postgres-mcp-docker-test:{SUFFIX}"
+    context = tmp_path_factory.mktemp("docker-context")
+    copy_build_context(context)
     started = time.monotonic()
     # The Dockerfile uses RUN --mount, which needs BuildKit; the docker SDK's build API
     # uses the legacy builder, so build with the CLI.
     result = subprocess.run(
-        ["docker", "build", "--tag", tag, "-"],
-        input=build_context_tar(),
+        ["docker", "build", "--tag", tag, str(context)],
         capture_output=True,
         timeout=1800,
         env={**os.environ, "DOCKER_BUILDKIT": "1"},
