@@ -113,6 +113,7 @@ It follows that:
 | The operator | Yes | Chooses the database, the credentials and the access mode. A hostile operator is out of scope. |
 | This server | Yes | The server's code is part of what the operator trusts. It is not modeled as a threat. Its defects are bugs, held to the quality bar in section 9; because it is trusted, the bar for anything that touches a production database is high (`SAFE-6`, `IDX-4`, `PRIN-3`). |
 | The database engine | Yes | Postgres enforces what it says it enforces, including read-only transactions and role privileges. |
+| Code installed in the database | Yes (*proposed*) | Functions, operators, casts, views, policies, extensions and procedural languages that already exist in the database are the operator's. The validator checks the names that appear in a statement; it cannot see what installed code does when a query touches it. Side effects of installed code are outside `SAFE-1`. |
 | The model | No | It may be mistaken or misdirected. |
 | Database content | No | Row values, object names, comments and recorded query text may have been written by anyone. They are data, never instructions. |
 
@@ -134,7 +135,7 @@ These do not arrive through the model.
 Operators trust this server with their database, so protecting what goes into it is part of maintaining the project.
 
 - `SUP-1` Dependencies are kept current. Reported vulnerabilities in dependencies are triaged, and none that affects the server is left unresolved at release.
-- `SUP-2` Dependency versions are locked, and releases are built from the lock file.
+- `SUP-2` Dependency versions are locked. CI and the Docker image install from the lock file. The PyPI package declares version ranges, and the locked versions are the ones tested.
 - `SUP-3` Release artifacts are built by CI from a tagged commit, not on a personal machine.
 - `SUP-4` Changes to the restricted-mode validator, to dependencies, and to build and release workflows are reviewed by the maintainer before merge, whoever or whatever wrote them.
 
@@ -147,11 +148,11 @@ Operators trust this server with their database, so protecting what goes into it
 
 ### Restricted mode guarantees
 
-- `SAFE-1` **Integrity.** In restricted mode, no tool call can modify user data or schema. This holds for any input string. "User data or schema" means tables, rows, and every other persistent object and setting in the database. It does not cover what Postgres records as a side effect of reading, such as usage statistics, or hypothetical indexes, which exist only within a session.
+- `SAFE-1` **Integrity.** In restricted mode, no tool call can modify user data or schema. This holds for any input string, given the trust assumptions above. "User data or schema" means tables, rows, and every other persistent object and setting in the database. It does not cover what Postgres records as a side effect of reading, such as usage statistics, or hypothetical indexes, which exist only within a session.
 - `SAFE-2` **Defense in depth.** Integrity is enforced by two independent layers: (a) the SQL is parsed and every statement and every node in its syntax tree is checked against an allowlist; (b) the statement runs in a read-only transaction. Neither layer is removed or bypassed because the other exists.
 - `SAFE-3` **Allowlist, not denylist.** Statement types, syntax node types, functions and extensions are permitted only if listed. Anything unknown is rejected. SQL that fails to parse is rejected.
 - `SAFE-4` **No escape from the transaction.** Statements that end or alter the transaction (`COMMIT`, `ROLLBACK`, `BEGIN`, `SET TRANSACTION`, and anything with the same effect) are rejected.
-- `SAFE-5` **Functions.** A function is added to the allowlist only if it cannot write, cannot execute SQL supplied as a string, cannot read or write the database host's file system, cannot open network connections, and cannot change the state of the session or of the database server. The pull request states why each added function meets this bar and adds a test.
+- `SAFE-5` **Functions.** A function is added to the allowlist only if it cannot write, cannot execute SQL supplied as a string, cannot read or write the database host's file system, cannot open network connections, and cannot change the state of the session or of the database server. The one exception is the `hypopg` functions, which the tuning tools need and which alter only session-local hypothetical indexes. The pull request states why each added function meets this bar and adds a test.
 - `SAFE-6` **Bounded execution.** Restricted-mode statements are subject to a time limit (30 seconds today).
 - `SAFE-7` **All tools, same driver.** Every tool obtains its database access through the mode-aware driver. No tool opens its own path to the database that skips restricted-mode checks.
 - `SAFE-8` **Honest annotations.** A tool is annotated read-only only if it cannot modify the database in the current mode.
@@ -171,7 +172,7 @@ Whether to add protections in these areas is an open question (section 12).
 - `SAFE-9` **Secrets.** Database passwords never appear in logs, error messages or tool results.
 - `SAFE-10` **Parameters, not string building.** Values supplied by the agent to non-SQL parameters (schema names, object names, limits) are bound or quoted as literals or identifiers, never spliced into SQL text.
 - `SAFE-11` **Session isolation.** State left on a pooled connection by one request (session settings, prepared statements, hypothetical indexes) does not leak into the next.
-- `SAFE-12` **A bypass is a vulnerability.** Any way to violate `SAFE-1` through `SAFE-5` is treated as a security bug: fixed with priority, with a regression test, and reported privately where possible.
+- `SAFE-12` **A bypass is a vulnerability.** Any way to violate a `SAFE` requirement is treated as a security bug: fixed with priority, with a regression test, and reported privately where possible.
 
 ## 5. Interface
 
@@ -192,7 +193,7 @@ postgres-mcp [DATABASE_URL] [--access-mode MODE] [--transport TRANSPORT] [host/p
 | `OPENAI_API_KEY` environment variable | | — | Only for the experimental `llm` tuning method. |
 
 - `IF-1` The server connects to exactly one database, fixed at startup. Connection details are never accepted through tool calls.
-- `IF-2` If the database is unreachable at startup, the server still starts, logs a warning, and retries on later tool calls. Tool calls made while disconnected return a clear error.
+- `IF-2` Startup fails if no connection URI is given. If the database is unreachable at startup, the server still starts, logs a warning, and retries on later tool calls. Tool calls made while disconnected return a clear error.
 - `IF-3` The server exits cleanly on `SIGINT` and `SIGTERM`, and on stdio when the client closes the stream. It closes its database connections on exit.
 - `IF-4` On stdio, nothing but MCP protocol messages is written to standard output. Logs go to standard error.
 - `IF-5` HTTP transports bind to loopback by default. They have no authentication; binding elsewhere is an explicit operator choice, and the documentation warns about it.
@@ -216,10 +217,10 @@ postgres-mcp [DATABASE_URL] [--access-mode MODE] [--transport TRANSPORT] [host/p
 |------|-----------|----------|---------|
 | `list_schemas` | — | | List schemas, marking system schemas. |
 | `list_objects` | `schema_name`, `object_type` (`table`, `view`, `sequence`, `extension`; default `table`) | | List objects in a schema. |
-| `get_object_details` | `schema_name`, `object_name`, `object_type` | | Columns, constraints and indexes for a table or view; basic properties for a sequence or extension. |
+| `get_object_details` | `schema_name`, `object_name`, `object_type` (default `table`) | | Columns, constraints and indexes for a table or view; basic properties for a sequence or extension. |
 | `execute_sql` | `sql` | | Run SQL. Any statement in unrestricted mode; read-only in restricted mode. Returns the rows of the last statement. |
 | `explain_query` | `sql`, `analyze` (default false), `hypothetical_indexes` (list of `{table, columns, using}`) | `hypopg` for hypothetical indexes | Show the plan. `analyze` and `hypothetical_indexes` cannot be combined. |
-| `get_top_queries` | `sort_by` (`resources`, `total_time`, `mean_time`; default `resources`), `limit` (default 10) | `pg_stat_statements` | Find the queries that matter most. |
+| `get_top_queries` | `sort_by` (`resources`, `total_time`, `mean_time`; default `resources`), `limit` (default 10; applies to the two time rankings) | `pg_stat_statements` | Find the queries that matter most. |
 | `analyze_workload_indexes` | `max_index_size_mb` (default 10000), `method` (`dta`, `llm`; default `dta`) | `pg_stat_statements`, `hypopg` | Recommend indexes for the recorded workload. |
 | `analyze_query_indexes` | `queries` (1 to 10), `max_index_size_mb`, `method` | `hypopg` | Recommend indexes for given queries. |
 | `analyze_db_health` | `health_type` (comma-separated: `index`, `connection`, `vacuum`, `sequence`, `replication`, `buffer`, `constraint`, `all`; default `all`) | | Run health checks. |
@@ -238,6 +239,8 @@ postgres-mcp [DATABASE_URL] [--access-mode MODE] [--transport TRANSPORT] [host/p
 - `SQL-1` In unrestricted mode, statements are committed. In restricted mode, they are rolled back.
 - `SQL-2` When several statements are sent together, the result is that of the last one.
 - `SQL-3` A database error is returned to the agent with the database's own message.
+- `SQL-4` Restricted mode accepts ordinary read-only SQL. Rejecting a query that cannot write is a bug, to be fixed by extending the allowlist under `SAFE-5`.
+- `SQL-5` A tool other than `execute_sql` that takes SQL accepts exactly one statement of the kind it expects, in every mode.
 
 ### Query plans
 
@@ -274,9 +277,9 @@ Checks are adapted from PgHero.
 
 | Check | Reports |
 |-------|---------|
-| `index` | Invalid, duplicate, unused and bloated indexes |
-| `connection` | Connection count and utilization |
-| `vacuum` | Tables approaching transaction ID wraparound |
+| `index` | Invalid, duplicate, unused and bloated indexes (bloat is checked on indexes of 100 MB or more) |
+| `connection` | Total connections and idle-in-transaction connections, against fixed limits of 500 and 100 |
+| `vacuum` | Tables with fewer than 10 million transaction IDs left before wraparound |
 | `sequence` | Sequences above 90% of their maximum value |
 | `replication` | Replication lag, status and slot usage |
 | `buffer` | Cache hit rates for tables and indexes against a 95% threshold |
@@ -358,30 +361,45 @@ For agents in addition:
 ## 11. Known gaps
 
 Places where the code or documentation does not yet meet this spec.
+Rows marked † come from a code review and have not been confirmed by a test.
 
 | Requirement | Gap | Reference |
 |-------------|-----|-----------|
 | `MCP-3` | Tools return failures as ordinary text beginning `Error:`, so `isError` is false. | #244, #245 |
-| `MCP-3`, `HLTH-3` | `analyze_db_health` has no error handling at the tool level. | |
-| `SCH-2` | A missing table returns empty details instead of an error. | #143 |
+| `HLTH-3` | All health checks run inside one error handler, so the first failure stops the rest. | |
+| `HLTH-2` | The replication check hides errors and reports that there are no replicas or slots. † | |
+| `HLTH-1` | The connection check uses fixed limits and does not compare against `max_connections`. | |
+| `SCH-2` | A missing table, sequence or extension returns empty details instead of an error. | #143 |
+| `SCH-1` | Constraint columns can be mixed up between tables that have constraints of the same name. † | |
+| `PRIN-4` | A restricted-mode refusal returns only "Error validating query" without the reason. The timeout message suggests raising a timeout that cannot be set. | |
+| `PRIN-5` | The message for a missing `hypopg` refers to an `execute_query` tool, which does not exist. | |
+| `SQL-4` | Restricted mode rejects some ordinary read-only SQL, such as `SIMILAR TO` and `LIKE` with a non-constant pattern. † | #155, #209 |
+| `SQL-5` | The tools that take SQL do not check that it is a single statement of the expected kind. | #161 |
+| `SAFE-5` | The function allowlist has not been audited against this bar. | |
 | `SAFE-6` | The time limit is enforced by the client; whether the statement is always canceled in the database needs verifying. The limit is not configurable. | #99 |
-| `SAFE-3` | The allowlist permits statement types whose value in a read-only transaction is unclear (`VACUUM`, `CREATE EXTENSION`, `PREPARE`, cursors, `NOTIFY`). Each needs a recorded reason or removal. | |
+| `SAFE-3` | The statement allowlist has entries with no recorded reason. `VACUUM` is accepted but cannot run inside a transaction. `ANALYZE` is accepted and does work on production tables. `PREPARE` and the cursor statements are accepted but serve no purpose. `CREATE EXTENSION` is accepted for a long list of extensions and relies on the read-only transaction to stop it. | |
 | `IF-3` | The stdio server does not exit when the client closes the stream; Docker containers accumulate. | #194, #175 |
 | `IF-5` | The README does not warn that HTTP transports are unauthenticated; Host header checks reject some valid deployments. | #251, #252, #255, #145 |
 | `DIST-1` | The latest release (0.3.0) predates Streamable HTTP and several security fixes. | #162, #141, #174 |
 | `DIST-2` | The Docker entrypoint sets a public bind address for SSE but not for Streamable HTTP. | #142 |
 | `DIST-3` | Release 0.3.0 fails to install with current upstream dependencies; `main` fails on Python 3.14. | #237, #204 |
-| `TOP-2` | `get_top_queries` does not filter by database. | #210 |
-| `IDX-4` | Candidate generation can take hours on queries with long select lists. | #239 |
-| `IDX-5` | Multi-column candidate column order is chosen at random. | |
+| `TOP-2` | `get_top_queries` and `analyze_workload_indexes` do not filter by database. | #210 |
+| `IDX-4` | Candidate generation can take hours on queries with long select lists. The time budget is checked only between search rounds, and candidate generation is not covered by it. † | #239 |
+| `IDX-3` | Recommended `CREATE INDEX` statements use unquoted, unqualified names, so they fail for mixed-case tables. † | |
+| `IDX-2` | The statistics check looks only at manual `ANALYZE`, so a database analyzed only by autovacuum is refused. `analyze_workload_indexes` does not check for `pg_stat_statements`. † | |
+| `IDX-5` | Multi-column candidate column order is chosen at random, and results depend on set ordering that varies between runs. | |
 | `IDX-6` | The `llm` method raises with more than one query. It uses the OpenAI client with the model fixed to `gpt-4o`, with no setting for model or endpoint. The tool description does not mark it experimental. | #212 |
 | `HLTH-2` | The bloat check reports no bloated indexes when none met the 100 MB minimum size. | #211 |
 | `HLTH-4` | Quoted object names are mishandled in health checks. | #109 |
 | `COMPAT-1` | The tests run Postgres 12, 15 and 16. Versions 17, 18 and 19 are not tested. CI runs one Python version. | #204, #205 |
-| `SUP-1` | GitHub reports 135 open dependency alerts on the default branch (4 critical, 48 high). None has been triaged. | |
-| `SUP-3` | The release recipe in the `justfile` builds the Python package locally. | |
+| `SUP-1` | GitHub reports a large backlog of dependency alerts on the default branch, some critical. None has been triaged. | |
+| `SUP-2` | CI installs without requiring the lock file to be current. † | |
+| `SUP-3` | The release recipe in the `justfile` builds the Python package locally. The Docker workflow can be started by hand from any branch with any version string, and always moves the `latest` tag. | |
+| `IF-5` | The Docker entrypoint binds SSE to all interfaces without being asked, and the README example publishes the port on every host interface. | #251 |
+| `ARCH-1` | `server.py` contains the schema discovery queries and logic. | |
+| `QA-3`, `QA-6` | Database tests are skipped, not failed, when Docker or an image is unavailable, so the suite can pass without running them. The read-only transaction is tested only against mocks. † | |
 | `SAFE-12` | There is no private channel for reporting vulnerabilities. | #220, #242, #221 |
-| Documentation | The README does not document Streamable HTTP, names a tool (`analyze_query_workload`) that does not exist, says the project is maintained by Crystal DBA, and has an empty roadmap. | #192, #156 |
+| Documentation | The README does not document Streamable HTTP, names a tool (`analyze_query_workload`) that does not exist, says the project is maintained by Crystal DBA, and has an empty roadmap. It says restricted mode suits databases "exposed to untrusted users" and protects sensitive data, which this spec does not promise. Its supported Postgres versions are out of date. | #192, #156 |
 | Tooling | The `justfile` `test` and `dev` recipes point at paths that no longer exist. Ruff targets Python 3.9 although 3.12 is required. | #129 |
 
 ## 12. Open questions
