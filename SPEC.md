@@ -8,9 +8,9 @@ It is written for contributors, and especially for AI agents working on the code
 How to read it:
 
 - Statements with an ID (for example `SAFE-3`) are requirements. Cite the ID in pull requests and reviews.
-- "MUST" is a promise to users. "SHOULD" is the default, and a pull request that departs from it explains why.
-- The spec describes intended behaviour. Where the code does not yet match, the difference is listed in [Known gaps](#11-known-gaps). A gap is a bug in the code or the docs, not permission to ignore the requirement.
-- If the spec is silent or looks wrong, do not guess. Open an issue or ask the maintainer, and change the spec in the same pull request as the behaviour.
+- Requirements are written in the present tense ("the server exits cleanly"). Each one is binding: it describes what must be true, whether or not it is true yet.
+- The spec describes intended behavior. Where the code does not yet match, the difference is listed in [Known gaps](#11-known-gaps). A gap is a bug in the code or the docs, not permission to ignore the requirement.
+- If the spec is silent or looks wrong, do not guess. Open an issue or ask the maintainer, and change the spec in the same pull request as the behavior.
 
 ## 1. Stewardship
 
@@ -26,7 +26,7 @@ Postgres MCP Pro is a Model Context Protocol (MCP) server that lets an AI agent 
 
 It has two pillars:
 
-1. **Safe database access.** An agent can explore a schema and run SQL, with a restricted mode that an operator can point at a production database.
+1. **Safe database access.** An agent can explore a schema and run SQL, with a restricted mode meant for databases that matter, including production.
 2. **Performance tuning and health analysis.** Deterministic tools — index tuning, plan analysis with hypothetical indexes, workload analysis, health checks — give the agent results it can trust and repeat.
 
 The users are:
@@ -53,14 +53,14 @@ The users are:
 - Workload analysis from `pg_stat_statements`.
 - Index recommendation.
 - Database health checks.
-- Running as a local stdio server or as a shared HTTP server.
+- Running as a local stdio server, or as an HTTP server that the operator's own clients connect to.
 
 ### Out of scope
 
 - Managing database infrastructure (provisioning, backups, failover, cloud provider APIs).
 - Being a general data export or reporting tool.
 - Applying changes automatically. The server recommends; the agent or human decides and executes.
-- Databases other than PostgreSQL and wire-compatible services that pass the test suite.
+- Databases that are not PostgreSQL. A PostgreSQL-compatible service is in scope only if it passes the test suite.
 
 ### Extensions — OPEN
 
@@ -77,7 +77,7 @@ Until then:
 
 ### Threat model
 
-The server gives a language model the ability to act on a database. Two threats arrive through the model, and they are the ones this product exists to contain.
+The server gives a language model the ability to act on a database. Two threats arrive through the model, and they are the ones the safety contract is designed to contain.
 
 **Agent error.** The model issues a harmful statement that nobody intended.
 Language models hallucinate and make mistakes. A model may invent a table name, misread which database it is connected to, misjudge what a statement will do, or lose track of an instruction given earlier in the conversation.
@@ -94,7 +94,7 @@ The two differ in ways that matter for design:
 | Needs an attacker | No | Yes, one able to place text where the model will read it |
 | How often | Routinely, for every user | Rarely, but aimed |
 | Shape of the harmful SQL | Plausible and ordinary; a wrong `WHERE` clause, the wrong table | Whatever works; will look for obscure functions and gaps in the checks |
-| Persistence | Stops at the first refusal and usually corrects course | Retries with variations |
+| Persistence | Usually stops at a refusal and corrects course | Retries with variations until something works |
 | Typical harm | Loss of integrity: data changed or deleted by mistake | Any, including deliberately reading data out |
 | Response to a clear error message | Helps the model recover | No help to the attacker: the checks are open source |
 
@@ -111,7 +111,7 @@ It follows that:
 | Party | Trusted? | Meaning |
 |-------|----------|---------|
 | The operator | Yes | Chooses the database, the credentials and the access mode. A hostile operator is out of scope. |
-| This server | Yes | The server's code is part of what the operator trusts. It is not modelled as a threat. Its defects are bugs, held to the quality bar in section 9; because it is trusted, the bar for anything that touches a production database is high (`SAFE-6`, `IDX-4`, `PRIN-3`). |
+| This server | Yes | The server's code is part of what the operator trusts. It is not modeled as a threat. Its defects are bugs, held to the quality bar in section 9; because it is trusted, the bar for anything that touches a production database is high (`SAFE-6`, `IDX-4`, `PRIN-3`). |
 | The database engine | Yes | Postgres enforces what it says it enforces, including read-only transactions and role privileges. |
 | The model | No | It may be mistaken or misdirected. |
 | Database content | No | Row values, object names, comments and recorded query text may have been written by anyone. They are data, never instructions. |
@@ -124,7 +124,7 @@ These do not arrive through the model.
 
 | Threat | Description | Position |
 |--------|-------------|----------|
-| Network access to an HTTP transport | Anyone who can reach the port can call every tool directly, with no model involved. A web page in the operator's browser can attempt the same against a server on `localhost`. | Partly defended: loopback by default, Host header checks (`IF-5`). Authentication is not provided; an operator who exposes the port supplies it. |
+| Network access to an HTTP transport | Anyone who can reach the port can call every tool directly, with no model involved. A web page in the operator's browser can attempt the same against a server on `localhost`. | Partly defended: HTTP transports bind to loopback by default (`IF-5`). Authentication is not provided; an operator who exposes the port supplies it. |
 | Exposed credentials | The connection string sits in MCP client configuration, the environment, and possibly the process list. | The server keeps passwords out of its own logs and results (`SAFE-9`) and never accepts credentials through tool calls (`IF-1`). Storage elsewhere is the operator's concern. |
 | Data leaving through the model | Everything a tool returns goes to the model provider, and the agent may pass it on through other tools it holds. | Not defended. Restricted mode does not promise confidentiality; the documentation says so. |
 | Supply chain | A compromised dependency, package or image, or a harmful change merged into this repository. | The project's responsibility. See below. |
@@ -142,16 +142,16 @@ Operators trust this server with their database, so protecting what goes into it
 
 | Mode | Intended for | Promise |
 |------|--------------|---------|
-| `unrestricted` | Development databases that can be recreated | None. Any SQL the database role permits will run. |
-| `restricted` | Production and other databases that matter | The integrity guarantee below. |
+| `unrestricted` | Development databases that can be recreated | No integrity guarantee: any SQL the database role permits will run. The requirements under "All modes" still apply. |
+| `restricted` | Production and other databases that matter | The guarantees below. |
 
 ### Restricted mode guarantees
 
-- `SAFE-1` **Integrity.** In restricted mode, no tool call can modify user data or schema. This holds for any input string.
-- `SAFE-2` **Defence in depth.** Integrity is enforced by two independent layers: (a) the SQL is parsed and every statement and every node in its syntax tree is checked against an allowlist; (b) the statement runs in a read-only transaction. Neither layer is removed or bypassed because the other exists.
+- `SAFE-1` **Integrity.** In restricted mode, no tool call can modify user data or schema. This holds for any input string. "User data or schema" means tables, rows, and every other persistent object and setting in the database. It does not cover what Postgres records as a side effect of reading, such as usage statistics, or hypothetical indexes, which exist only within a session.
+- `SAFE-2` **Defense in depth.** Integrity is enforced by two independent layers: (a) the SQL is parsed and every statement and every node in its syntax tree is checked against an allowlist; (b) the statement runs in a read-only transaction. Neither layer is removed or bypassed because the other exists.
 - `SAFE-3` **Allowlist, not denylist.** Statement types, syntax node types, functions and extensions are permitted only if listed. Anything unknown is rejected. SQL that fails to parse is rejected.
-- `SAFE-4` **No escape from the transaction.** Statements that end or alter the transaction (`COMMIT`, `ROLLBACK`, `BEGIN`, `SET TRANSACTION`, and equivalents) are rejected.
-- `SAFE-5` **Functions.** A function is added to the allowlist only if it cannot write, cannot execute SQL supplied as a string, cannot read or write the server's file system, cannot open network connections, and cannot change session or server state. The pull request states why each added function meets this bar and adds a test.
+- `SAFE-4` **No escape from the transaction.** Statements that end or alter the transaction (`COMMIT`, `ROLLBACK`, `BEGIN`, `SET TRANSACTION`, and anything with the same effect) are rejected.
+- `SAFE-5` **Functions.** A function is added to the allowlist only if it cannot write, cannot execute SQL supplied as a string, cannot read or write the database host's file system, cannot open network connections, and cannot change the state of the session or of the database server. The pull request states why each added function meets this bar and adds a test.
 - `SAFE-6` **Bounded execution.** Restricted-mode statements are subject to a time limit (30 seconds today).
 - `SAFE-7` **All tools, same driver.** Every tool obtains its database access through the mode-aware driver. No tool opens its own path to the database that skips restricted-mode checks.
 - `SAFE-8` **Honest annotations.** A tool is annotated read-only only if it cannot modify the database in the current mode.
@@ -216,7 +216,7 @@ postgres-mcp [DATABASE_URL] [--access-mode MODE] [--transport TRANSPORT] [host/p
 |------|-----------|----------|---------|
 | `list_schemas` | — | | List schemas, marking system schemas. |
 | `list_objects` | `schema_name`, `object_type` (`table`, `view`, `sequence`, `extension`; default `table`) | | List objects in a schema. |
-| `get_object_details` | `schema_name`, `object_name`, `object_type` | | Columns, constraints and indexes for a table or view; definition for a sequence or extension. |
+| `get_object_details` | `schema_name`, `object_name`, `object_type` | | Columns, constraints and indexes for a table or view; basic properties for a sequence or extension. |
 | `execute_sql` | `sql` | | Run SQL. Any statement in unrestricted mode; read-only in restricted mode. Returns the rows of the last statement. |
 | `explain_query` | `sql`, `analyze` (default false), `hypothetical_indexes` (list of `{table, columns, using}`) | `hypopg` for hypothetical indexes | Show the plan. `analyze` and `hypothetical_indexes` cannot be combined. |
 | `get_top_queries` | `sort_by` (`resources`, `total_time`, `mean_time`; default `resources`), `limit` (default 10) | `pg_stat_statements` | Find the queries that matter most. |
@@ -226,7 +226,7 @@ postgres-mcp [DATABASE_URL] [--access-mode MODE] [--transport TRANSPORT] [host/p
 
 `execute_sql` is registered at startup with a description and annotations that match the access mode (destructive in unrestricted mode, read-only in restricted mode).
 
-## 6. Behaviour by area
+## 6. Behavior by area
 
 ### Schema discovery
 
@@ -248,7 +248,7 @@ postgres-mcp [DATABASE_URL] [--access-mode MODE] [--transport TRANSPORT] [host/p
 
 ### Workload analysis
 
-- `TOP-1` `get_top_queries` ranks normalised queries from `pg_stat_statements` by total time, by mean time, or by share of resources (execution time, buffers accessed, read and dirtied, and WAL; a query is listed if it accounts for more than 5% of any one).
+- `TOP-1` `get_top_queries` ranks normalized queries from `pg_stat_statements` by total time, by mean time, or by share of resources (execution time, buffers accessed, read and dirtied, and WAL; a query is listed if it accounts for more than 5% of any one).
 - `TOP-2` Results describe the connected database's workload, not that of other databases on the same instance.
 - `TOP-3` Differences in `pg_stat_statements` columns across supported Postgres versions are handled inside the tool.
 
@@ -262,10 +262,10 @@ The default method (`dta`) adapts the Anytime Algorithm of Microsoft's Database 
 4. **Weigh cost against benefit.** Accept an index only if the gain justifies its size: by default the improvement in log cost must be at least twice the increase in log size.
 
 - `IDX-1` Tuning never creates, drops or alters a real index (`PRIN-3`).
-- `IDX-2` Before analysing, the tool checks that `hypopg` is available and that the database has statistics, and stops with instructions if not.
+- `IDX-2` Before analyzing, the tool checks that `hypopg` is available and that the database has statistics, and stops with instructions if not.
 - `IDX-3` The result lists each recommended index as a runnable `CREATE INDEX` statement with its estimated size and estimated improvement, and shows the per-query plans before and after.
 - `IDX-4` The tool returns within a bounded time, whatever the query shape. Reaching the time budget returns the best configuration found so far, not an error.
-- `IDX-5` Given the same database state and inputs, the `dta` method returns the same recommendation.
+- `IDX-5` Given the same database state and inputs, the `dta` method returns the same recommendation whenever the search finishes within its time budget.
 - `IDX-6` The `llm` method is experimental. It is opt-in per call, requires `OPENAI_API_KEY`, and sends schema and query text to OpenAI; the tool description and the documentation say so. It carries no stability promise and may change or be removed.
 
 ### Health checks
@@ -275,14 +275,14 @@ Checks are adapted from PgHero.
 | Check | Reports |
 |-------|---------|
 | `index` | Invalid, duplicate, unused and bloated indexes |
-| `connection` | Connection count and utilisation |
+| `connection` | Connection count and utilization |
 | `vacuum` | Tables approaching transaction ID wraparound |
 | `sequence` | Sequences above 90% of their maximum value |
 | `replication` | Replication lag, status and slot usage |
 | `buffer` | Cache hit rates for tables and indexes against a 95% threshold |
 | `constraint` | Constraints that are not valid |
 
-- `HLTH-1` Each check is a fixed query with a stated threshold, so results are repeatable.
+- `HLTH-1` Each check is a fixed query, with a stated threshold where one applies, so results are repeatable.
 - `HLTH-2` A check reports "healthy" only if it examined something. If a check was skipped or its filter excluded everything, it says so.
 - `HLTH-3` A failure in one check does not prevent the others from reporting.
 - `HLTH-4` Object names are quoted correctly, including mixed-case and special-character names.
@@ -291,7 +291,7 @@ Checks are adapted from PgHero.
 
 | Dependency | Supported | Notes |
 |------------|-----------|-------|
-| PostgreSQL | 15 and later, through the current release | Version 12 is also kept in the tests as a representative older version, on a best-effort basis: it predates several catalog and `pg_stat_statements` changes and is still widely deployed. Versions 13 and 14 are expected to work but are not tested. |
+| PostgreSQL | 15 and later, up to the newest released major version | Version 12 is also kept in the tests as a representative older version, on a best-effort basis: it predates several catalog and `pg_stat_statements` changes and is still widely deployed. Versions 13 and 14 are expected to work but are not tested. |
 | Python | 3.12 and later | CI tests 3.12 only today. |
 | MCP Python SDK | 1.x (`>=1.25,<2.0`) | Migration to 2.x is tracked in #208. |
 | `pg_stat_statements` | Optional | Needed for workload tools. |
@@ -299,7 +299,7 @@ Checks are adapted from PgHero.
 | Operating systems | Linux, macOS, Windows | Windows uses the selector event loop. |
 
 - `COMPAT-1` Every supported Postgres major version, including the newest released one, is exercised in CI. A new major version is added to the tests when it is released.
-- `COMPAT-2` Managed Postgres services (RDS, Cloud SQL, Azure, Supabase, and similar) are first-class targets. Features do not assume superuser access.
+- `COMPAT-2` Managed Postgres services (RDS, Cloud SQL, Azure, Supabase, and similar) are intended targets. Features do not assume superuser access.
 
 ## 8. Architecture
 
@@ -333,8 +333,8 @@ src/postgres_mcp/
 A change is ready to merge when all of these hold:
 
 - `QA-1` `uv run ruff format --check .`, `uv run ruff check .`, `uv run pyright` and `uv run pytest` pass.
-- `QA-2` New behaviour and bug fixes come with a test that fails without the change.
-- `QA-3` Behaviour that depends on Postgres is tested against real Postgres (the suite starts containers with `hypopg` and `pg_stat_statements`), not only against mocks.
+- `QA-2` New behavior and bug fixes come with a test that fails without the change.
+- `QA-3` Behavior that depends on Postgres is tested against real Postgres (the suite starts containers with `hypopg` and `pg_stat_statements`), not only against mocks.
 - `QA-4` A change to `safe_sql.py` includes tests for both directions: what must now be allowed, and bypass attempts that must still be rejected.
 - `QA-5` User-visible changes update the README and this spec in the same pull request.
 - `QA-6` Tests are never skipped, weakened or deleted to make a build pass.
@@ -344,7 +344,7 @@ A change is ready to merge when all of these hold:
 For every contributor:
 
 1. Find the requirement your change serves, or the gap it closes. If there is none, check section 3 before writing code.
-2. Keep pull requests to one concern. Refactors travel separately from behaviour changes.
+2. Keep pull requests to one concern. Refactors travel separately from behavior changes.
 3. Leave public interfaces alone unless the change is about them (`MCP-2`).
 4. Say what you verified and how. If something could not be tested, say that.
 
@@ -364,8 +364,7 @@ Places where the code or documentation does not yet meet this spec.
 | `MCP-3` | Tools return failures as ordinary text beginning `Error:`, so `isError` is false. | #244, #245 |
 | `MCP-3`, `HLTH-3` | `analyze_db_health` has no error handling at the tool level. | |
 | `SCH-2` | A missing table returns empty details instead of an error. | #143 |
-| `SAFE-6` | The time limit is enforced by the client; whether the statement is always cancelled on the server needs verifying. The limit is not configurable. | #99 |
-| Restricted-mode limits | No cap on rows returned. | #243 |
+| `SAFE-6` | The time limit is enforced by the client; whether the statement is always canceled in the database needs verifying. The limit is not configurable. | #99 |
 | `SAFE-3` | The allowlist permits statement types whose value in a read-only transaction is unclear (`VACUUM`, `CREATE EXTENSION`, `PREPARE`, cursors, `NOTIFY`). Each needs a recorded reason or removal. | |
 | `IF-3` | The stdio server does not exit when the client closes the stream; Docker containers accumulate. | #194, #175 |
 | `IF-5` | The README does not warn that HTTP transports are unauthenticated; Host header checks reject some valid deployments. | #251, #252, #255, #145 |
@@ -389,7 +388,7 @@ Places where the code or documentation does not yet meet this spec.
 
 Decisions for the maintainer. Agents do not settle these.
 
-1. **Confidentiality and resource limits in restricted mode.** Row caps (#243), PII redaction (#167), more granular modes (#138, #124, #148).
+1. **Confidentiality and resource limits in restricted mode.** Restricted mode promises neither. Candidates: row caps (#243), PII redaction (#167), more granular modes (#138, #124, #148).
 2. **Extensions and companion projects.** What is core, what is an extension, and is there an extension mechanism? Needs evidence of how the project is used.
 3. **Shared servers.** The server assumes a single operator. Supporting several users with different entitlements (authentication, per-user access modes or roles) is a candidate roadmap feature.
 4. **Multiple databases.** `IF-1` fixes one database per server. Is that permanent? (#114)
