@@ -1,0 +1,36 @@
+name: HypoPG update check
+
+# The test images pin HypoPG to a release tag (HYPOPG_VERSION in tests/utils.py).
+# Nothing bumps that automatically, so this weekly check opens an issue when a
+# newer stable release exists. Pre-releases (for example 2.0.0beta) are ignored.
+on:
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Compare pinned and latest HypoPG release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pinned=$(sed -n 's/^HYPOPG_VERSION = "\(.*\)"$/\1/p' tests/utils.py)
+          latest=$(git ls-remote --tags --refs https://github.com/HypoPG/hypopg \
+            | sed 's#.*refs/tags/##' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "pinned=$pinned latest=$latest"
+          if [ -z "$pinned" ] || [ -z "$latest" ]; then echo "Could not determine versions"; exit 1; fi
+          if [ "$pinned" = "$latest" ]; then echo "Up to date."; exit 0; fi
+          title="HypoPG $latest is available (pinned: $pinned)"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"HypoPG $latest is available\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then echo "Issue #$existing already open."; exit 0; fi
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+            --body "Bump HYPOPG_VERSION in tests/utils.py, then run the full matrix (workflow_dispatch on the CI workflow) and fix anything HypoPG changed."

@@ -1,9 +1,15 @@
 name: Postgres MCP CI
 
-# Fast tier (PRs and pushes to main): Postgres 15 and 19 only.
-# Full tier (all versions): version tags, manual run, and a daily schedule that
-# skips itself when this exact commit already passed a full run (scheduled,
-# manual, or tag). A failed full run is retried on the next daily run.
+# Fast tier (PRs and pushes to main): Postgres 15 and 19, without the slow DTA
+# (index advisor) integration tests.
+# Full tier (all six versions, including DTA): version tags, manual run, and a
+# daily schedule that skips itself when this exact commit already passed a full
+# run (scheduled, manual, or tag). A failed full run is retried the next day,
+# and opens (or comments on) a GitHub issue.
+#
+# Branch protection should require the single "postgres-mcp-ci" check below: it
+# passes only if lint and every test job passed, and its name never changes when
+# the version matrix does.
 on:
   push:
     branches:
@@ -20,15 +26,23 @@ on:
   schedule:
     - cron: "17 5 * * *"
 
+# Newer pushes to a PR cancel the older run. Pushes to main, tags, and scheduled
+# runs each get their own group, so they are never cancelled.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       actions: read
       contents: read
     outputs:
       run: ${{ steps.plan.outputs.run }}
       versions: ${{ steps.plan.outputs.versions }}
+      mark_expr: ${{ steps.plan.outputs.mark_expr }}
     steps:
       - name: Decide which Postgres versions to test
         id: plan
@@ -38,10 +52,12 @@ jobs:
         run: |
           full='["12","15","16","17","18","19"]'
           fast='["15","19"]'
+          # Fast tier skips the slow DTA tests; the full tier runs everything.
+          mark_expr="not dta"
           run=true
           case "${{ github.event_name }}" in
             schedule)
-              versions="$full"
+              versions="$full"; mark_expr=""
               # Count earlier successful full runs (schedule, manual, or tag) of this exact commit.
               # If the lookup fails, fall through and run: failing open is safer than skipping.
               covered=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow build.yml --status success --limit 100 \
@@ -53,19 +69,21 @@ jobs:
                 run=false
               fi
               ;;
-            workflow_dispatch) versions="$full" ;;
+            workflow_dispatch) versions="$full"; mark_expr="" ;;
             push)
-              if [ "${{ github.ref_type }}" = "tag" ]; then versions="$full"; else versions="$fast"; fi
+              if [ "${{ github.ref_type }}" = "tag" ]; then versions="$full"; mark_expr=""; else versions="$fast"; fi
               ;;
             *) versions="$fast" ;;
           esac
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "versions=$versions" >> "$GITHUB_OUTPUT"
+          echo "mark_expr=$mark_expr" >> "$GITHUB_OUTPUT"
 
   lint:
     needs: plan
     if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -95,6 +113,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -128,4 +147,53 @@ jobs:
           PG_TEST_VERSIONS: ${{ matrix.pg }}
           # Fail instead of skip when Docker, an image build, or an extension is unavailable.
           PG_TEST_STRICT: "1"
-        run: uv run pytest -v --log-cli-level=INFO
+          MARK_EXPR: ${{ needs.plan.outputs.mark_expr }}
+        run: |
+          if [ -n "$MARK_EXPR" ]; then
+            uv run pytest -v --log-cli-level=INFO -m "$MARK_EXPR"
+          else
+            uv run pytest -v --log-cli-level=INFO
+          fi
+
+  # Single stable required check: passes only if lint and every test job passed
+  # (or the daily run was deliberately skipped because the commit already passed).
+  postgres-mcp-ci:
+    needs: [plan, lint, test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check results
+        env:
+          PLAN: ${{ needs.plan.result }}
+          RUN: ${{ needs.plan.outputs.run }}
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          echo "plan=$PLAN run=$RUN lint=$LINT test=$TEST"
+          if [ "$PLAN" != "success" ]; then echo "plan job did not succeed"; exit 1; fi
+          if [ "$RUN" = "false" ]; then echo "Run skipped: this commit already passed a full run."; exit 0; fi
+          if [ "$LINT" != "success" ] || [ "$TEST" != "success" ]; then echo "lint or test did not succeed"; exit 1; fi
+
+  # Scheduled runs have nobody watching them, so a failure opens (or comments on) an issue.
+  notify-failure:
+    needs: [postgres-mcp-ci]
+    if: always() && github.event_name == 'schedule' && needs.postgres-mcp-ci.result != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Scheduled full CI failed"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          body="The daily full-matrix run failed on ${GITHUB_SHA::7}: $RUN_URL"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi
