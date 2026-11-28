@@ -852,3 +852,51 @@ async def test_nested_allowed_constructs_still_permitted(safe_driver, mock_sql_d
     """Legitimate set-returning functions and VALUES lists keep working"""
     await safe_driver.execute_query(query)
     mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "func_name"),
+    [
+        ("SELECT * FROM ts_stat('SELECT to_tsvector(body) FROM docs')", "ts_stat"),
+        ("SELECT * FROM ts_stat('SELECT to_tsvector(body) FROM docs', 'ab')", "ts_stat"),
+        ("SELECT * FROM pg_catalog.ts_stat('SELECT to_tsvector(body) FROM docs')", "ts_stat"),
+        ("SELECT * FROM PG_CATALOG.TS_STAT('SELECT to_tsvector(body) FROM docs')", "ts_stat"),
+        ("SELECT * FROM Ts_Stat('SELECT to_tsvector(body) FROM docs')", "ts_stat"),
+        ("SELECT word FROM (SELECT * FROM ts_stat('SELECT to_tsvector(body) FROM docs')) AS s", "ts_stat"),
+        ("SELECT ts_rewrite('a & b'::tsquery, 'SELECT target, sub FROM aliases')", "ts_rewrite"),
+        ("SELECT pg_catalog.ts_rewrite('a & b'::tsquery, 'SELECT target, sub FROM aliases')", "ts_rewrite"),
+        ("SELECT TS_REWRITE('a & b'::tsquery, 'SELECT target, sub FROM aliases')", "ts_rewrite"),
+        ("SELECT ts_rewrite('a & b'::tsquery, 'a'::tsquery, 'c'::tsquery)", "ts_rewrite"),
+    ],
+)
+async def test_text_search_functions_taking_query_text_are_blocked(safe_driver, mock_sql_driver, query, func_name):
+    """ts_stat and ts_rewrite execute a query given as text, so they are not allowed in restricted mode"""
+    with pytest.raises(ValueError, match="Error validating query") as exc_info:
+        await safe_driver.execute_query(query)
+    assert f"{func_name} is not allowed" in _validation_cause(exc_info)
+    mock_sql_driver.execute_query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT to_tsvector('english', body) @@ to_tsquery('english', 'cat & dog') FROM docs",
+        "SELECT ts_rank(to_tsvector(body), plainto_tsquery('cat')) FROM docs",
+        "SELECT ts_rank_cd(to_tsvector(body), websearch_to_tsquery('cat or dog')) FROM docs",
+        "SELECT ts_headline('english', body, phraseto_tsquery('fat cat')) FROM docs",
+        "SELECT setweight(to_tsvector(title), 'A') || strip(to_tsvector(body)) FROM docs",
+        "SELECT ts_delete(to_tsvector('a b'), 'a'), ts_filter(setweight(to_tsvector('a'), 'A'), '{a}')",
+        "SELECT * FROM ts_debug('english', 'The quick brown fox')",
+        "SELECT * FROM ts_parse('default', 'hello world')",
+        "SELECT * FROM ts_token_type('default')",
+        "SELECT ts_lexize('english_stem', 'stars'), numnode(to_tsquery('a & b')), querytree(to_tsquery('a'))",
+        "SELECT tsvector_to_array(to_tsvector('a b')), array_to_tsvector(ARRAY['a', 'b'])",
+        "SELECT pg_catalog.to_tsvector('simple', 'Hello'), get_current_ts_config()",
+    ],
+)
+async def test_ordinary_text_search_functions_still_permitted(safe_driver, mock_sql_driver, query):
+    """Text-search functions that do not take a query string keep working"""
+    await safe_driver.execute_query(query)
+    mock_sql_driver.execute_query.assert_awaited_once_with("/* crystaldba */ " + query, params=None, force_readonly=True)

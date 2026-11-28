@@ -593,8 +593,8 @@ class SafeSqlDriver(SqlDriver):
         "ts_parse",
         "ts_rank",
         "ts_rank_cd",
-        "ts_rewrite",
-        "ts_stat",
+        # ts_rewrite and ts_stat are deliberately absent: their query-text
+        # arguments are executed as SQL that this validator never sees.
         "ts_token_type",
         "tsvector_to_array",
         "websearch_to_tsquery",
