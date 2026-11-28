@@ -3,36 +3,43 @@
 # Don't exit immediately so we can debug issues
 # set -e
 
-# Mask passwords in a connection string before it is printed.
-# Handles URIs (scheme://user:PASSWORD@host) and key=value parameters
-# (password=PASSWORD, password='quoted value', also inside a URI query string).
-# Only used for diagnostics; the real value is never modified.
-mask_credentials() {
-    local rest="$1" tail="" q="'"
-    local uri_re='^(.*://[^:/@]*:)[^/]*(@.*)$'
-    local key_re='[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][[:space:]]*=[[:space:]]*'
-    local quoted_re="${q}([^${q}\\\\]|\\\\.)*${q}"
-    local kv_re
+# Describe a connection string for diagnostics without revealing credentials.
+# The string is parsed by libpq itself (through psycopg), so URIs, key=value
+# strings, quoting and escaping are all handled exactly as the server's client
+# library handles them. Only a fixed set of non-secret fields is printed. If the
+# string cannot be parsed, or Python is unavailable, nothing from it is printed.
+describe_connection() {
+    local summary
+    summary=$(python - "$1" 2>/dev/null <<'PY'
+import sys
 
-    # Inside a URI, key=value parameters are separated by '&'
-    if [[ "$rest" == *"://"* ]]; then
-        kv_re="^(.*${key_re})(${quoted_re}|[^[:space:]&${q}]+)(.*)$"
+from psycopg.conninfo import conninfo_to_dict
+
+SHOWN = ("host", "hostaddr", "port", "dbname", "user", "sslmode")
+SECRET = ("password", "sslpassword")
+
+params = conninfo_to_dict(sys.argv[1])
+# libpq splits a URI at the first "@", so a password containing an unencoded
+# "@" leaves its remainder in the host. A host never contains "@": hide it all.
+if any("@" in str(params.get(key, "")) for key in ("host", "hostaddr")):
+    sys.exit(1)
+parts = [f"{key}={params[key]}" for key in SHOWN if params.get(key) not in (None, "")]
+parts += [f"{key}=****" for key in SECRET if params.get(key) not in (None, "")]
+text = " ".join(parts)
+print("".join(ch if ch.isprintable() else "?" for ch in text))
+PY
+    )
+    if [[ $? -eq 0 && -n "$summary" ]]; then
+        echo "<connection: $summary>"
     else
-        kv_re="^(.*${key_re})(${quoted_re}|[^[:space:]${q}]+)(.*)$"
+        echo "<connection string hidden>"
     fi
+}
 
-    # Work from the last occurrence backwards so every occurrence is masked
-    while [[ "$rest" =~ $uri_re ]]; do
-        tail="****${BASH_REMATCH[2]}${tail}"
-        rest="${BASH_REMATCH[1]}"
-    done
-    rest="${rest}${tail}"
-    tail=""
-    while [[ "$rest" =~ $kv_re ]]; do
-        tail="****${BASH_REMATCH[4]}${tail}"
-        rest="${BASH_REMATCH[1]}"
-    done
-    printf '%s\n' "${rest}${tail}"
+# An argument is treated as a connection string if it contains a URI scheme, or
+# is a non-option argument containing key=value pairs.
+is_connection_arg() {
+    [[ "$1" == *"://"* ]] || [[ "$1" != -* && "$1" == *"="* ]]
 }
 
 # Function to replace localhost in a string with the Docker host
@@ -55,7 +62,7 @@ replace_localhost() {
     # Replace localhost with Docker host
     if [[ -n "$docker_host" ]]; then
         local new_str="${input_str/localhost/$docker_host}"
-        echo "  Remapping: $(mask_credentials "$input_str") --> $(mask_credentials "$new_str")" >&2
+        echo "  Remapping localhost --> $docker_host" >&2
         echo "$new_str"
         return 0
     fi
@@ -73,7 +80,7 @@ shift 1
 # Process remaining command-line arguments for postgres:// or postgresql:// URLs that contain localhost
 for arg in "$@"; do
     if [[ "$arg" == *"postgres"*"://"*"localhost"* ]]; then
-        echo "Found localhost in database connection: $(mask_credentials "$arg")" >&2
+        echo "Found localhost in database connection: $(describe_connection "$arg")" >&2
         new_arg=$(replace_localhost "$arg")
         if [[ $? -eq 0 ]]; then
             processed_args+=("$new_arg")
@@ -87,7 +94,7 @@ done
 
 # Check and replace localhost in DATABASE_URI if it exists
 if [[ -n "$DATABASE_URI" && "$DATABASE_URI" == *"postgres"*"://"*"localhost"* ]]; then
-    echo "Found localhost in DATABASE_URI: $(mask_credentials "$DATABASE_URI")" >&2
+    echo "Found localhost in DATABASE_URI: $(describe_connection "$DATABASE_URI")" >&2
     new_uri=$(replace_localhost "$DATABASE_URI")
     if [[ $? -eq 0 ]]; then
         export DATABASE_URI="$new_uri"
@@ -122,11 +129,15 @@ fi
 
 echo "----------------" >&2
 echo "Executing command:" >&2
-masked_args=()
+printed_args=()
 for arg in "${processed_args[@]}"; do
-    masked_args+=("$(mask_credentials "$arg")")
+    if is_connection_arg "$arg"; then
+        printed_args+=("$(describe_connection "$arg")")
+    else
+        printed_args+=("$arg")
+    fi
 done
-echo "${masked_args[@]}" >&2
+echo "${printed_args[@]}" >&2
 echo "----------------" >&2
 
 # Execute the command with the processed arguments
