@@ -34,6 +34,9 @@ postgres-mcp = "postgres_mcp:main"
 [tool.pytest.ini_options]
 pythonpath = ["./src"]
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "dta: index-advisor (DTA) integration tests; deselected on PRs, run in the full CI tier",
+]
 
 [dependency-groups]
 dev = [

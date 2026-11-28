@@ -1,6 +1,9 @@
 ARG PG_VERSION=15
 FROM postgres:${PG_VERSION}
 
+# Pinned release tag of HypoPG. Bump deliberately (see CLAUDE.md); never build from master.
+ARG HYPOPG_VERSION
+
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
   build-essential \
@@ -9,7 +12,8 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Clone and build HypoPG
-RUN git clone --depth 1 https://github.com/HypoPG/hypopg.git /tmp/hypopg \
+RUN test -n "${HYPOPG_VERSION}" \
+  && git clone --depth 1 --branch "${HYPOPG_VERSION}" https://github.com/HypoPG/hypopg.git /tmp/hypopg \
   && cd /tmp/hypopg \
   && make \
   && make install \

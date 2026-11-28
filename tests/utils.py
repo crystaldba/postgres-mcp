@@ -12,6 +12,24 @@ from docker import errors as docker_errors
 
 logger = logging.getLogger(__name__)
 
+# HypoPG release tag baked into the test images. Bump deliberately (see CLAUDE.md);
+# .github/workflows/hypopg-update-check.yml opens an issue when a newer release exists.
+HYPOPG_VERSION = "1.4.5"
+
+ALL_POSTGRES_VERSIONS = ["postgres:12", "postgres:15", "postgres:16", "postgres:17", "postgres:18", "postgres:19"]
+
+
+def selected_postgres_versions() -> list[str]:
+    """Versions to test, from PG_TEST_VERSIONS (e.g. "15,19" or "postgres:15,postgres:19"); default is all."""
+    raw = os.environ.get("PG_TEST_VERSIONS", "").strip()
+    if not raw:
+        return ALL_POSTGRES_VERSIONS
+    selected = [v if v.startswith("postgres:") else f"postgres:{v}" for v in (item.strip() for item in raw.split(",")) if v]
+    unknown = [v for v in selected if v not in ALL_POSTGRES_VERSIONS]
+    if unknown:
+        raise pytest.UsageError(f"PG_TEST_VERSIONS has unsupported versions {unknown}; choose from {ALL_POSTGRES_VERSIONS}")
+    return selected
+
 
 def strict_environment() -> bool:
     """True when environment problems must fail the run instead of skipping tests.
@@ -41,7 +59,7 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
     pg_version = version.split(":")[1] if ":" in version else version
 
     # Define custom image name with HypoPG
-    custom_image_name = f"postgres-hypopg:{pg_version}"
+    custom_image_name = f"postgres-hypopg:{pg_version}-hypopg{HYPOPG_VERSION}"
 
     container_name = f"postgres-crystal-test-{version.replace(':', '_')}-{os.urandom(4).hex()}"
     current_dir = Path(__file__).parent.absolute()
@@ -66,7 +84,7 @@ def create_postgres_container(version: str) -> Generator[Tuple[str, str], None, 
             client.images.build(
                 path=str(current_dir),
                 dockerfile="Dockerfile.postgres-hypopg",
-                buildargs={"PG_VERSION": pg_version, "PG_MAJOR": pg_version},
+                buildargs={"PG_VERSION": pg_version, "PG_MAJOR": pg_version, "HYPOPG_VERSION": HYPOPG_VERSION},
                 tag=custom_image_name,
                 rm=True,
             )

@@ -2,18 +2,32 @@
 
 import os
 from typing import Any
+from typing import Generator
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
 from psycopg import sql
+from utils import create_postgres_container
+from utils import selected_postgres_versions
 
 from postgres_mcp.sql.sql_driver import DbConnPool
 from postgres_mcp.sql.sql_driver import SqlDriver
 from postgres_mcp.sql.sql_driver import reset_pooled_connection
 
+# Optional override: point at an existing database instead of starting a container per version.
 DATABASE_URI = os.environ.get("DATABASE_URI")
+
+
+@pytest.fixture(scope="module", params=[None] if DATABASE_URI else selected_postgres_versions())
+def database_uri(request) -> Generator[str, None, None]:
+    """Connection string for the real-database tests: DATABASE_URI, else one container per Postgres version."""
+    if DATABASE_URI:
+        yield DATABASE_URI
+        return
+    for connection_string, _version in create_postgres_container(request.param):
+        yield connection_string
 
 
 class _CursorCM:
@@ -194,8 +208,7 @@ async def test_failed_reset_discards_pooled_connection():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not DATABASE_URI, reason="DATABASE_URI is not set")
-async def test_session_guc_does_not_leak_across_checkouts():
+async def test_session_guc_does_not_leak_across_checkouts(database_uri: str):
     from psycopg_pool import AsyncConnectionPool
 
     async def first_row(driver: SqlDriver, query: str) -> dict[str, Any]:
@@ -203,10 +216,9 @@ async def test_session_guc_does_not_leak_across_checkouts():
         assert rows
         return rows[0].cells
 
-    pool = DbConnPool(DATABASE_URI)
-    assert DATABASE_URI is not None
+    pool = DbConnPool(database_uri)
     raw_pool = AsyncConnectionPool(
-        conninfo=DATABASE_URI,
+        conninfo=database_uri,
         min_size=1,
         max_size=1,
         open=False,
@@ -248,8 +260,7 @@ async def test_session_guc_does_not_leak_across_checkouts():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not DATABASE_URI, reason="DATABASE_URI is not set")
-async def test_hypopg_state_does_not_leak_across_checkouts():
+async def test_hypopg_state_does_not_leak_across_checkouts(database_uri: str):
     from psycopg_pool import AsyncConnectionPool
 
     async def first_row(driver: SqlDriver, query: str) -> dict[str, Any]:
@@ -257,10 +268,9 @@ async def test_hypopg_state_does_not_leak_across_checkouts():
         assert rows
         return rows[0].cells
 
-    pool = DbConnPool(DATABASE_URI)
-    assert DATABASE_URI is not None
+    pool = DbConnPool(database_uri)
     raw_pool = AsyncConnectionPool(
-        conninfo=DATABASE_URI,
+        conninfo=database_uri,
         min_size=1,
         max_size=1,
         open=False,
@@ -293,16 +303,14 @@ async def test_hypopg_state_does_not_leak_across_checkouts():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not DATABASE_URI, reason="DATABASE_URI is not set")
-async def test_failed_reset_replaces_backend_when_database_available():
+async def test_failed_reset_replaces_backend_when_database_available(database_uri: str):
     from psycopg_pool import AsyncConnectionPool
 
     async def boom(conn: Any) -> None:
         raise RuntimeError("intentional reset failure")
 
-    assert DATABASE_URI is not None
     raw_pool = AsyncConnectionPool(
-        conninfo=DATABASE_URI,
+        conninfo=database_uri,
         min_size=1,
         max_size=1,
         open=False,
@@ -322,8 +330,7 @@ async def test_failed_reset_replaces_backend_when_database_available():
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(not DATABASE_URI, reason="DATABASE_URI is not set")
-async def test_repeated_parameterized_query_survives_reset_past_preparation_threshold():
+async def test_repeated_parameterized_query_survives_reset_past_preparation_threshold(database_uri: str):
     """Regression: with the pool reset enabled, re-running one parameterized statement more than
     psycopg's prepare threshold (5) on the same connection used to fail with InvalidSqlStatementName.
 
@@ -331,7 +338,7 @@ async def test_repeated_parameterized_query_survives_reset_past_preparation_thre
     hands out its connections round-robin, so enough iterations are run for at least one backend to
     be reused past the threshold.
     """
-    pool = DbConnPool(DATABASE_URI)
+    pool = DbConnPool(database_uri)
     await pool.pool_connect()
     driver = SqlDriver(conn=pool)
     uses: dict[object, int] = {}
