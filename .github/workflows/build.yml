@@ -1,20 +1,97 @@
 name: Postgres MCP CI
 
+# Fast tier (PRs and pushes to main): Postgres 15 and 19 only.
+# Full tier (all versions): version tags, manual run, and a daily schedule
+# that skips itself when main has no commits in the last 24 hours.
 on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
     paths-ignore:
       - "**/README.md"
   pull_request:
     types: [opened, synchronize, reopened]
     paths-ignore:
       - "**/README.md"
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * *"
 
 jobs:
-  postgres-mcp-ci:
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      versions: ${{ steps.plan.outputs.versions }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      - name: Decide which Postgres versions to test
+        id: plan
+        run: |
+          full='["12","15","16","17","18","19"]'
+          fast='["15","19"]'
+          run=true
+          case "${{ github.event_name }}" in
+            schedule)
+              versions="$full"
+              if [ -z "$(git log --since='24 hours ago' --oneline origin/main)" ]; then
+                echo "No commits on main in the last 24 hours; skipping the daily full run."
+                run=false
+              fi
+              ;;
+            workflow_dispatch) versions="$full" ;;
+            push)
+              if [ "${{ github.ref_type }}" = "tag" ]; then versions="$full"; else versions="$fast"; fi
+              ;;
+            *) versions="$fast" ;;
+          esac
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+
+  lint:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.9"
+
+      - name: Build
+        run: uv sync
+
+      - name: Run Lint
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+
+      - name: Run Check
+        run: uv run pyright
+
+  test:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ${{ fromJSON(needs.plan.outputs.versions) }}
+    name: test (postgres ${{ matrix.pg }})
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,13 +115,7 @@ jobs:
       - name: Build
         run: uv sync
 
-      - name: Run Lint
-        run: |
-          uv run ruff format --check .
-          uv run ruff check .
-
-      - name: Run Check
-        run: uv run pyright
-
       - name: Run Tests
+        env:
+          PG_TEST_VERSIONS: ${{ matrix.pg }}
         run: uv run pytest -v --log-cli-level=INFO
