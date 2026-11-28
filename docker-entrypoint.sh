@@ -9,7 +9,7 @@
 # Only used for diagnostics; the real value is never modified.
 mask_credentials() {
     local rest="$1" tail="" q="'"
-    local uri_re='^(.*://[^:/@]*:)[^@/]*(@.*)$'
+    local uri_re='^(.*://[^:/@]*:)[^/]*(@.*)$'
     local key_re='[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][[:space:]]*=[[:space:]]*'
     local quoted_re="${q}([^${q}\\\\]|\\\\.)*${q}"
     local kv_re
