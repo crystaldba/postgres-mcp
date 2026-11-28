@@ -282,7 +282,7 @@ async def test_hypopg_state_does_not_leak_across_checkouts():
         hypopg_installed = True
 
         await driver.execute_query("SELECT hypopg_reset(); SELECT hypopg_create_index('CREATE INDEX ON pg_class (relname)')")
-        after = await first_row(driver, "SELECT count(*) AS count FROM hypopg_list_indexes()")
+        after = await first_row(driver, "SELECT count(*) AS count FROM hypopg_list_indexes")
         assert int(after["count"]) == 0
     finally:
         try:
