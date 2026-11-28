@@ -38,7 +38,7 @@ The users are:
 
 - `PRIN-1` **Deterministic tools, flexible agent.** Where a classical algorithm or a fixed diagnostic query exists, the server implements it in code and leaves interpretation to the agent. The server does not ask an LLM to do what code can do reliably.
 - `PRIN-2` **Evidence over assertion.** Recommendations come with the numbers behind them: planner costs before and after, estimated index size, the plans compared. The agent must be able to explain a recommendation to a human.
-- `PRIN-3` **Simulate before changing.** Analysis tools never change the user's schema or data. Index benefits are estimated with hypothetical indexes, not real ones.
+- `PRIN-3` **Simulate, then recommend.** Analysis tools never change the user's schema or data. Index benefits are estimated with hypothetical indexes, not real ones. Acting on a recommendation is a separate step, taken by the agent or a human through `execute_sql` or outside the server.
 - `PRIN-4` **Written for an agent reader.** Tool names, descriptions, parameters, results and errors are a user interface for a model. They are short, unambiguous and actionable: an error says what went wrong and what to do next.
 - `PRIN-5` **Works out of the box, degrades clearly.** The core tools work on a stock Postgres. A tool that needs an optional extension says which one is missing and how to install it.
 - `PRIN-6` **Small surface.** Each tool, flag and mode is a long-term maintenance and safety cost. Prefer improving an existing tool over adding a new one.
@@ -156,14 +156,15 @@ Operators trust this server with their database, so protecting what goes into it
 - `SAFE-7` **All tools, same driver.** Every tool obtains its database access through the mode-aware driver. No tool opens its own path to the database that skips restricted-mode checks.
 - `SAFE-8` **Honest annotations.** A tool is annotated read-only only if it cannot modify the database in the current mode.
 
-### What restricted mode does not promise today
+### What restricted mode does not promise
 
-Restricted mode protects integrity. It does **not** yet promise:
+Restricted mode protects integrity. It does **not** promise:
 
 - **Confidentiality.** The agent can read anything the database role can read.
 - **Availability beyond the time limit.** There is no limit on rows returned, memory, or concurrent load.
 
 The documentation states these limits plainly, and recommends a least-privilege database role as a complement to restricted mode.
+Whether to add protections in these areas is an open question (section 12).
 
 ### All modes
 
