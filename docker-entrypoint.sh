@@ -3,6 +3,38 @@
 # Don't exit immediately so we can debug issues
 # set -e
 
+# Mask passwords in a connection string before it is printed.
+# Handles URIs (scheme://user:PASSWORD@host) and key=value parameters
+# (password=PASSWORD, password='quoted value', also inside a URI query string).
+# Only used for diagnostics; the real value is never modified.
+mask_credentials() {
+    local rest="$1" tail="" q="'"
+    local uri_re='^(.*://[^:/@]*:)[^@/]*(@.*)$'
+    local key_re='[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][[:space:]]*=[[:space:]]*'
+    local quoted_re="${q}([^${q}\\\\]|\\\\.)*${q}"
+    local kv_re
+
+    # Inside a URI, key=value parameters are separated by '&'
+    if [[ "$rest" == *"://"* ]]; then
+        kv_re="^(.*${key_re})(${quoted_re}|[^[:space:]&${q}]+)(.*)$"
+    else
+        kv_re="^(.*${key_re})(${quoted_re}|[^[:space:]${q}]+)(.*)$"
+    fi
+
+    # Work from the last occurrence backwards so every occurrence is masked
+    while [[ "$rest" =~ $uri_re ]]; do
+        tail="****${BASH_REMATCH[2]}${tail}"
+        rest="${BASH_REMATCH[1]}"
+    done
+    rest="${rest}${tail}"
+    tail=""
+    while [[ "$rest" =~ $kv_re ]]; do
+        tail="****${BASH_REMATCH[4]}${tail}"
+        rest="${BASH_REMATCH[1]}"
+    done
+    printf '%s\n' "${rest}${tail}"
+}
+
 # Function to replace localhost in a string with the Docker host
 replace_localhost() {
     local input_str="$1"
@@ -23,7 +55,7 @@ replace_localhost() {
     # Replace localhost with Docker host
     if [[ -n "$docker_host" ]]; then
         local new_str="${input_str/localhost/$docker_host}"
-        echo "  Remapping: $input_str --> $new_str" >&2
+        echo "  Remapping: $(mask_credentials "$input_str") --> $(mask_credentials "$new_str")" >&2
         echo "$new_str"
         return 0
     fi
@@ -41,7 +73,7 @@ shift 1
 # Process remaining command-line arguments for postgres:// or postgresql:// URLs that contain localhost
 for arg in "$@"; do
     if [[ "$arg" == *"postgres"*"://"*"localhost"* ]]; then
-        echo "Found localhost in database connection: $arg" >&2
+        echo "Found localhost in database connection: $(mask_credentials "$arg")" >&2
         new_arg=$(replace_localhost "$arg")
         if [[ $? -eq 0 ]]; then
             processed_args+=("$new_arg")
@@ -55,7 +87,7 @@ done
 
 # Check and replace localhost in DATABASE_URI if it exists
 if [[ -n "$DATABASE_URI" && "$DATABASE_URI" == *"postgres"*"://"*"localhost"* ]]; then
-    echo "Found localhost in DATABASE_URI: $DATABASE_URI" >&2
+    echo "Found localhost in DATABASE_URI: $(mask_credentials "$DATABASE_URI")" >&2
     new_uri=$(replace_localhost "$DATABASE_URI")
     if [[ $? -eq 0 ]]; then
         export DATABASE_URI="$new_uri"
@@ -90,7 +122,11 @@ fi
 
 echo "----------------" >&2
 echo "Executing command:" >&2
-echo "${processed_args[@]}" >&2
+masked_args=()
+for arg in "${processed_args[@]}"; do
+    masked_args+=("$(mask_credentials "$arg")")
+done
+echo "${masked_args[@]}" >&2
 echo "----------------" >&2
 
 # Execute the command with the processed arguments
