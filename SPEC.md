@@ -77,12 +77,18 @@ Until then:
 
 ### Threat model
 
-The threat is **the model doing something dumb**: it issues a harmful statement because it slipped up, misunderstood, or was misdirected by prompt injection in data it read.
-In security terms this is the **confused deputy** problem: the agent holds the operator's database authority and can be led to misuse it. OWASP's list of LLM application risks calls the result **excessive agency**, and names **prompt injection** as its main trigger.
+The threat is **agent error**: the model issues a harmful statement that nobody intended.
+Language models hallucinate and make mistakes. A model may invent a table name, misread which database it is connected to, misjudge what a statement will do, or lose track of an instruction given earlier in the conversation.
+No attacker is needed, and no amount of care by the operator removes the possibility.
+
+This is the agentic counterpart of operator error, and it is treated here the way safety engineering treats human error: as something that will happen, to be contained by the design of the system and not by expecting the actor to be careful.
+
+Prompt injection, where text the model reads misdirects it, is a second route to the same outcome and is contained by the same guarantees. It is not the primary concern.
 
 It follows that:
 
-- Every string that reaches the server through a tool call is untrusted, however benign the conversation looks. Injection can produce arbitrary SQL, so protections must not rely on the SQL being well-meaning or typical.
+- Every string that reaches the server through a tool call may be wrong, however sensible the conversation looks. A mistaken model can produce any SQL at all, so protections must not rely on the SQL being well-meaning or typical.
+- Mistakes are made in good faith, so feedback matters as much as blocking. When the server refuses something, it says why and what is allowed, so the agent can correct course (`PRIN-4`).
 - The operator is trusted. They choose the database, the credentials and the access mode.
 - The following are not defended against by the server itself, and the documentation must say so: a hostile operator; an attacker on the network reaching an HTTP transport; stolen database credentials; a database role with more privilege than the operator intended.
 
