@@ -36,7 +36,8 @@ Features include:
 - **🧠 Schema Intelligence** - context-aware SQL generation based on detailed understanding of the database schema.
 - **🛡️ Safe SQL Execution** - configurable access control, including support for read-only mode and safe SQL parsing, making it usable for both development and production.
 
-Postgres MCP Pro supports both the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio) and [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) transports, for flexibility in different environments.
+Postgres MCP Pro supports the [Standard Input/Output (stdio)](https://modelcontextprotocol.io/docs/concepts/transports#standard-input%2Foutput-stdio), [Server-Sent Events (SSE)](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) and Streamable HTTP (`--transport=streamable-http`) transports, for flexibility in different environments.
+The SSE and Streamable HTTP transports have no authentication; see [SSE Transport](#sse-transport) before exposing them on a network.
 
 For additional background on why we built Postgres MCP Pro, see [our launch blog post](https://www.crystaldba.ai/blog/post/announcing-postgres-mcp-server-pro).
 
@@ -238,18 +239,33 @@ Many MCP clients have similar configuration files to Claude Desktop, and you can
 
 ## SSE Transport
 
-Postgres MCP Pro supports the [SSE transport](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse), which allows multiple MCP clients to share one server, possibly a remote server.
-To use the SSE transport, you need to start the server with the `--transport=sse` option.
+Besides stdio, Postgres MCP Pro can serve MCP over HTTP, with either the SSE or the Streamable HTTP transport, which allows multiple MCP clients to share one server, possibly a remote server.
+This section covers both:
+
+| Transport | Option | Endpoint | Bind address and port options |
+|---|---|---|---|
+| [SSE](https://modelcontextprotocol.io/docs/concepts/transports#server-sent-events-sse) | `--transport=sse` | `/sse` | `--sse-host`, `--sse-port` |
+| Streamable HTTP | `--transport=streamable-http` | `/mcp` | `--streamable-http-host`, `--streamable-http-port` |
+
+Both listen on `localhost:8000` by default.
+
+**These transports have no authentication.** Anyone who can connect to the port can call every tool.
+In the default unrestricted access mode that includes running arbitrary SQL, including writes and DDL.
+Read [Security](#security) before making the port reachable from other machines.
 
 For example, with Docker run:
 
 ```bash
-docker run -p 8000:8000 \
+docker run -p 127.0.0.1:8000:8000 \
   -e DATABASE_URI=postgresql://username:password@localhost:5432/dbname \
   crystaldba/postgres-mcp --access-mode=unrestricted --transport=sse
 ```
 
-Then update your MCP client configuration to call the the MCP server.
+The image's entrypoint adds `--sse-host=0.0.0.0` for the SSE transport, so the server listens on all interfaces inside the container and can be reached through the published port.
+`-p 127.0.0.1:8000:8000` tells Docker to publish the port on the host's loopback interface only; a plain `-p 8000:8000` publishes it on every interface of the host.
+The entrypoint does not do this for Streamable HTTP: in Docker, pass `--streamable-http-host=0.0.0.0` yourself.
+
+Then update your MCP client configuration to call the MCP server.
 For example, in Cursor's `mcp.json` or Cline's `cline_mcp_settings.json` you can put:
 
 ```json
@@ -275,6 +291,71 @@ For Windsurf, the format in `mcp_config.json` is slightly different:
     }
 }
 ```
+
+For Streamable HTTP, point your client at `http://localhost:8000/mcp` instead; how to select that transport differs between clients.
+
+### Security
+
+The SSE and Streamable HTTP transports do not authenticate clients.
+Any process that can open a TCP connection to the port can use the server with the database role from your connection URI: in unrestricted mode it can run arbitrary SQL, and in restricted mode it can still read any data that role can read.
+
+- **Keep the port on loopback.** Outside Docker, keep the default `localhost` bind address.
+  With Docker, publish with `-p 127.0.0.1:8000:8000`.
+  This limits only the host-side publish: the server still listens on `0.0.0.0` inside the container, so other containers on the same Docker network can connect to it directly.
+- **For access from other machines**, put the server behind a reverse proxy that authenticates clients, or reach it over a VPN or SSH tunnel. Do not publish it directly on a public or shared network.
+- **Use restricted mode** (`--access-mode=restricted`) unless the agent needs to write, so that a client can only run read-only SQL.
+- **Use a least-privilege database role** in the connection URI, so the server can only reach the data it needs.
+
+When the SSE or Streamable HTTP transport listens on an address other than loopback (`localhost`, `127.0.0.0/8` or `::1`), the server logs a startup warning that the port has no authentication.
+Inside Docker this warning appears even when the port is published on `127.0.0.1` only, because the server listens on `0.0.0.0` in the container and cannot see how Docker publishes the port.
+It also appears when `--allowed-hosts` is given, since allowing Host headers does not limit who can connect.
+
+### Allowed Host headers (HTTP 421)
+
+The server checks the `Host` header of every SSE and Streamable HTTP request, whatever address it is bound to, including `0.0.0.0` in Docker.
+A request whose `Host` header is not on the allowed list gets HTTP 421 with the body `Invalid Host header`, which some MCP clients and gateways report only as a generic connection failure such as "server not reachable".
+(The MCP SDK calls this DNS rebinding protection; it stops a web page in your browser from reaching a local server.)
+
+By default the list holds `localhost`, `127.0.0.1` and `[::1]`, each with a port: `Host: localhost:8000` is accepted, but `Host: localhost` without a port is not.
+A client that connects to `http://localhost:8000/sse` therefore works, while one that uses any other name gets 421: for example a Docker Compose service name, `host.docker.internal`, or a public domain that a reverse proxy forwards as the `Host` header.
+
+To accept other names, add them with `--allowed-hosts`, as a comma-separated list (the option may be repeated):
+
+| Entry | Accepts |
+|---|---|
+| `NAME` | `NAME` with or without a port, e.g. `mcp.example.com` and `mcp.example.com:443` |
+| `NAME:PORT` | `NAME` with exactly that port only |
+| `NAME:*` | `NAME` with any port, but not without one |
+
+- `NAME` is a host name, an IPv4 address, or an IPv6 address in brackets such as `[fe80::1]`. Addresses are matched as written, so write an IPv6 address the way clients send it (normally the compressed form, `[fe80::1]` rather than `[fe80:0:0:0:0:0:0:1]`).
+- Entries are added to the localhost defaults; they never replace them.
+- Entries are lowercased. The comparison with the `Host` header is case-sensitive; clients normally send it in lowercase.
+- The server exits with a usage error (status 2) naming the entry if an entry is empty, contains a wildcard other than the `:*` port (`*`, `*.example.com`), is a URL or path (`http://mcp.example.com`, `mcp.example.com/mcp`), is an IPv6 address without brackets, has a port outside 1-65535, or is not a valid name (for example it contains spaces, `..`, or a leading or trailing dot).
+- At startup the server logs the full list, e.g. `Accepting Host headers: 127.0.0.1:*, localhost:*, [::1]:*, mcp.example.com, mcp.example.com:*`.
+- `--allowed-hosts` only applies to the SSE and Streamable HTTP transports; with stdio it is ignored with a warning.
+- There is no environment variable for this setting and no option to turn the check off.
+- Allowed `Origin` headers do not change: a request that carries an `Origin` header must come from `http://localhost:<port>`, `http://127.0.0.1:<port>` or `http://[::1]:<port>`, or it gets HTTP 403. Non-browser MCP clients normally send no `Origin` header.
+
+For example, in Docker Compose, where another container connects to the server as `http://postgres-mcp-server:8000/sse`:
+
+```yaml
+services:
+  postgres-mcp-server:
+    image: crystaldba/postgres-mcp
+    environment:
+      DATABASE_URI: postgresql://username:password@db:5432/dbname
+    command: ["--access-mode=restricted", "--transport=sse", "--allowed-hosts=postgres-mcp-server"]
+```
+
+The image's entrypoint adds `--sse-host=0.0.0.0`, so the server listens on the container's network interface.
+No `ports:` entry is needed for this: containers on the same Compose network connect to the container's port directly, and every one of them can use the server without authentication.
+
+Behind a reverse proxy that serves `https://mcp.example.com` and forwards the public name as the `Host` header, start the server with `--allowed-hosts=mcp.example.com`, which accepts both `Host: mcp.example.com` and `Host: mcp.example.com:443`.
+If you cannot list the names clients use, configure the proxy to send a `Host` header the server already accepts instead, e.g. `proxy_set_header Host localhost:8000;` in nginx.
+
+Allowing a name only changes which `Host` headers the server accepts.
+It does not authenticate clients and does not change who can connect: any client can send any `Host` header, including an allowed one.
+See [Security](#security).
 
 ## Postgres Extension Installation (Optional)
 

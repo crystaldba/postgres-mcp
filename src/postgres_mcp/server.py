@@ -19,6 +19,8 @@ from pydantic import validate_call
 
 from postgres_mcp.index.dta_calc import DatabaseTuningAdvisor
 
+from .allowed_hosts import host_check_settings
+from .allowed_hosts import parse_allowed_hosts
 from .artifacts import ErrorResult
 from .artifacts import ExplainPlanArtifact
 from .database_health import DatabaseHealthTool
@@ -27,6 +29,7 @@ from .explain import ExplainPlanTool
 from .index.index_opt_base import MAX_NUM_INDEX_TUNING_QUERIES
 from .index.llm_opt import LLMOptimizerTool
 from .index.presentation import TextPresentation
+from .network_exposure import exposure_warning
 from .sql import DbConnPool
 from .sql import SafeSqlDriver
 from .sql import SqlDriver
@@ -596,6 +599,16 @@ async def main():
         default=8000,
         help="Port for streamable HTTP server (default: 8000)",
     )
+    parser.add_argument(
+        "--allowed-hosts",
+        type=parse_allowed_hosts,
+        action="extend",
+        metavar="HOSTS",
+        help="Comma-separated Host header values to accept on the sse and streamable-http transports, "
+        "in addition to localhost, 127.0.0.1 and [::1] with any port. NAME accepts NAME with or without "
+        "a port, NAME:PORT only that port, NAME:* any port. Requests with any other Host header get "
+        "HTTP 421. May be repeated.",
+    )
 
     args = parser.parse_args()
 
@@ -658,15 +671,40 @@ async def main():
 
     # Run the server with the selected transport (always async)
     if args.transport == "stdio":
+        if args.allowed_hosts is not None:
+            logger.warning("--allowed-hosts only applies to the sse and streamable-http transports; ignoring it")
         await mcp.run_stdio_async()
     elif args.transport == "sse":
         mcp.settings.host = args.sse_host
         mcp.settings.port = args.sse_port
+        configure_host_check(args.allowed_hosts or [])
+        warn_if_exposed(args.transport)
         await mcp.run_sse_async()
     elif args.transport == "streamable-http":
         mcp.settings.host = args.streamable_http_host
         mcp.settings.port = args.streamable_http_port
+        configure_host_check(args.allowed_hosts or [])
+        warn_if_exposed(args.transport)
         await mcp.run_streamable_http_async()
+
+
+def configure_host_check(extra_hosts: list[str]) -> None:
+    """Install the Host header allowlist that the network transports read when they build their app."""
+    settings = host_check_settings(extra_hosts)
+    mcp.settings.transport_security = settings
+    logger.info(f"Accepting Host headers: {', '.join(settings.allowed_hosts)}")
+
+
+def warn_if_exposed(transport: str) -> None:
+    """Log a warning if the network transport is about to listen on a non-loopback address."""
+    warning = exposure_warning(
+        transport,
+        mcp.settings.host,
+        mcp.settings.port,
+        restricted=current_access_mode == AccessMode.RESTRICTED,
+    )
+    if warning:
+        logger.warning(warning)
 
 
 async def shutdown(sig=None):
