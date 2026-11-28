@@ -112,3 +112,47 @@ async def test_command_line_parsing():
         # Restore original values
         sys.argv = original_argv
         asyncio.run = original_run
+
+
+@pytest.mark.asyncio
+async def test_command_line_parsing_default_restricted():
+    """Default (no --access-mode) must resolve to RESTRICTED (security default, PR #193)."""
+    import sys
+
+    from postgres_mcp.server import main
+
+    original_argv = sys.argv
+    original_run = asyncio.run
+
+    try:
+        # No --access-mode flag at all
+        sys.argv = [
+            "postgres_mcp",
+            "postgresql://user:password@localhost/db",
+        ]
+        asyncio.run = AsyncMock()
+
+        with (
+            patch("postgres_mcp.server.current_access_mode", AccessMode.UNRESTRICTED),
+            patch("postgres_mcp.server.db_connection.pool_connect", AsyncMock()),
+            patch("postgres_mcp.server.mcp.run_stdio_async", AsyncMock()),
+            patch("postgres_mcp.server.shutdown", AsyncMock()),
+        ):
+            # Reset the current_access_mode to UNRESTRICTED
+            import postgres_mcp.server
+
+            postgres_mcp.server.current_access_mode = AccessMode.UNRESTRICTED
+
+            # Run main (partially mocked to avoid actual connection)
+            try:
+                await main()
+            except Exception:
+                pass
+
+            # The security default must win when the flag is omitted
+            assert postgres_mcp.server.current_access_mode == AccessMode.RESTRICTED
+
+    finally:
+        # Restore original values
+        sys.argv = original_argv
+        asyncio.run = original_run
