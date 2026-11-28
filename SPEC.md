@@ -106,19 +106,37 @@ It follows that:
 - Refusals explain themselves. When the server rejects something, it says why and what is allowed, so that a mistaken agent can correct course (`PRIN-4`).
 - Tool results are data. The server never presents database content in a way that reads as instructions from the server or the operator.
 
+### Trust assumptions
+
+| Party | Trusted? | Meaning |
+|-------|----------|---------|
+| The operator | Yes | Chooses the database, the credentials and the access mode. A hostile operator is out of scope. |
+| This server | Yes | The server's code is part of what the operator trusts. It is not modelled as a threat. Its defects are bugs, held to the quality bar in section 9; because it is trusted, the bar for anything that touches a production database is high (`SAFE-6`, `IDX-4`, `PRIN-3`). |
+| The database engine | Yes | Postgres enforces what it says it enforces, including read-only transactions and role privileges. |
+| The model | No | It may be mistaken or misdirected. |
+| Database content | No | Row values, object names, comments and recorded query text may have been written by anyone. They are data, never instructions. |
+
+**Single operator.** The server is designed to be run by one operator for their own use. It has no notion of individual users, and everyone who can reach it acts with the operator's access mode and database role. Sharing one server among people with different entitlements is not supported today; it is a roadmap topic (section 12).
+
 ### Other threats
 
-These do not arrive through the model. The position on each is stated so that contributors know what the server is and is not responsible for. Positions marked *proposed* await the maintainer's confirmation.
+These do not arrive through the model.
 
 | Threat | Description | Position |
 |--------|-------------|----------|
-| Network access to an HTTP transport | Anyone who can reach the port can call every tool directly, with no model involved. A web page in the operator's browser can attempt the same against a server on `localhost`. | Partly defended: loopback by default, Host header checks (`IF-5`). Authentication is not provided; the operator supplies it. |
-| A user who is not the operator | On a shared server, the person talking to the agent did not choose the access mode or credentials, and may ask for more than the operator intended. | Contained by the access mode and the database role. The server has no notion of individual users. *Proposed.* |
+| Network access to an HTTP transport | Anyone who can reach the port can call every tool directly, with no model involved. A web page in the operator's browser can attempt the same against a server on `localhost`. | Partly defended: loopback by default, Host header checks (`IF-5`). Authentication is not provided; an operator who exposes the port supplies it. |
 | Exposed credentials | The connection string sits in MCP client configuration, the environment, and possibly the process list. | The server keeps passwords out of its own logs and results (`SAFE-9`) and never accepts credentials through tool calls (`IF-1`). Storage elsewhere is the operator's concern. |
 | Data leaving through the model | Everything a tool returns goes to the model provider, and the agent may pass it on through other tools it holds. | Not defended. Restricted mode does not promise confidentiality; the documentation says so. |
-| Harm from the server itself | An analysis tool puts heavy load on a production database, or gives confident advice that is wrong and is then acted on. | Defended by design: bounded execution (`SAFE-6`, `IDX-4`), no changes by analysis tools (`PRIN-3`), evidence with every recommendation (`PRIN-2`). *Proposed.* |
-| Supply chain | A compromised dependency, package or image, or a harmful change merged into this repository. | Defended by process: few dependencies (`ARCH-4`), review of safety-critical changes (`QA-4`), reproducible releases (`DIST-1`). *Proposed.* |
-| A hostile operator | The person running the server intends harm. | Out of scope. The operator is trusted: they choose the database, the credentials and the access mode. |
+| Supply chain | A compromised dependency, package or image, or a harmful change merged into this repository. | The project's responsibility. See below. |
+
+### Supply chain
+
+Operators trust this server with their database, so protecting what goes into it is part of maintaining the project.
+
+- `SUP-1` Dependencies are kept current. Reported vulnerabilities in dependencies are triaged, and none that affects the server is left unresolved at release.
+- `SUP-2` Dependency versions are locked, and releases are built from the lock file.
+- `SUP-3` Release artifacts are built by CI from a tagged commit, not on a personal machine.
+- `SUP-4` Changes to the restricted-mode validator, to dependencies, and to build and release workflows are reviewed by the maintainer before merge, whoever or whatever wrote them.
 
 ### Access modes
 
@@ -360,6 +378,8 @@ Places where the code or documentation does not yet meet this spec.
 | `HLTH-2` | The bloat check reports no bloated indexes when none met the 100 MB minimum size. | #211 |
 | `HLTH-4` | Quoted object names are mishandled in health checks. | #109 |
 | `COMPAT-1` | The tests run Postgres 12, 15 and 16. Versions 17, 18 and 19 are not tested. CI runs one Python version. | #204, #205 |
+| `SUP-1` | GitHub reports 135 open dependency alerts on the default branch (4 critical, 48 high). None has been triaged. | |
+| `SUP-3` | The release recipe in the `justfile` builds the Python package locally. | |
 | `SAFE-12` | There is no private channel for reporting vulnerabilities. | #220, #242, #221 |
 | Documentation | The README does not document Streamable HTTP, names a tool (`analyze_query_workload`) that does not exist, says the project is maintained by Crystal DBA, and has an empty roadmap. | #192, #156 |
 | Tooling | The `justfile` `test` and `dev` recipes point at paths that no longer exist. Ruff targets Python 3.9 although 3.12 is required. | #129 |
@@ -371,6 +391,7 @@ Decisions for the maintainer. Agents do not settle these.
 1. **Default access mode.** The default is `unrestricted`. Given the threat model, should the default be `restricted`, with `unrestricted` an explicit opt-in? (#164, #193)
 2. **Confidentiality and resource limits in restricted mode.** Row caps (#243), PII redaction (#167), more granular modes (#138, #124, #148).
 3. **Extensions and companion projects.** What is core, what is an extension, and is there an extension mechanism? Needs evidence of how the project is used.
-4. **Multiple databases.** `IF-1` fixes one database per server. Is that permanent? (#114)
-5. **Naming.** Is "Postgres MCP Pro" still the product name, and do the `crystaldba` identifiers (Docker image name, the `/* crystaldba */` query comment, `crystaldba_idx_` index names) stay?
-6. **Release cadence and process.** Who cuts releases, how often, and what is the checklist?
+4. **Shared servers.** The server assumes a single operator. Supporting several users with different entitlements (authentication, per-user access modes or roles) is a candidate roadmap feature.
+5. **Multiple databases.** `IF-1` fixes one database per server. Is that permanent? (#114)
+6. **Naming.** Is "Postgres MCP Pro" still the product name, and do the `crystaldba` identifiers (Docker image name, the `/* crystaldba */` query comment, `crystaldba_idx_` index names) stay?
+7. **Release cadence and process.** Who cuts releases, how often, and what is the checklist?
