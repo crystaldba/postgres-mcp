@@ -704,6 +704,8 @@ We may add measures in the future to make sure that restricted mode is safe to u
 
 The instructions below are for developers who want to work on Postgres MCP Pro, or users who prefer to install Postgres MCP Pro from source.
 
+Contributors and AI agents should read the [product specification](SPEC.md) first: it states what the project promises, what is in scope, and the known gaps.
+
 ### Local Development Setup
 
 1. **Install uv**:
